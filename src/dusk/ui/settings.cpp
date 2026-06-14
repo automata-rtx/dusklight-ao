@@ -944,7 +944,7 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                             "but costs more performance: Low, Medium, High, Ultra.",
                 .valueMin = 0,
                 .valueMax = 3,
-                .defaultValue = 3,
+                .defaultValue = 2,
                 .step = 1,
             },
             mPrelaunch);
@@ -979,7 +979,7 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .helpText = "How dark the occlusion gets. Lower this to make the effect less aggressive.",
                 .valueMin = 0,
                 .valueMax = 300,
-                .defaultValue = 100,
+                .defaultValue = 150,
                 .step = 5,
             },
             mPrelaunch);

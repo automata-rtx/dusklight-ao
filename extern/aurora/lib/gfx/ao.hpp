@@ -11,11 +11,11 @@ namespace aurora::gfx::ao {
 // defaults. debugMode is a development aid.
 struct Options {
   bool enabled = true;
-  int qualityLevel = 3; // 0=low, 1=medium, 2=high, 3=ultra
+  int qualityLevel = 2; // 0=low, 1=medium, 2=high, 3=ultra
   int debugMode = 0;    // 0=modulate scene color, 1=occlusion, 2=normals, 3=depth
   // Runtime-tunable parameters (multipliers/values; defaults match XeGTAO).
   float radius = 1.0f;     // scales the effect radius (coverage extent)
-  float intensity = 1.0f;  // 0=no darkening, 1=full, >1=stronger
+  float intensity = 1.5f;  // 0=no darkening, 1=full, >1=stronger
   float power = 2.2f;      // contrast curve applied to the AO term
   float angleBias = 0.15f; // min sin(angle) above the surface for a sample to occlude
   int resolutionDivisor = 2; // AO internal-resolution divisor: 1=full, 2=half, 4=quarter
