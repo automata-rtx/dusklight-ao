@@ -802,21 +802,6 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 pane.add_rml(
                     "<br/>Display the current framerate in a corner of the screen while playing.");
             });
-        config_bool_select(leftPane, rightPane, getSettings().video.rememberWindowSize,
-            {
-                .key = "Remember Window Size",
-                .helpText = "Save and restore the previous session's window size when opening Dusklight.",
-                .onChange =
-                    [](bool value) {
-                        if (value && !dusk::getSettings().video.enableFullscreen) {
-                            const auto windowSize = aurora::window::get_window_size();
-                            dusk::getSettings().video.lastWindowWidth.setValue(windowSize.width);
-                            dusk::getSettings().video.lastWindowHeight.setValue(windowSize.height);
-                            dusk::config::Save();
-                        }
-                    },
-                .isDisabled = [] { return IsMobile; },
-            });
         leftPane.add_section("Resolution");
         graphics_tuner_control(*this, leftPane, rightPane,
             getSettings().game.internalResolutionScale,
@@ -936,6 +921,142 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .helpText = "Disable black bars on the left and right sides of the screen "
                             "during some cutscenes, particularly on ultra-wide displays. "
                             "Visuals beyond the original intended framing may appear buggy."
+            });
+        leftPane.add_section("Ambient Occlusion");
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.enableAmbientOcclusion,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusion,
+                .title = "Ambient Occlusion",
+                .helpText = "Adds soft contact shadows in corners, crevices, and where objects meet, "
+                            "for a less flat look. Screen-space ambient occlusion. Flip between Off "
+                            "and On here to compare.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 1,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoQuality,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionQuality,
+                .title = "Ambient Occlusion Quality",
+                .helpText = "Number of samples taken per pixel. Higher is smoother and more accurate "
+                            "but costs more performance: Low, Medium, High, Ultra.",
+                .valueMin = 0,
+                .valueMax = 3,
+                .defaultValue = 3,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoResolution,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionResolution,
+                .title = "Ambient Occlusion Resolution",
+                .helpText = "Internal resolution the effect runs at. Half looks nearly identical to "
+                            "Full for a large performance saving; Quarter is cheaper still.",
+                .valueMin = 0,
+                .valueMax = 2,
+                .defaultValue = 1,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoRadius,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionRadius,
+                .title = "Ambient Occlusion Radius",
+                .helpText = "How far the occlusion reaches. Raise to broaden coverage; lower for "
+                            "tighter contact shadows.",
+                .valueMin = 25,
+                .valueMax = 800,
+                .defaultValue = 100,
+                .step = 5,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoIntensity,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionStrength,
+                .title = "Ambient Occlusion Strength",
+                .helpText = "How dark the occlusion gets. Lower this to make the effect less aggressive.",
+                .valueMin = 0,
+                .valueMax = 300,
+                .defaultValue = 100,
+                .step = 5,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoPower,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionContrast,
+                .title = "Ambient Occlusion Contrast",
+                .helpText = "Contrast of the occlusion falloff. Lower softens the transition; higher "
+                            "sharpens it.",
+                .valueMin = 50,
+                .valueMax = 400,
+                .defaultValue = 220,
+                .step = 10,
+            },
+            mPrelaunch);
+        config_bool_select(leftPane, rightPane, getSettings().game.aoDenoise,
+            {
+                .key = "Ambient Occlusion Denoise",
+                .helpText = "Spatial smoothing of the occlusion. Reduces graininess and "
+                            "low-resolution blockiness, but can soften fine detail like grass. "
+                            "Turn off for a sharper, noisier look.",
+                .onChange = [](bool value) { aurora_set_ao_denoise(value); },
+                .isDisabled = [] { return !getSettings().game.enableAmbientOcclusion.getValue(); },
+            });
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoFogFadeStrength,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionFogFadeStrength,
+                .title = "Ambient Occlusion Fog Fade",
+                .helpText = "How aggressively ambient occlusion fades into the distance fog. Higher "
+                            "removes AO sooner as the haze builds, so distant geometry isn't shaded "
+                            "over the fog; 100% matches the fog exactly.",
+                .valueMin = 0,
+                .valueMax = 400,
+                .defaultValue = 100,
+                .step = 5,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoFogFadeStart,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionFogFadeStart,
+                .title = "Ambient Occlusion Fog Fade Start",
+                .helpText = "How much distance fog must build up before AO begins to fade. Lower makes "
+                            "AO start fading closer to the camera; higher keeps full AO until the fog "
+                            "is heavier.",
+                .valueMin = 0,
+                .valueMax = 90,
+                .defaultValue = 0,
+                .step = 5,
+            },
+            mPrelaunch);
+        static constexpr std::array<const char*, 4> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth"};
+        leftPane.register_control(
+            leftPane.add_select_button({
+                .key = "Ambient Occlusion Debug View",
+                .getValue =
+                    [] {
+                        const int m = getSettings().game.aoDebugMode.getValue();
+                        return kAoDebugModes[(m >= 0 && m < 4) ? m : 0];
+                    },
+                .isModified = [] { return getSettings().game.aoDebugMode.getValue() != 0; },
+            }),
+            rightPane, [](Pane& pane) {
+                for (int i = 0; i < static_cast<int>(kAoDebugModes.size()); i++) {
+                    pane.add_button({
+                            .text = kAoDebugModes[i],
+                            .isSelected = [i] { return getSettings().game.aoDebugMode.getValue() == i; },
+                        })
+                        .on_pressed([i] {
+                            mDoAud_seStartMenu(kSoundItemChange);
+                            getSettings().game.aoDebugMode.setValue(i);
+                            aurora_set_ao_debug(i);
+                            config::Save();
+                        });
+                }
+                pane.add_rml("Developer aid for verifying the ambient occlusion inputs. "
+                             "Occlusion: filtered AO as grayscale. Normals: view-space surface "
+                             "orientation as colour. Depth: linearized depth as repeating bands.");
             });
     });
 

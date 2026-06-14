@@ -194,6 +194,20 @@
       ]
     },
     {
+      "name": "windows-msvc-release",
+      "displayName": "Windows (MSVC) Release",
+      "inherits": [
+        "release",
+        "windows-msvc"
+      ],
+      "cacheVariables": {
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": {
+          "type": "BOOL",
+          "value": false
+        }
+      }
+    },
+    {
       "name": "windows-arm64-msvc",
       "displayName": "Windows ARM64 (MSVC)",
       "generator": "Ninja",
@@ -685,6 +699,12 @@
       "configurePreset": "windows-msvc-relwithdebinfo",
       "description": "Windows (MSVC) release build with debug info",
       "displayName": "Windows (MSVC) RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "description": "Windows (MSVC) optimized release build (LTO)",
+      "displayName": "Windows (MSVC) Release"
     },
     {
       "name": "windows-clang-debug",

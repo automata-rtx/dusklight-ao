@@ -11,9 +11,6 @@ UserSettings g_userSettings = {
         .enableFpsOverlay {"game.enableFpsOverlay", false},
         .fpsOverlayCorner {"game.fpsOverlayCorner", 0},
         .maxFrameRate {"video.maxFrameRate", 240},
-        .rememberWindowSize {"video.rememberWindowSize", false},
-        .lastWindowWidth {"video.lastWindowWidth", 0},
-        .lastWindowHeight {"video.lastWindowHeight", 0},
     },
 
     .audio = {
@@ -70,6 +67,16 @@ UserSettings g_userSettings = {
         .enableTextureReplacements {"game.enableTextureReplacements", true},
         .enableFrameInterpolation {"game.enableFrameInterpolation", FrameInterpMode::Off},
         .internalResolutionScale {"game.internalResolutionScale", 0},
+        .enableAmbientOcclusion {"game.enableAmbientOcclusion", true},
+        .aoQuality {"game.aoQuality", 3},
+        .aoDebugMode {"game.aoDebugMode", 0},
+        .aoResolution {"game.aoResolution", 1},
+        .aoDenoise {"game.aoDenoise", true},
+        .aoRadius {"game.aoRadius", 1.0f},
+        .aoIntensity {"game.aoIntensity", 1.0f},
+        .aoPower {"game.aoPower", 2.2f},
+        .aoFogFadeStrength {"game.aoFogFadeStrength", 1.0f},
+        .aoFogFadeStart {"game.aoFogFadeStart", 0.0f},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableMapBackground {"game.enableMapBackground", true},
@@ -203,9 +210,6 @@ void registerSettings() {
     Register(g_userSettings.video.enableFpsOverlay);
     Register(g_userSettings.video.fpsOverlayCorner);
     Register(g_userSettings.video.maxFrameRate);
-    Register(g_userSettings.video.rememberWindowSize);
-    Register(g_userSettings.video.lastWindowWidth);
-    Register(g_userSettings.video.lastWindowHeight);
 
     // Audio
     Register(g_userSettings.audio.masterVolume);
@@ -256,6 +260,16 @@ void registerSettings() {
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.enableTextureReplacements);
     Register(g_userSettings.game.internalResolutionScale);
+    Register(g_userSettings.game.enableAmbientOcclusion);
+    Register(g_userSettings.game.aoQuality);
+    Register(g_userSettings.game.aoDebugMode);
+    Register(g_userSettings.game.aoResolution);
+    Register(g_userSettings.game.aoDenoise);
+    Register(g_userSettings.game.aoRadius);
+    Register(g_userSettings.game.aoIntensity);
+    Register(g_userSettings.game.aoPower);
+    Register(g_userSettings.game.aoFogFadeStrength);
+    Register(g_userSettings.game.aoFogFadeStart);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.shadowResolutionMultiplier);
     Register(g_userSettings.game.enableMapBackground);

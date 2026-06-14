@@ -134,9 +134,6 @@ struct UserSettings {
         ConfigVar<bool> enableFpsOverlay;
         ConfigVar<int> fpsOverlayCorner;
         ConfigVar<int> maxFrameRate;
-        ConfigVar<bool> rememberWindowSize;
-        ConfigVar<int> lastWindowWidth;
-        ConfigVar<int> lastWindowHeight;
     } video;
 
     struct {
@@ -196,6 +193,16 @@ struct UserSettings {
         ConfigVar<bool> enableTextureReplacements;
         ConfigVar<FrameInterpMode> enableFrameInterpolation;
         ConfigVar<int> internalResolutionScale;
+        ConfigVar<bool> enableAmbientOcclusion;
+        ConfigVar<int> aoQuality;    // 0=low, 1=medium, 2=high, 3=ultra
+        ConfigVar<int> aoDebugMode;
+        ConfigVar<int> aoResolution; // 0=full, 1=half, 2=quarter
+        ConfigVar<bool> aoDenoise;
+        ConfigVar<float> aoRadius;
+        ConfigVar<float> aoIntensity;
+        ConfigVar<float> aoPower;
+        ConfigVar<float> aoFogFadeStrength; // how aggressively AO fades with distance fog
+        ConfigVar<float> aoFogFadeStart;    // fog level before AO starts to fade
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableMapBackground;

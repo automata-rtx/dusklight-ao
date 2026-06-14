@@ -259,13 +259,6 @@ void main01(void) {
                 dusk::ui::handle_event(event->sdl);
                 dusk::g_imguiConsole.HandleSDLEvent(event->sdl);
                 break;
-            case AURORA_WINDOW_RESIZED:
-                if (dusk::getSettings().video.rememberWindowSize && !dusk::getSettings().video.enableFullscreen) {
-                    dusk::getSettings().video.lastWindowWidth.setValue(event->windowSize.width);
-                    dusk::getSettings().video.lastWindowHeight.setValue(event->windowSize.height);
-                    dusk::config::Save();
-                }
-                break;
             case AURORA_DISPLAY_SCALE_CHANGED:
                 dusk::ImGuiEngine_Initialize(event->windowSize.scale);
                 break;
@@ -287,6 +280,19 @@ void main01(void) {
 
         dusk::lastFrameAuroraStats = *aurora_get_stats();
         mDoGph_gInf_c::updateRenderSize();
+
+        // Push live ambient-occlusion settings each frame so tuning applies immediately.
+        {
+            const auto& s = dusk::getSettings().game;
+            aurora_set_ao_enabled(s.enableAmbientOcclusion.getValue());
+            aurora_set_ao_debug(s.aoDebugMode.getValue());
+            aurora_set_ao_quality(s.aoQuality.getValue());
+            aurora_set_ao_tuning(s.aoRadius.getValue(), s.aoIntensity.getValue(), s.aoPower.getValue());
+            const int aoResIdx = s.aoResolution.getValue();
+            aurora_set_ao_resolution(aoResIdx == 0 ? 1 : (aoResIdx == 1 ? 2 : 4));
+            aurora_set_ao_denoise(s.aoDenoise.getValue());
+            aurora_set_ao_fog_fade(s.aoFogFadeStrength.getValue(), s.aoFogFadeStart.getValue());
+        }
 
         dusk::ui::update();
 
@@ -591,18 +597,8 @@ int game_main(int argc, char* argv[]) {
         config.startFullscreen = dusk::getSettings().video.enableFullscreen;
         config.windowPosX = -1;
         config.windowPosY = -1;
-
-        const int lastWindowWidth = dusk::getSettings().video.lastWindowWidth.getValue();
-        const int lastWindowHeight = dusk::getSettings().video.lastWindowHeight.getValue();
-
-        if (dusk::getSettings().video.rememberWindowSize && lastWindowWidth > 0 && lastWindowHeight > 0) {
-            config.windowWidth = lastWindowWidth;
-            config.windowHeight = lastWindowHeight;
-        } else {
-            config.windowWidth = defaultWindowWidth * 2;
-            config.windowHeight = defaultWindowHeight * 2;
-        }
-
+        config.windowWidth = defaultWindowWidth * 2;
+        config.windowHeight = defaultWindowHeight * 2;
         config.desiredBackend = ResolveDesiredBackend(parsed_arg_options);
         config.logCallback = &aurora_log_callback;
         config.logLevel = startupLogLevel;
@@ -631,6 +627,8 @@ int game_main(int argc, char* argv[]) {
         AuroraSetViewportPolicy(AURORA_VIEWPORT_STRETCH);
     }
     VISetFrameBufferScale(dusk::getSettings().game.internalResolutionScale.getValue());
+    aurora_set_ao_enabled(dusk::getSettings().game.enableAmbientOcclusion.getValue());
+    aurora_set_ao_debug(dusk::getSettings().game.aoDebugMode.getValue());
     switch (dusk::getSettings().game.resampler.getValue()) {
     case dusk::Resampler::Area:
         aurora_set_resampler(SAMPLER_AREA);

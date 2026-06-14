@@ -48,6 +48,7 @@
 
 #if TARGET_PC
 #include <SDL3/SDL_video.h>
+#include <aurora/aurora.h>
 #include "aurora/lib/window.hpp"
 #include "d/actor/d_a_horse.h"
 #include "dusk/dusk.h"
@@ -2351,6 +2352,17 @@ int mDoGph_Painter() {
                 dKy_setLight_again();
             }
 #endif
+            // With screen-space AO enabled, the "priority 0 B" fog/particles (which
+            // normally draw before the AO apply) are deferred to just after it, so AO
+            // lands on the solid world behind them instead of darkening the fog. They
+            // are depth-tested, so layering is unchanged. AO off (or non-PC) keeps the
+            // original draw order.
+#ifdef TARGET_PC
+            const bool aoDeferPri0B = dusk::getSettings().game.enableAmbientOcclusion.getValue();
+#else
+            const bool aoDeferPri0B = false;
+#endif
+
             GX_DEBUG_GROUP(dComIfGd_drawOpaListSky);
             GX_DEBUG_GROUP(dComIfGd_drawXluListSky);
 
@@ -2367,12 +2379,16 @@ int mDoGph_Painter() {
             GX_DEBUG_GROUP(dComIfGd_drawOpaListDarkBG);
             GX_DEBUG_GROUP(dComIfGd_drawOpaListMiddle);
 
-            if (fapGmHIO_getParticle()) {
-                GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_B, &draw_info);
-            }
+            // The "priority 0 B" fog/particles normally draw here (deferred past the
+            // AO apply when AO is on; see the note above).
+            if (!aoDeferPri0B) {
+                if (fapGmHIO_getParticle()) {
+                    GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_B, &draw_info);
+                }
 
-            if (fapGmHIO_getParticle()) {
-                GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_B, &draw_info);
+                if (fapGmHIO_getParticle()) {
+                    GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_B, &draw_info);
+                }
             }
 
             #if DEBUG
@@ -2419,6 +2435,26 @@ int mDoGph_Painter() {
 
             fapGm_HIO_c::startCpuTimer();
             #endif
+
+#ifdef TARGET_PC
+            // Apply screen-space AO to the EFB here: the opaque world (and thus the
+            // depth buffer) is complete, but the translucent terrain, water, and the
+            // fog / particle effects below have not been drawn yet, so AO darkens the
+            // solid world without darkening those effects.
+            aurora_apply_ao_now();
+
+            // Deferred "priority 0 B" fog/particles (see above): drawn here, after the
+            // AO apply, so AO darkens the world behind them while they stay bright.
+            if (aoDeferPri0B) {
+                if (fapGmHIO_getParticle()) {
+                    GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_B, &draw_info);
+                }
+
+                if (fapGmHIO_getParticle()) {
+                    GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_B, &draw_info);
+                }
+            }
+#endif
 
             GX_DEBUG_GROUP(dComIfGd_drawXluListBG);
             GX_DEBUG_GROUP(dComIfGd_drawXluListDarkBG);
