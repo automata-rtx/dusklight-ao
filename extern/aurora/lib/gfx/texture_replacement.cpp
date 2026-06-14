@@ -65,14 +65,6 @@ struct SelectedCache {
   std::list<aurora::texture::ReplacementKey>::iterator lruIt;
 };
 
-struct TlutMetadata {
-  uint32_t size = 0;
-  uint32_t format = 0;
-  uint16_t entries = 0;
-  bool valid = false;
-  aurora::ByteBuffer data;
-};
-
 struct SourceKeyHash {
   size_t operator()(const aurora::texture::TextureSourceKey& key) const noexcept {
     return absl::HashOf(key.textureHash, key.tlutHash, key.width, key.height, key.format, key.hasTlut);
@@ -100,9 +92,6 @@ uint64_t s_replacementCacheBytes = 0;
 uint64_t s_nextRegistrationId = 1;
 uint64_t s_nextSequence = 1;
 uint32_t s_sourceEntryCount = 0;
-
-absl::flat_hash_map<const GXTlutObj*, TlutMetadata> s_pendingTluts;
-std::array<TlutMetadata, MaxTluts> s_loadedTluts{};
 
 bool iequals_ascii(std::string_view lhs, std::string_view rhs) noexcept {
   if (lhs.size() != rhs.size()) {
@@ -209,14 +198,22 @@ uint32_t texture_base_level_size(const GXTexObj_& obj) noexcept {
 }
 
 std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
+  if (!is_palette_format(obj.format()) || obj.tlut >= g_gxState.loadedTluts.size()) {
     return std::nullopt;
   }
 
-  const auto& tlut = s_loadedTluts[obj.tlut];
+  // Source the palette from the GX state that the command processor reconstructs in render
+  // order on the worker (populated by the GX_LOAD_AURORA_TLUT FIFO command). This is the exact
+  // TLUT the texture conversion uses for this draw, so the replacement hash stays in lockstep
+  // with the palette actually bound here. The replacement system formerly kept its own copy
+  // updated inline on the main thread; once texture resolution moved to the render worker, that
+  // copy desynced whenever a TLUT slot was reused within a frame, producing the wrong tlutHash.
+  const auto& tlut = g_gxState.loadedTluts[obj.tlut];
+  const auto* tlutData = static_cast<const uint8_t*>(tlut.data);
+  const size_t tlutDataSize = static_cast<size_t>(tlut.numEntries) * sizeof(uint16_t);
   const uint32_t textureSize = texture_base_level_size(obj);
   const auto* textureData = static_cast<const uint8_t*>(obj.data);
-  if (!tlut.valid || textureData == nullptr || textureSize == 0) {
+  if (tlutData == nullptr || tlutDataSize == 0 || textureData == nullptr || textureSize == 0) {
     return std::nullopt;
   }
 
@@ -251,21 +248,21 @@ std::optional<uint64_t> compute_referenced_tlut_hash(const GXTexObj_& obj) noexc
     return std::nullopt;
   }
 
-  size_t tlutSize = 2 * (static_cast<size_t>(maxIndex) + 1 - minIndex);
+  const size_t tlutSize = 2 * (static_cast<size_t>(maxIndex) + 1 - minIndex);
   const size_t tlutOffset = 2 * static_cast<size_t>(minIndex);
-  if (tlutOffset + tlutSize > tlut.data.size()) {
+  if (tlutOffset + tlutSize > tlutDataSize) {
     return std::nullopt;
   }
-  return XXH64(tlut.data.data() + tlutOffset, tlutSize, 0);
+  return XXH64(tlutData + tlutOffset, tlutSize, 0);
 }
 
-const TlutMetadata* get_loaded_tlut(const GXTexObj_& obj) noexcept {
-  if (!is_palette_format(obj.format()) || obj.tlut >= s_loadedTluts.size()) {
+const GXTlutObj_* get_loaded_tlut(const GXTexObj_& obj) noexcept {
+  if (!is_palette_format(obj.format()) || obj.tlut >= g_gxState.loadedTluts.size()) {
     return nullptr;
   }
 
-  const auto& tlut = s_loadedTluts[obj.tlut];
-  return tlut.valid ? &tlut : nullptr;
+  const auto& tlut = g_gxState.loadedTluts[obj.tlut];
+  return tlut.data != nullptr ? &tlut : nullptr;
 }
 
 bool ensure_directory(const std::filesystem::path& dir) noexcept {
@@ -765,13 +762,13 @@ bool dump_editable_texture_dds(const aurora::texture::TextureSourceKey& key, con
 
   aurora::gfx::ConvertedTexture pixels;
   if (is_palette_format(obj.format())) {
-    const TlutMetadata* tlut = get_loaded_tlut(obj);
+    const GXTlutObj_* tlut = get_loaded_tlut(obj);
     if (tlut == nullptr) {
       return false;
     }
-    pixels = aurora::gfx::convert_texture_palette(obj.format(), texWidth, texHeight, 1, texData,
-                                                  static_cast<GXTlutFmt>(tlut->format), tlut->entries,
-                                                  {tlut->data.data(), tlut->data.size()});
+    pixels = aurora::gfx::convert_texture_palette(
+        obj.format(), texWidth, texHeight, 1, texData, tlut->format, tlut->numEntries,
+        {static_cast<const uint8_t*>(tlut->data), static_cast<size_t>(tlut->numEntries) * sizeof(uint16_t)});
   } else {
     pixels = aurora::gfx::convert_texture(obj.format(), texWidth, texHeight, 1, texData);
   }
@@ -998,48 +995,6 @@ void initialize() noexcept {}
 
 void shutdown() noexcept {
   texture::clear_replacements();
-  s_pendingTluts.clear();
-  for (auto& tlut : s_loadedTluts) {
-    tlut = {};
-  }
-}
-
-void register_tlut(const GXTlutObj* obj, const void* data, GXTlutFmt format, uint16_t entries) noexcept {
-  if (obj == nullptr || data == nullptr) {
-    return;
-  }
-
-  const size_t sz = static_cast<size_t>(entries) * 2;
-  ByteBuffer buffer{sz};
-  std::memcpy(buffer.data(), static_cast<const uint8_t*>(data), sz);
-  s_pendingTluts[obj] = {
-      .size = static_cast<uint32_t>(entries) * 2,
-      .format = static_cast<uint32_t>(format),
-      .entries = entries,
-      .valid = true,
-      .data = std::move(buffer),
-  };
-}
-
-void load_tlut(const GXTlutObj* obj, uint32_t idx) noexcept {
-  if (idx >= s_loadedTluts.size()) {
-    return;
-  }
-
-  const auto it = s_pendingTluts.find(obj);
-  if (it == s_pendingTluts.end()) {
-    s_loadedTluts[idx] = {};
-    return;
-  }
-
-  const auto& pending = it->second;
-  s_loadedTluts[idx] = {
-      .size = pending.size,
-      .format = pending.format,
-      .entries = pending.entries,
-      .valid = pending.valid,
-      .data = pending.data.clone(),
-  };
 }
 
 std::optional<TextureHandle> find_replacement(const GXTexObj_& obj) noexcept {
