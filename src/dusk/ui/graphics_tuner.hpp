@@ -47,6 +47,16 @@ enum class GraphicsOption {
     BloomMultiplier,
     DepthOfFieldMode,
     TextureReplacements,
+    AmbientOcclusion,
+    AmbientOcclusionQuality,
+    AmbientOcclusionResolution,
+    AmbientOcclusionRadius,
+    AmbientOcclusionStrength,
+    AmbientOcclusionContrast,
+    AmbientOcclusionFogFadeStrength,
+    AmbientOcclusionFogFadeStart,
+    AmbientOcclusionNormalSmoothAngle,
+    AmbientOcclusionNormalSmoothRadius,
 };
 
 Rml::String format_graphics_setting_value(GraphicsOption option, int value);

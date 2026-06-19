@@ -128,7 +128,10 @@ struct UpdateCheckTask {
     UpdateCheckTask() {
         worker = std::thread([this] {
             try {
-                result = update_check::check_latest_github_release("TwilitRealm", "dusklight");
+                // Check this AO fork's own releases, not upstream Dusklight -- upstream
+                // 1.4.1 would otherwise read as "newer" than the v1.4.1-AO prerelease string
+                // and offer an "update" that would replace the AO build.
+                result = update_check::check_latest_github_release("automata-rtx", "dusklight-ao");
             } catch (const std::exception& e) {
                 result = {
                     .status = update_check::Status::Failed,

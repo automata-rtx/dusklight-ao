@@ -58,6 +58,26 @@ int get_value(GraphicsOption option) {
         return static_cast<int>(getSettings().game.depthOfFieldMode.getValue());
     case GraphicsOption::TextureReplacements:
         return getSettings().game.enableTextureReplacements.getValue();
+    case GraphicsOption::AmbientOcclusion:
+        return getSettings().game.enableAmbientOcclusion.getValue() ? 1 : 0;
+    case GraphicsOption::AmbientOcclusionQuality:
+        return getSettings().game.aoQuality.getValue();
+    case GraphicsOption::AmbientOcclusionResolution:
+        return getSettings().game.aoResolution.getValue();
+    case GraphicsOption::AmbientOcclusionRadius:
+        return static_cast<int>(getSettings().game.aoRadius.getValue() * 100.0f + 0.5f);
+    case GraphicsOption::AmbientOcclusionStrength:
+        return static_cast<int>(getSettings().game.aoIntensity.getValue() * 100.0f + 0.5f);
+    case GraphicsOption::AmbientOcclusionContrast:
+        return static_cast<int>(getSettings().game.aoPower.getValue() * 100.0f + 0.5f);
+    case GraphicsOption::AmbientOcclusionFogFadeStrength:
+        return static_cast<int>(getSettings().game.aoFogFadeStrength.getValue() * 100.0f + 0.5f);
+    case GraphicsOption::AmbientOcclusionFogFadeStart:
+        return static_cast<int>(getSettings().game.aoFogFadeStart.getValue() * 100.0f + 0.5f);
+    case GraphicsOption::AmbientOcclusionNormalSmoothAngle:
+        return static_cast<int>(getSettings().game.aoNormalSmoothAngle.getValue() + 0.5f);
+    case GraphicsOption::AmbientOcclusionNormalSmoothRadius:
+        return static_cast<int>(getSettings().game.aoNormalSmoothRadius.getValue() + 0.5f);
     }
     return 0;
 }
@@ -100,6 +120,38 @@ void set_value(GraphicsOption option, int value) {
         break;
     case GraphicsOption::TextureReplacements:
         texture_replacements::set_enabled(static_cast<bool>(value));
+        break;
+    case GraphicsOption::AmbientOcclusion:
+        getSettings().game.enableAmbientOcclusion.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
+        aurora_set_ao_enabled(static_cast<bool>(std::clamp(value, 0, 1)));
+        break;
+    case GraphicsOption::AmbientOcclusionQuality:
+        getSettings().game.aoQuality.setValue(std::clamp(value, 0, 3));
+        aurora_set_ao_quality(std::clamp(value, 0, 3));
+        break;
+    case GraphicsOption::AmbientOcclusionResolution:
+        getSettings().game.aoResolution.setValue(std::clamp(value, 0, 2));
+        break;
+    case GraphicsOption::AmbientOcclusionRadius:
+        getSettings().game.aoRadius.setValue(std::clamp(value, 25, 800) / 100.0f);
+        break;
+    case GraphicsOption::AmbientOcclusionStrength:
+        getSettings().game.aoIntensity.setValue(std::clamp(value, 0, 300) / 100.0f);
+        break;
+    case GraphicsOption::AmbientOcclusionContrast:
+        getSettings().game.aoPower.setValue(std::clamp(value, 50, 400) / 100.0f);
+        break;
+    case GraphicsOption::AmbientOcclusionFogFadeStrength:
+        getSettings().game.aoFogFadeStrength.setValue(std::clamp(value, 0, 400) / 100.0f);
+        break;
+    case GraphicsOption::AmbientOcclusionFogFadeStart:
+        getSettings().game.aoFogFadeStart.setValue(std::clamp(value, 0, 90) / 100.0f);
+        break;
+    case GraphicsOption::AmbientOcclusionNormalSmoothAngle:
+        getSettings().game.aoNormalSmoothAngle.setValue(static_cast<float>(std::clamp(value, 5, 89)));
+        break;
+    case GraphicsOption::AmbientOcclusionNormalSmoothRadius:
+        getSettings().game.aoNormalSmoothRadius.setValue(static_cast<float>(std::clamp(value, 2, 24)));
         break;
     }
 }
@@ -240,6 +292,40 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
         return fmt::format("{}%", value);
     case GraphicsOption::TextureReplacements:
         return static_cast<bool>(value) ? "On" : "Off";
+    case GraphicsOption::AmbientOcclusion:
+        return static_cast<bool>(value) ? "On" : "Off";
+    case GraphicsOption::AmbientOcclusionQuality:
+        switch (value) {
+        case 0:
+            return "Low";
+        case 1:
+            return "Medium";
+        case 2:
+            return "High";
+        case 3:
+            return "Ultra";
+        }
+        return "Ultra";
+    case GraphicsOption::AmbientOcclusionResolution:
+        switch (value) {
+        case 0:
+            return "Full";
+        case 1:
+            return "Half";
+        case 2:
+            return "Quarter";
+        }
+        return "Half";
+    case GraphicsOption::AmbientOcclusionRadius:
+    case GraphicsOption::AmbientOcclusionStrength:
+    case GraphicsOption::AmbientOcclusionContrast:
+    case GraphicsOption::AmbientOcclusionFogFadeStrength:
+    case GraphicsOption::AmbientOcclusionFogFadeStart:
+        return fmt::format("{}%", value);
+    case GraphicsOption::AmbientOcclusionNormalSmoothAngle:
+        return fmt::format("{}\xC2\xB0", value); // degrees
+    case GraphicsOption::AmbientOcclusionNormalSmoothRadius:
+        return fmt::format("{} px", value);
     }
     return "";
 }
