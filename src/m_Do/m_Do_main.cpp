@@ -292,8 +292,13 @@ void main01(void) {
             aurora_set_ao_tuning(s.aoRadius.getValue(), s.aoIntensity.getValue(), s.aoPower.getValue());
             const int aoResIdx = s.aoResolution.getValue();
             aurora_set_ao_resolution(aoResIdx == 0 ? 1 : (aoResIdx == 1 ? 2 : 4));
-            aurora_set_ao_fog_fade(s.aoFogFadeStrength.getValue(), s.aoFogFadeStart.getValue());
-            aurora_set_ao_normal_smooth(s.aoNormalSmoothAngle.getValue(), s.aoNormalSmoothRadius.getValue());
+            aurora_set_ao_normal_smooth(s.aoNormalSmooth.getValue());
+            aurora_set_ao_thickness(s.aoThickness.getValue());
+            aurora_set_ao_temporal(s.aoTemporal.getValue());
+            aurora_set_ao_temporal_frames(s.aoTemporalFrames.getValue());
+            aurora_set_ao_denoise_sharpness(s.aoSharpness.getValue() / 100.0f);
+            aurora_set_ao_post_filter(s.aoPostFilter.getValue());
+            aurora_set_ao_motion_response(s.aoMotionResponse.getValue() / 100.0f);
         }
 
         dusk::ui::update();

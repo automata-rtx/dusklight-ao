@@ -73,11 +73,14 @@ UserSettings g_userSettings = {
         .aoResolution {"game.aoResolution", 1},
         .aoRadius {"game.aoRadius", 1.0f},
         .aoIntensity {"game.aoIntensity", 1.5f},
-        .aoPower {"game.aoPower", 2.2f},
-        .aoFogFadeStrength {"game.aoFogFadeStrength", 1.0f},
-        .aoFogFadeStart {"game.aoFogFadeStart", 0.0f},
-        .aoNormalSmoothAngle {"game.aoNormalSmoothAngle", 65.0f},
-        .aoNormalSmoothRadius {"game.aoNormalSmoothRadius", 24.0f},
+        .aoPower {"game.aoPower", 1.5f},
+        .aoNormalSmooth {"game.aoNormalSmooth", true},
+        .aoThickness {"game.aoThickness", 1.5f},
+        .aoTemporal {"game.aoTemporal", true},
+        .aoTemporalFrames {"game.aoTemporalFrames", 5},
+        .aoSharpness {"game.aoSharpness", 50},
+        .aoPostFilter {"game.aoPostFilter", false},
+        .aoMotionResponse {"game.aoMotionResponse", 40},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableMapBackground {"game.enableMapBackground", true},
@@ -287,10 +290,13 @@ void registerSettings() {
     Register(g_userSettings.game.aoRadius);
     Register(g_userSettings.game.aoIntensity);
     Register(g_userSettings.game.aoPower);
-    Register(g_userSettings.game.aoFogFadeStrength);
-    Register(g_userSettings.game.aoFogFadeStart);
-    Register(g_userSettings.game.aoNormalSmoothAngle);
-    Register(g_userSettings.game.aoNormalSmoothRadius);
+    Register(g_userSettings.game.aoNormalSmooth);
+    Register(g_userSettings.game.aoThickness);
+    Register(g_userSettings.game.aoTemporal);
+    Register(g_userSettings.game.aoTemporalFrames);
+    Register(g_userSettings.game.aoSharpness);
+    Register(g_userSettings.game.aoPostFilter);
+    Register(g_userSettings.game.aoMotionResponse);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.shadowResolutionMultiplier);
     Register(g_userSettings.game.enableMapBackground);

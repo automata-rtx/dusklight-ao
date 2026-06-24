@@ -1012,71 +1012,110 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                             "sharpens it.",
                 .valueMin = 50,
                 .valueMax = 400,
-                .defaultValue = 220,
+                .defaultValue = 150,
                 .step = 10,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoFogFadeStrength,
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoThickness,
             GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionFogFadeStrength,
-                .title = "Ambient Occlusion Fog Fade",
-                .helpText = "How aggressively ambient occlusion fades into the distance fog. Higher "
-                            "removes AO sooner as the haze builds, so distant geometry isn't shaded "
-                            "over the fog; 100% matches the fog exactly.",
-                .valueMin = 0,
+                .option = GraphicsOption::AmbientOcclusionThickness,
+                .title = "Ambient Occlusion Thickness",
+                .helpText = "How thick occluders are treated in the occlusion search. Higher darkens "
+                            "the deepest part of contacts and crevices and widens coverage; lower keeps "
+                            "the effect thin and local. Raise this to deepen crevices.",
+                .valueMin = 25,
                 .valueMax = 400,
-                .defaultValue = 100,
+                .defaultValue = 150,
                 .step = 5,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoFogFadeStart,
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmooth,
             GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionFogFadeStart,
-                .title = "Ambient Occlusion Fog Fade Start",
-                .helpText = "How much distance fog must build up before AO begins to fade. Lower makes "
-                            "AO start fading closer to the camera; higher keeps full AO until the fog "
-                            "is heavier.",
-                .valueMin = 0,
-                .valueMax = 90,
-                .defaultValue = 0,
-                .step = 5,
-            },
-            mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmoothAngle,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionNormalSmoothAngle,
-                .title = "Ambient Occlusion Normal Smoothing",
+                .option = GraphicsOption::AmbientOcclusionNormalSmooth,
+                .title = "Normal Smoothing",
                 .helpText = "Smooths the surface orientation the occlusion uses so low-poly geometry "
-                            "doesn't shade as visible facets. Higher merges wider angles (smoother on "
-                            "blocky models); lower preserves sharper edges. Watch the Normals debug view "
-                            "while tuning.",
-                .valueMin = 5,
-                .valueMax = 89,
-                .defaultValue = 65,
+                            "doesn't shade as visible facets. On is recommended; turn it off to see the "
+                            "raw per-triangle shading.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 1,
                 .step = 1,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmoothRadius,
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoTemporal,
             GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionNormalSmoothRadius,
-                .title = "Ambient Occlusion Normal Smoothing Radius",
-                .helpText = "How far the normal smoothing gathers, in pixels. Larger spreads the "
-                            "smoothing over bigger facets (helpful for very blocky geometry) at some "
-                            "performance cost; smaller is tighter and cheaper.",
-                .valueMin = 2,
-                .valueMax = 24,
-                .defaultValue = 24,
+                .option = GraphicsOption::AmbientOcclusionTemporal,
+                .title = "Temporal Reconstruction",
+                .helpText = "Accumulates the effect across frames using camera motion, for a much "
+                            "cleaner, more detailed result with less shimmer. Distributes the work over "
+                            "frames so it is also cheaper. Off uses single-frame spatial reconstruction.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 1,
                 .step = 1,
             },
             mPrelaunch);
-        static constexpr std::array<const char*, 4> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth"};
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoTemporalFrames,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionTemporalFrames,
+                .title = "Temporal Accumulation",
+                .helpText = "How many frames the temporal reconstruction blends together. Fewer frames "
+                            "are sharper and more responsive in motion; more frames are smoother and "
+                            "more stable but add a little motion blur. Only used when Temporal "
+                            "Reconstruction is on.",
+                .valueMin = 1,
+                .valueMax = 12,
+                .defaultValue = 5,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoSharpness,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionSharpness,
+                .title = "Ambient Occlusion Sharpness",
+                .helpText = "Sharpness of the spatial denoise that cleans each frame. Higher keeps more "
+                            "fine detail (a little noisier); lower is smoother and softer.",
+                .valueMin = 0,
+                .valueMax = 100,
+                .defaultValue = 50,
+                .step = 5,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoPostFilter,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionPostFilter,
+                .title = "Spatial Filter",
+                .helpText = "A light edge-aware blur applied after temporal accumulation. Cleans up "
+                            "residual noise/shimmer for a small loss of sharpness. Off keeps the pure "
+                            "accumulated result.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoMotionResponse,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionMotionResponse,
+                .title = "Temporal Motion Response",
+                .helpText = "How quickly the temporal effect tracks the geometry while the camera "
+                            "moves. Higher reduces ghosting/lag in motion (a little noisier while "
+                            "moving); lower keeps more accumulation. Watch the Motion debug view while "
+                            "tuning. Only used with Temporal on.",
+                .valueMin = 0,
+                .valueMax = 100,
+                .defaultValue = 40,
+                .step = 5,
+            },
+            mPrelaunch);
+        static constexpr std::array<const char*, 5> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion"};
         leftPane.register_control(
             leftPane.add_select_button({
                 .key = "Ambient Occlusion Debug View",
                 .getValue =
                     [] {
                         const int m = getSettings().game.aoDebugMode.getValue();
-                        return kAoDebugModes[(m >= 0 && m < 4) ? m : 0];
+                        return kAoDebugModes[(m >= 0 && m < static_cast<int>(kAoDebugModes.size())) ? m : 0];
                     },
                 .isModified = [] { return getSettings().game.aoDebugMode.getValue() != 0; },
             }),
@@ -1095,7 +1134,9 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 }
                 pane.add_rml("Developer aid for verifying the ambient occlusion inputs. "
                              "Occlusion: filtered AO as grayscale. Normals: view-space surface "
-                             "orientation as colour. Depth: linearized depth as repeating bands.");
+                             "orientation as colour. Depth: linearized depth as repeating bands. "
+                             "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
+                             "colour flow while the camera moves means reprojection is working.");
             });
     });
 

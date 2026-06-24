@@ -194,10 +194,13 @@ struct UserSettings {
         ConfigVar<float> aoRadius;
         ConfigVar<float> aoIntensity;
         ConfigVar<float> aoPower;
-        ConfigVar<float> aoFogFadeStrength; // how aggressively AO fades with distance fog
-        ConfigVar<float> aoFogFadeStart;    // fog level before AO starts to fade
-        ConfigVar<float> aoNormalSmoothAngle;  // max merge angle (deg) for normal de-faceting
-        ConfigVar<float> aoNormalSmoothRadius; // normal-smoothing gather radius (pixels)
+        ConfigVar<bool> aoNormalSmooth;        // normal de-faceting smoothing (on/off; strength is fixed)
+        ConfigVar<float> aoThickness;          // occluder thickness multiplier (crevice darkness / coverage)
+        ConfigVar<bool> aoTemporal;            // temporal reconstruction (camera-reprojected accumulation)
+        ConfigVar<int> aoTemporalFrames;       // temporal accumulation depth in frames (blur vs stability)
+        ConfigVar<int> aoSharpness;            // spatial pre-denoise sharpness (percent)
+        ConfigVar<bool> aoPostFilter;          // light spatial filter after accumulation
+        ConfigVar<int> aoMotionResponse;       // temporal motion-tracking strength (percent)
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableMapBackground;

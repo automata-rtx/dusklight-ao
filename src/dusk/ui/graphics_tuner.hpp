@@ -53,10 +53,13 @@ enum class GraphicsOption {
     AmbientOcclusionRadius,
     AmbientOcclusionStrength,
     AmbientOcclusionContrast,
-    AmbientOcclusionFogFadeStrength,
-    AmbientOcclusionFogFadeStart,
-    AmbientOcclusionNormalSmoothAngle,
-    AmbientOcclusionNormalSmoothRadius,
+    AmbientOcclusionNormalSmooth,
+    AmbientOcclusionThickness,
+    AmbientOcclusionTemporal,
+    AmbientOcclusionTemporalFrames,
+    AmbientOcclusionSharpness,
+    AmbientOcclusionPostFilter,
+    AmbientOcclusionMotionResponse,
 };
 
 Rml::String format_graphics_setting_value(GraphicsOption option, int value);

@@ -2346,6 +2346,15 @@ int mDoGph_Painter() {
 #ifndef TARGET_PC
             j3dSys.setViewMtx(camera_p->view.viewMtx);
 #endif
+#ifdef TARGET_PC
+            // Provide the main scene camera matrix to the AO so temporal reconstruction can
+            // reproject the previous frame. Only needed when temporal AO is on; only the first
+            // (main scene) call each frame is used. viewMtx is a 3x4 row-major matrix.
+            if (dusk::getSettings().game.enableAmbientOcclusion.getValue() &&
+                dusk::getSettings().game.aoTemporal.getValue()) {
+                aurora_set_ao_view_matrix(&camera_p->view.viewMtx[0][0]);
+            }
+#endif
             dKy_setLight();
 #if TARGET_PC
             if (dusk::frame_interp::is_enabled()) {
