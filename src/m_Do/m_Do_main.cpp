@@ -646,6 +646,7 @@ int game_main(int argc, char* argv[]) {
         aurora_set_resampler(SAMPLER_BILINEAR);
         break;
     }
+    aurora_set_fxaa_enabled(dusk::getSettings().game.enableFxaa.getValue());
 
     dusk::audio::SetMasterVolume(dusk::audio::MasterVolumeToLinear(dusk::getSettings().audio.masterVolume / 100.0f));
     dusk::audio::SetEnableReverb(dusk::getSettings().audio.enableReverb);

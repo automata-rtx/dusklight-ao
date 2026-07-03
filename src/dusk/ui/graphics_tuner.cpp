@@ -48,6 +48,8 @@ int get_value(GraphicsOption option) {
         return getSettings().game.shadowResolutionMultiplier.getValue();
     case GraphicsOption::Resampler:
         return static_cast<int>(getSettings().game.resampler.getValue());
+    case GraphicsOption::Fxaa:
+        return getSettings().game.enableFxaa.getValue() ? 1 : 0;
     case GraphicsOption::BloomMode:
         return static_cast<int>(getSettings().game.bloomMode.getValue());
     case GraphicsOption::BloomMultiplier:
@@ -113,6 +115,10 @@ void set_value(GraphicsOption option, int value) {
         }
         break;
     }
+    case GraphicsOption::Fxaa:
+        getSettings().game.enableFxaa.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
+        aurora_set_fxaa_enabled(static_cast<bool>(std::clamp(value, 0, 1)));
+        break;
     case GraphicsOption::BloomMode:
         getSettings().game.bloomMode.setValue(static_cast<BloomMode>(std::clamp(
             value, static_cast<int>(BloomMode::Off), static_cast<int>(BloomMode::Dusk))));
@@ -289,6 +295,8 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
             return "Area";
         }
         break;
+    case GraphicsOption::Fxaa:
+        return static_cast<bool>(value) ? "On" : "Off";
     case GraphicsOption::BloomMode:
         switch (static_cast<BloomMode>(value)) {
         case BloomMode::Off:

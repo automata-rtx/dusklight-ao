@@ -203,6 +203,7 @@ struct UserSettings {
         ConfigVar<int> aoMotionResponse;       // temporal motion-tracking strength (percent)
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
+        ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
         ConfigVar<bool> enableMapBackground;
         ConfigVar<bool> disableCutscenePillarboxing;
 

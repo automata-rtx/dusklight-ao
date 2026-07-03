@@ -83,6 +83,7 @@ UserSettings g_userSettings = {
         .aoMotionResponse {"game.aoMotionResponse", 40},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
+        .enableFxaa {"game.enableFxaa", false},
         .enableMapBackground {"game.enableMapBackground", true},
         .disableCutscenePillarboxing {"game.disableCutscenePillarboxing", false},
 

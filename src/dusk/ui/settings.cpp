@@ -385,6 +385,9 @@ const Rml::String kShadowResolutionHelpText =
     "and memory usage.";
 const Rml::String kResamplerHelpText =
     "Configure the sampling method used when scaling the internal resolution for final presentation.";
+const Rml::String kFxaaHelpText =
+    "Smooths jagged edges with a fast, full-screen anti-aliasing filter. Toggle this to compare "
+    "with and without; cheap on most hardware but adds a small amount of overall softness.";
 const Rml::String kBloomHelpText =
     "Configure the post-processing bloom effect. Classic uses the original bloom pass; Dusklight uses "
     "a higher-quality bloom pass.";
@@ -849,6 +852,16 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .valueMin = static_cast<int>(Resampler::Bilinear),
                 .valueMax = static_cast<int>(Resampler::Area),
                 .defaultValue = static_cast<int>(Resampler::Bilinear),
+            }, mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.enableFxaa,
+            GraphicsTunerProps{
+                .option = GraphicsOption::Fxaa,
+                .title = "FXAA",
+                .helpText = kFxaaHelpText,
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
+                .step = 1,
             }, mPrelaunch);
 
         leftPane.add_section("Post-Processing");
