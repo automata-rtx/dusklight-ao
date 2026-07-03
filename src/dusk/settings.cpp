@@ -299,6 +299,7 @@ void registerSettings() {
     Register(g_userSettings.game.aoPostFilter);
     Register(g_userSettings.game.aoMotionResponse);
     Register(g_userSettings.game.resampler);
+    Register(g_userSettings.game.enableFxaa);
     Register(g_userSettings.game.shadowResolutionMultiplier);
     Register(g_userSettings.game.enableMapBackground);
     Register(g_userSettings.game.disableCutscenePillarboxing);
