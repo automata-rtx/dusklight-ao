@@ -204,6 +204,10 @@ struct UserSettings {
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
+        // FSR1 spatial upscaler (EASU+RCAS), used instead of Resampler when actually upscaling;
+        // auto-falls back to Resampler when internal resolution isn't strictly below output
+        // resolution (supersampling, or an exact match). See aurora_set_fsr1_enabled.
+        ConfigVar<bool> enableFsr1;
         ConfigVar<bool> enableMapBackground;
         ConfigVar<bool> disableCutscenePillarboxing;
 

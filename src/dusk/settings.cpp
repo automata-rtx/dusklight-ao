@@ -84,6 +84,7 @@ UserSettings g_userSettings = {
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableFxaa {"game.enableFxaa", false},
+        .enableFsr1 {"game.enableFsr1", false},
         .enableMapBackground {"game.enableMapBackground", true},
         .disableCutscenePillarboxing {"game.disableCutscenePillarboxing", false},
 
@@ -300,6 +301,7 @@ void registerSettings() {
     Register(g_userSettings.game.aoMotionResponse);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.enableFxaa);
+    Register(g_userSettings.game.enableFsr1);
     Register(g_userSettings.game.shadowResolutionMultiplier);
     Register(g_userSettings.game.enableMapBackground);
     Register(g_userSettings.game.disableCutscenePillarboxing);

@@ -388,6 +388,11 @@ const Rml::String kResamplerHelpText =
 const Rml::String kFxaaHelpText =
     "Smooths jagged edges with a fast, full-screen anti-aliasing filter. Toggle this to compare "
     "with and without; cheap on most hardware but adds a small amount of overall softness.";
+const Rml::String kFsr1HelpText =
+    "Replaces Output Resampling with AMD FSR1, a sharper edge-aware upscale from internal to output "
+    "resolution. Looks best paired with FXAA. Only takes effect when Internal Resolution is set "
+    "below the display's native resolution; otherwise this has no effect and Output Resampling is "
+    "used as normal.";
 const Rml::String kBloomHelpText =
     "Configure the post-processing bloom effect. Classic uses the original bloom pass; Dusklight uses "
     "a higher-quality bloom pass.";
@@ -858,6 +863,16 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .option = GraphicsOption::Fxaa,
                 .title = "FXAA",
                 .helpText = kFxaaHelpText,
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
+                .step = 1,
+            }, mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.enableFsr1,
+            GraphicsTunerProps{
+                .option = GraphicsOption::Fsr1,
+                .title = "FSR1 Upscaling",
+                .helpText = kFsr1HelpText,
                 .valueMin = 0,
                 .valueMax = 1,
                 .defaultValue = 0,
