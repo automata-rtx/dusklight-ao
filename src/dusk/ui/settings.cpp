@@ -1178,7 +1178,7 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 5,
             },
             mPrelaunch);
-        static constexpr std::array<const char*, 5> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion"};
+        static constexpr std::array<const char*, 6> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion", "Distance Scale"};
         leftPane.register_control(
             leftPane.add_select_button({
                 .key = "Ambient Occlusion Debug View",
@@ -1206,7 +1206,11 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Occlusion: filtered AO as grayscale. Normals: view-space surface "
                              "orientation as colour. Depth: linearized depth as repeating bands. "
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
-                             "colour flow while the camera moves means reprojection is working.");
+                             "colour flow while the camera moves means reprojection is working. "
+                             "Distance Scale: how strongly AO Distance Scaling's radius boost is "
+                             "engaged per pixel (black = unboosted/near, white = fully boosted/far) "
+                             "-- shown regardless of whether that option is on, to confirm the "
+                             "underlying distance falloff is behaving before judging its visual effect.");
             });
     });
 
