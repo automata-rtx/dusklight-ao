@@ -71,6 +71,7 @@ UserSettings g_userSettings = {
         .aoQuality {"game.aoQuality", 2},
         .aoDebugMode {"game.aoDebugMode", 0},
         .aoResolution {"game.aoResolution", 1},
+        .aoPerformanceMode {"game.aoPerformanceMode", false},
         .aoRadius {"game.aoRadius", 1.0f},
         .aoIntensity {"game.aoIntensity", 1.5f},
         .aoPower {"game.aoPower", 1.5f},
@@ -85,7 +86,7 @@ UserSettings g_userSettings = {
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableFxaa {"game.enableFxaa", false},
         .enableFsr1 {"game.enableFsr1", false},
-        .enableFsr1Compute {"game.enableFsr1Compute", false},
+        .enableFsr1Compute {"game.enableFsr1Compute", true},
         .enableMapBackground {"game.enableMapBackground", true},
         .disableCutscenePillarboxing {"game.disableCutscenePillarboxing", false},
 
@@ -290,6 +291,7 @@ void registerSettings() {
     Register(g_userSettings.game.aoQuality);
     Register(g_userSettings.game.aoDebugMode);
     Register(g_userSettings.game.aoResolution);
+    Register(g_userSettings.game.aoPerformanceMode);
     Register(g_userSettings.game.aoRadius);
     Register(g_userSettings.game.aoIntensity);
     Register(g_userSettings.game.aoPower);

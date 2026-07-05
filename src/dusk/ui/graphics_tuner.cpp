@@ -70,6 +70,8 @@ int get_value(GraphicsOption option) {
         return getSettings().game.aoQuality.getValue();
     case GraphicsOption::AmbientOcclusionResolution:
         return getSettings().game.aoResolution.getValue();
+    case GraphicsOption::AmbientOcclusionPerformanceMode:
+        return getSettings().game.aoPerformanceMode.getValue() ? 1 : 0;
     case GraphicsOption::AmbientOcclusionRadius:
         return static_cast<int>(getSettings().game.aoRadius.getValue() * 100.0f + 0.5f);
     case GraphicsOption::AmbientOcclusionStrength:
@@ -155,6 +157,9 @@ void set_value(GraphicsOption option, int value) {
         break;
     case GraphicsOption::AmbientOcclusionResolution:
         getSettings().game.aoResolution.setValue(std::clamp(value, 0, 2));
+        break;
+    case GraphicsOption::AmbientOcclusionPerformanceMode:
+        getSettings().game.aoPerformanceMode.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
         break;
     case GraphicsOption::AmbientOcclusionRadius:
         getSettings().game.aoRadius.setValue(std::clamp(value, 25, 800) / 100.0f);
@@ -373,6 +378,7 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
     case GraphicsOption::AmbientOcclusionNormalSmooth:
     case GraphicsOption::AmbientOcclusionTemporal:
     case GraphicsOption::AmbientOcclusionPostFilter:
+    case GraphicsOption::AmbientOcclusionPerformanceMode:
         return static_cast<bool>(value) ? "On" : "Off";
     }
     return "";

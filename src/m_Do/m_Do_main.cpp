@@ -292,6 +292,7 @@ void main01(void) {
             aurora_set_ao_tuning(s.aoRadius.getValue(), s.aoIntensity.getValue(), s.aoPower.getValue());
             const int aoResIdx = s.aoResolution.getValue();
             aurora_set_ao_resolution(aoResIdx == 0 ? 1 : (aoResIdx == 1 ? 2 : 4));
+            aurora_set_ao_performance_mode(s.aoPerformanceMode.getValue());
             aurora_set_ao_normal_smooth(s.aoNormalSmooth.getValue());
             aurora_set_ao_thickness(s.aoThickness.getValue());
             aurora_set_ao_temporal(s.aoTemporal.getValue());

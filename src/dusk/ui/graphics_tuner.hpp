@@ -53,6 +53,7 @@ enum class GraphicsOption {
     AmbientOcclusion,
     AmbientOcclusionQuality,
     AmbientOcclusionResolution,
+    AmbientOcclusionPerformanceMode,
     AmbientOcclusionRadius,
     AmbientOcclusionStrength,
     AmbientOcclusionContrast,

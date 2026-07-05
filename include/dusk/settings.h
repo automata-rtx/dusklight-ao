@@ -191,6 +191,12 @@ struct UserSettings {
         ConfigVar<int> aoQuality;    // 0=low, 1=medium, 2=high, 3=ultra
         ConfigVar<int> aoDebugMode;
         ConfigVar<int> aoResolution; // 0=full, 1=half, 2=quarter
+        // Only has an effect at aoResolution=Quarter: caps AO base resolution independent of
+        // render resolution, and (with temporal reconstruction also on) shrinks the temporal
+        // accumulator to match. Real, worthwhile-on-mobile reductions in AO's own spatial
+        // resolution at a modest cost to fine/high-frequency detail. Off by default (quality
+        // first). See aurora_set_ao_performance_mode.
+        ConfigVar<bool> aoPerformanceMode;
         ConfigVar<float> aoRadius;
         ConfigVar<float> aoIntensity;
         ConfigVar<float> aoPower;
@@ -208,9 +214,9 @@ struct UserSettings {
         // auto-falls back to Resampler when internal resolution isn't strictly below output
         // resolution (supersampling, or an exact match). See aurora_set_fsr1_enabled.
         ConfigVar<bool> enableFsr1;
-        // Experimental: dispatch FSR1 as compute shaders with AMD's 8x8-tile thread swizzle
-        // instead of the default fragment/render-pass path. Independent of enableFsr1 (both must
-        // be on). See aurora_set_fsr1_use_compute.
+        // Dispatch FSR1 as compute shaders with AMD's 8x8-tile thread swizzle instead of the
+        // fragment/render-pass path. On by default. Independent of enableFsr1 (both must be on).
+        // See aurora_set_fsr1_use_compute.
         ConfigVar<bool> enableFsr1Compute;
         ConfigVar<bool> enableMapBackground;
         ConfigVar<bool> disableCutscenePillarboxing;

@@ -394,9 +394,9 @@ const Rml::String kFsr1HelpText =
     "below the display's native resolution; otherwise this has no effect and Output Resampling is "
     "used as normal.";
 const Rml::String kFsr1ComputeHelpText =
-    "Experimental: runs FSR1 as a compute shader instead of the default method, which may perform "
-    "differently depending on your hardware. Only has an effect when FSR1 Upscaling is on. Toggle "
-    "this to compare with and without.";
+    "Runs FSR1 as a compute shader rather than the alternate render-pass method. On by default; "
+    "disable to fall back to the alternate method if you run into issues. Only has an effect when "
+    "FSR1 Upscaling is on.";
 const Rml::String kBloomHelpText =
     "Configure the post-processing bloom effect. Classic uses the original bloom pass; Dusklight uses "
     "a higher-quality bloom pass.";
@@ -885,11 +885,11 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
         graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.enableFsr1Compute,
             GraphicsTunerProps{
                 .option = GraphicsOption::Fsr1Compute,
-                .title = "FSR1 Compute Mode (Experimental)",
+                .title = "FSR1 Compute Mode",
                 .helpText = kFsr1ComputeHelpText,
                 .valueMin = 0,
                 .valueMax = 1,
-                .defaultValue = 0,
+                .defaultValue = 1,
                 .step = 1,
             }, mPrelaunch);
 
@@ -1007,6 +1007,21 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .valueMin = 0,
                 .valueMax = 2,
                 .defaultValue = 1,
+                .step = 1,
+            },
+            mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoPerformanceMode,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionPerformanceMode,
+                .title = "AO Performance Mode",
+                .helpText = "Only has an effect at Quarter resolution: further caps the effect's "
+                            "internal resolution and, with Temporal Reconstruction on, the amount of "
+                            "history it accumulates. A real, if modest, cut to fine detail (e.g. "
+                            "grass) in exchange for meaningfully better performance on constrained "
+                            "hardware. Off by default to prioritize quality.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
                 .step = 1,
             },
             mPrelaunch);
