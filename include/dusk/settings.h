@@ -208,6 +208,10 @@ struct UserSettings {
         // auto-falls back to Resampler when internal resolution isn't strictly below output
         // resolution (supersampling, or an exact match). See aurora_set_fsr1_enabled.
         ConfigVar<bool> enableFsr1;
+        // Experimental: dispatch FSR1 as compute shaders with AMD's 8x8-tile thread swizzle
+        // instead of the default fragment/render-pass path. Independent of enableFsr1 (both must
+        // be on). See aurora_set_fsr1_use_compute.
+        ConfigVar<bool> enableFsr1Compute;
         ConfigVar<bool> enableMapBackground;
         ConfigVar<bool> disableCutscenePillarboxing;
 

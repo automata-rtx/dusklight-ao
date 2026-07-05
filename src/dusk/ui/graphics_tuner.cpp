@@ -52,6 +52,8 @@ int get_value(GraphicsOption option) {
         return getSettings().game.enableFxaa.getValue() ? 1 : 0;
     case GraphicsOption::Fsr1:
         return getSettings().game.enableFsr1.getValue() ? 1 : 0;
+    case GraphicsOption::Fsr1Compute:
+        return getSettings().game.enableFsr1Compute.getValue() ? 1 : 0;
     case GraphicsOption::BloomMode:
         return static_cast<int>(getSettings().game.bloomMode.getValue());
     case GraphicsOption::BloomMultiplier:
@@ -124,6 +126,10 @@ void set_value(GraphicsOption option, int value) {
     case GraphicsOption::Fsr1:
         getSettings().game.enableFsr1.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
         aurora_set_fsr1_enabled(static_cast<bool>(std::clamp(value, 0, 1)));
+        break;
+    case GraphicsOption::Fsr1Compute:
+        getSettings().game.enableFsr1Compute.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
+        aurora_set_fsr1_use_compute(static_cast<bool>(std::clamp(value, 0, 1)));
         break;
     case GraphicsOption::BloomMode:
         getSettings().game.bloomMode.setValue(static_cast<BloomMode>(std::clamp(
@@ -304,6 +310,8 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
     case GraphicsOption::Fxaa:
         return static_cast<bool>(value) ? "On" : "Off";
     case GraphicsOption::Fsr1:
+        return static_cast<bool>(value) ? "On" : "Off";
+    case GraphicsOption::Fsr1Compute:
         return static_cast<bool>(value) ? "On" : "Off";
     case GraphicsOption::BloomMode:
         switch (static_cast<BloomMode>(value)) {

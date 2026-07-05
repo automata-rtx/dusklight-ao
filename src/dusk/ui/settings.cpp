@@ -393,6 +393,10 @@ const Rml::String kFsr1HelpText =
     "resolution. Looks best paired with FXAA. Only takes effect when Internal Resolution is set "
     "below the display's native resolution; otherwise this has no effect and Output Resampling is "
     "used as normal.";
+const Rml::String kFsr1ComputeHelpText =
+    "Experimental: runs FSR1 as a compute shader instead of the default method, which may perform "
+    "differently depending on your hardware. Only has an effect when FSR1 Upscaling is on. Toggle "
+    "this to compare with and without.";
 const Rml::String kBloomHelpText =
     "Configure the post-processing bloom effect. Classic uses the original bloom pass; Dusklight uses "
     "a higher-quality bloom pass.";
@@ -873,6 +877,16 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .option = GraphicsOption::Fsr1,
                 .title = "FSR1 Upscaling",
                 .helpText = kFsr1HelpText,
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
+                .step = 1,
+            }, mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.enableFsr1Compute,
+            GraphicsTunerProps{
+                .option = GraphicsOption::Fsr1Compute,
+                .title = "FSR1 Compute Mode (Experimental)",
+                .helpText = kFsr1ComputeHelpText,
                 .valueMin = 0,
                 .valueMax = 1,
                 .defaultValue = 0,

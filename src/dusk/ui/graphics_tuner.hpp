@@ -45,6 +45,7 @@ enum class GraphicsOption {
     Resampler,
     Fxaa,
     Fsr1,
+    Fsr1Compute,
     BloomMode,
     BloomMultiplier,
     DepthOfFieldMode,
