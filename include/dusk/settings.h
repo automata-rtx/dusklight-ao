@@ -202,6 +202,10 @@ struct UserSettings {
         ConfigVar<float> aoPower;
         ConfigVar<bool> aoNormalSmooth;        // normal de-faceting smoothing (on/off; strength is fixed)
         ConfigVar<float> aoThickness;          // occluder thickness multiplier (crevice darkness / coverage)
+        // Grows the AO search radius (and occluder thickness) for distant pixels instead of using a
+        // single fixed radius at every depth, so far-away geometry keeps reasonable occlusion coverage
+        // instead of reading almost clean. Off by default. See aurora_set_ao_distance_radius_scale.
+        ConfigVar<bool> aoDistanceRadiusScale;
         ConfigVar<bool> aoTemporal;            // temporal reconstruction (camera-reprojected accumulation)
         ConfigVar<int> aoTemporalFrames;       // temporal accumulation depth in frames (blur vs stability)
         ConfigVar<int> aoSharpness;            // spatial pre-denoise sharpness (percent)

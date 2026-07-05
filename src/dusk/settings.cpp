@@ -77,6 +77,7 @@ UserSettings g_userSettings = {
         .aoPower {"game.aoPower", 1.5f},
         .aoNormalSmooth {"game.aoNormalSmooth", true},
         .aoThickness {"game.aoThickness", 1.5f},
+        .aoDistanceRadiusScale {"game.aoDistanceRadiusScale", false},
         .aoTemporal {"game.aoTemporal", true},
         .aoTemporalFrames {"game.aoTemporalFrames", 5},
         .aoSharpness {"game.aoSharpness", 50},
@@ -297,6 +298,7 @@ void registerSettings() {
     Register(g_userSettings.game.aoPower);
     Register(g_userSettings.game.aoNormalSmooth);
     Register(g_userSettings.game.aoThickness);
+    Register(g_userSettings.game.aoDistanceRadiusScale);
     Register(g_userSettings.game.aoTemporal);
     Register(g_userSettings.game.aoTemporalFrames);
     Register(g_userSettings.game.aoSharpness);

@@ -1086,6 +1086,19 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 5,
             },
             mPrelaunch);
+        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoDistanceRadiusScale,
+            GraphicsTunerProps{
+                .option = GraphicsOption::AmbientOcclusionDistanceRadiusScale,
+                .title = "AO Distance Scaling",
+                .helpText = "Grows the occlusion radius and thickness for distant geometry instead of "
+                            "using one fixed radius everywhere, so far-off scenery keeps reasonable "
+                            "coverage instead of reading almost clean. Off by default.",
+                .valueMin = 0,
+                .valueMax = 1,
+                .defaultValue = 0,
+                .step = 1,
+            },
+            mPrelaunch);
         graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmooth,
             GraphicsTunerProps{
                 .option = GraphicsOption::AmbientOcclusionNormalSmooth,
