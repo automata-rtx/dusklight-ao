@@ -1207,10 +1207,10 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "orientation as colour. Depth: linearized depth as repeating bands. "
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working. "
-                             "Distance Scale: how strongly AO Distance Scaling's radius boost is "
-                             "engaged per pixel (black = unboosted/near, white = fully boosted/far) "
-                             "-- shown regardless of whether that option is on, to confirm the "
-                             "underlying distance falloff is behaving before judging its visual effect.");
+                             "Distance Scale: the AO Distance Scaling boost actually applied this "
+                             "frame (black = unboosted/near or the option is off, white = fully "
+                             "boosted/far) -- unlike the other debug views this one changes with that "
+                             "option: flat black everywhere is the correct, expected picture when it's off.");
             });
     });
 
