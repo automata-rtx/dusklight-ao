@@ -206,6 +206,12 @@ struct UserSettings {
         // single fixed radius at every depth, so far-away geometry keeps reasonable occlusion coverage
         // instead of reading almost clean. Off by default. See aurora_set_ao_distance_radius_scale.
         ConfigVar<bool> aoDistanceRadiusScale;
+        // Multiplier the AO radius reaches at full distance when aoDistanceRadiusScale is on (1 =
+        // no boost). See aurora_set_ao_distance_radius_scale_tuning.
+        ConfigVar<float> aoDistanceRadiusScaleStrength;
+        // Fraction (0-1] of the camera's draw distance the boost ramps across; lower reaches full
+        // strength closer to the camera. See aurora_set_ao_distance_radius_scale_tuning.
+        ConfigVar<float> aoDistanceRadiusScaleRange;
         ConfigVar<bool> aoTemporal;            // temporal reconstruction (camera-reprojected accumulation)
         ConfigVar<int> aoTemporalFrames;       // temporal accumulation depth in frames (blur vs stability)
         ConfigVar<int> aoSharpness;            // spatial pre-denoise sharpness (percent)

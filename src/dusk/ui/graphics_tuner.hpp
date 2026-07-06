@@ -60,6 +60,8 @@ enum class GraphicsOption {
     AmbientOcclusionNormalSmooth,
     AmbientOcclusionThickness,
     AmbientOcclusionDistanceRadiusScale,
+    AmbientOcclusionDistanceRadiusScaleStrength,
+    AmbientOcclusionDistanceRadiusScaleRange,
     AmbientOcclusionTemporal,
     AmbientOcclusionTemporalFrames,
     AmbientOcclusionSharpness,
