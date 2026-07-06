@@ -1240,9 +1240,11 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working. "
                              "Distance Scale: the AO Distance Scaling boost actually applied this "
-                             "frame (black = unboosted/near or the option is off, white = fully "
-                             "boosted/far) -- unlike the other debug views this one changes with that "
-                             "option: flat black everywhere is the correct, expected picture when it's off.");
+                             "frame, mapped against a fixed 20x ceiling (black = unboosted/near, "
+                             "the option is off, or Strength is 100%; brighter = a bigger boost). "
+                             "Raising Strength brightens the far edge; lowering Range brings that "
+                             "brightness closer to the camera. Flat black everywhere is the correct, "
+                             "expected picture when the option is off.");
             });
     });
 
