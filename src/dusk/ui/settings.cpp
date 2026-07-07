@@ -1086,35 +1086,6 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 5,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoDistanceRadiusScale,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionDistanceRadiusScale,
-                .title = "AO Distance Scaling",
-                .helpText = "Broadens the occlusion radius for distant geometry instead of using one "
-                            "fixed radius everywhere, so far-off scenery keeps reasonable coverage "
-                            "instead of reading almost clean. Close-up geometry is unaffected. Off by "
-                            "default. Tune Range below to control how close the broadening starts.",
-                .valueMin = 0,
-                .valueMax = 1,
-                .defaultValue = 0,
-                .step = 1,
-            },
-            mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoDistanceRadiusScaleRange,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange,
-                .title = "AO Distance Scaling Range",
-                .helpText = "What fraction of the camera's draw distance the broadening ramps across. "
-                            "100% ramps across the whole draw distance; lower this if most of the "
-                            "scene's meaningful geometry sits well short of the true draw distance, so "
-                            "the broadening reaches full width sooner instead of only right at the "
-                            "far edge.",
-                .valueMin = 2,
-                .valueMax = 100,
-                .defaultValue = 100,
-                .step = 2,
-            },
-            mPrelaunch);
         graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmooth,
             GraphicsTunerProps{
                 .option = GraphicsOption::AmbientOcclusionNormalSmooth,
@@ -1194,7 +1165,7 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 5,
             },
             mPrelaunch);
-        static constexpr std::array<const char*, 6> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion", "Distance Scale"};
+        static constexpr std::array<const char*, 5> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion"};
         leftPane.register_control(
             leftPane.add_select_button({
                 .key = "Ambient Occlusion Debug View",
@@ -1222,11 +1193,7 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Occlusion: filtered AO as grayscale. Normals: view-space surface "
                              "orientation as colour. Depth: linearized depth as repeating bands. "
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
-                             "colour flow while the camera moves means reprojection is working. "
-                             "Distance Scale: where the AO Distance Scaling broadening is engaged "
-                             "(black = unboosted/near or the option is off, white = fully broadened/"
-                             "far). Lowering Range brings the white region closer to the camera. Flat "
-                             "black everywhere is the correct, expected picture when the option is off.");
+                             "colour flow while the camera moves means reprojection is working.");
             });
     });
 

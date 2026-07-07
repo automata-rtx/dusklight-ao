@@ -82,10 +82,6 @@ int get_value(GraphicsOption option) {
         return getSettings().game.aoNormalSmooth.getValue() ? 1 : 0;
     case GraphicsOption::AmbientOcclusionThickness:
         return static_cast<int>(getSettings().game.aoThickness.getValue() * 100.0f + 0.5f);
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScale:
-        return getSettings().game.aoDistanceRadiusScale.getValue() ? 1 : 0;
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
-        return static_cast<int>(getSettings().game.aoDistanceRadiusScaleRange.getValue() * 100.0f + 0.5f);
     case GraphicsOption::AmbientOcclusionTemporal:
         return getSettings().game.aoTemporal.getValue() ? 1 : 0;
     case GraphicsOption::AmbientOcclusionTemporalFrames:
@@ -180,12 +176,6 @@ void set_value(GraphicsOption option, int value) {
         break;
     case GraphicsOption::AmbientOcclusionThickness:
         getSettings().game.aoThickness.setValue(std::clamp(value, 25, 400) / 100.0f);
-        break;
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScale:
-        getSettings().game.aoDistanceRadiusScale.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
-        break;
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
-        getSettings().game.aoDistanceRadiusScaleRange.setValue(std::clamp(value, 2, 100) / 100.0f);
         break;
     case GraphicsOption::AmbientOcclusionTemporal:
         getSettings().game.aoTemporal.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
@@ -382,7 +372,6 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
     case GraphicsOption::AmbientOcclusionThickness:
     case GraphicsOption::AmbientOcclusionSharpness:
     case GraphicsOption::AmbientOcclusionMotionResponse:
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
         return fmt::format("{}%", value);
     case GraphicsOption::AmbientOcclusionTemporalFrames:
         return value == 1 ? Rml::String("1 frame") : fmt::format("{} frames", value);
@@ -390,7 +379,6 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
     case GraphicsOption::AmbientOcclusionTemporal:
     case GraphicsOption::AmbientOcclusionPostFilter:
     case GraphicsOption::AmbientOcclusionPerformanceMode:
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScale:
         return static_cast<bool>(value) ? "On" : "Off";
     }
     return "";
