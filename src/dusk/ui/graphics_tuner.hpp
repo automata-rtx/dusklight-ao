@@ -61,9 +61,6 @@ enum class GraphicsOption {
     AmbientOcclusionThickness,
     AmbientOcclusionTemporal,
     AmbientOcclusionTemporalFrames,
-    AmbientOcclusionSharpness,
-    AmbientOcclusionPostFilter,
-    AmbientOcclusionMotionResponse,
 };
 
 Rml::String format_graphics_setting_value(GraphicsOption option, int value);

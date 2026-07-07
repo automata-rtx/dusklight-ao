@@ -75,13 +75,10 @@ UserSettings g_userSettings = {
         .aoRadius {"game.aoRadius", 1.0f},
         .aoIntensity {"game.aoIntensity", 1.5f},
         .aoPower {"game.aoPower", 1.5f},
-        .aoNormalSmooth {"game.aoNormalSmooth", true},
+        .aoNormalSmooth {"game.aoNormalSmooth", false},
         .aoThickness {"game.aoThickness", 1.5f},
         .aoTemporal {"game.aoTemporal", true},
         .aoTemporalFrames {"game.aoTemporalFrames", 5},
-        .aoSharpness {"game.aoSharpness", 50},
-        .aoPostFilter {"game.aoPostFilter", false},
-        .aoMotionResponse {"game.aoMotionResponse", 40},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableFxaa {"game.enableFxaa", false},
@@ -299,9 +296,6 @@ void registerSettings() {
     Register(g_userSettings.game.aoThickness);
     Register(g_userSettings.game.aoTemporal);
     Register(g_userSettings.game.aoTemporalFrames);
-    Register(g_userSettings.game.aoSharpness);
-    Register(g_userSettings.game.aoPostFilter);
-    Register(g_userSettings.game.aoMotionResponse);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.enableFxaa);
     Register(g_userSettings.game.enableFsr1);

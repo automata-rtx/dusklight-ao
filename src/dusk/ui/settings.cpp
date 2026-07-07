@@ -1126,45 +1126,6 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 1,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoSharpness,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionSharpness,
-                .title = "Ambient Occlusion Sharpness",
-                .helpText = "Sharpness of the spatial denoise that cleans each frame. Higher keeps more "
-                            "fine detail (a little noisier); lower is smoother and softer.",
-                .valueMin = 0,
-                .valueMax = 100,
-                .defaultValue = 50,
-                .step = 5,
-            },
-            mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoPostFilter,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionPostFilter,
-                .title = "Spatial Filter",
-                .helpText = "A light edge-aware blur applied after temporal accumulation. Cleans up "
-                            "residual noise/shimmer for a small loss of sharpness. Off keeps the pure "
-                            "accumulated result.",
-                .valueMin = 0,
-                .valueMax = 1,
-                .defaultValue = 0,
-                .step = 1,
-            },
-            mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoMotionResponse,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionMotionResponse,
-                .title = "Temporal Motion Response",
-                .helpText = "How quickly the temporal effect tracks the geometry while the camera "
-                            "moves. Higher reduces ghosting/lag in motion (a little noisier while "
-                            "moving); lower keeps more accumulation. Watch the Motion debug view while "
-                            "tuning. Only used with Temporal on.",
-                .valueMin = 0,
-                .valueMax = 100,
-                .defaultValue = 40,
-                .step = 5,
-            },
-            mPrelaunch);
         static constexpr std::array<const char*, 5> kAoDebugModes{"Off", "Occlusion", "Normals", "Depth", "Motion"};
         leftPane.register_control(
             leftPane.add_select_button({

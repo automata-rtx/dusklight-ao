@@ -204,9 +204,6 @@ struct UserSettings {
         ConfigVar<float> aoThickness;          // occluder thickness multiplier (crevice darkness / coverage)
         ConfigVar<bool> aoTemporal;            // temporal reconstruction (camera-reprojected accumulation)
         ConfigVar<int> aoTemporalFrames;       // temporal accumulation depth in frames (blur vs stability)
-        ConfigVar<int> aoSharpness;            // spatial pre-denoise sharpness (percent)
-        ConfigVar<bool> aoPostFilter;          // light spatial filter after accumulation
-        ConfigVar<int> aoMotionResponse;       // temporal motion-tracking strength (percent)
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
