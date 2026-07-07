@@ -1090,40 +1090,24 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
             GraphicsTunerProps{
                 .option = GraphicsOption::AmbientOcclusionDistanceRadiusScale,
                 .title = "AO Distance Scaling",
-                .helpText = "Grows the occlusion radius and thickness for distant geometry instead of "
-                            "using one fixed radius everywhere, so far-off scenery keeps reasonable "
-                            "coverage instead of reading almost clean. Off by default. Tune Strength "
-                            "and Range below to control how strong the effect gets and how close it "
-                            "starts kicking in.",
+                .helpText = "Broadens the occlusion radius for distant geometry instead of using one "
+                            "fixed radius everywhere, so far-off scenery keeps reasonable coverage "
+                            "instead of reading almost clean. Close-up geometry is unaffected. Off by "
+                            "default. Tune Range below to control how close the broadening starts.",
                 .valueMin = 0,
                 .valueMax = 1,
                 .defaultValue = 0,
                 .step = 1,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoDistanceRadiusScaleStrength,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionDistanceRadiusScaleStrength,
-                .title = "AO Distance Scaling Strength",
-                .helpText = "How much bigger the occlusion radius gets at full distance when AO "
-                            "Distance Scaling is on (100% = no change). Pushing this high is safe to "
-                            "try -- the game's own distance fog fade caps how far the visible effect "
-                            "can reach, so overtuning mostly just wastes headroom rather than looking "
-                            "wrong.",
-                .valueMin = 100,
-                .valueMax = 2000,
-                .defaultValue = 300,
-                .step = 25,
-            },
-            mPrelaunch);
         graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoDistanceRadiusScaleRange,
             GraphicsTunerProps{
                 .option = GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange,
                 .title = "AO Distance Scaling Range",
-                .helpText = "What fraction of the camera's draw distance the boost ramps across. "
+                .helpText = "What fraction of the camera's draw distance the broadening ramps across. "
                             "100% ramps across the whole draw distance; lower this if most of the "
-                            "scene's meaningful geometry sits well short of the true draw distance, "
-                            "so the boost reaches full strength sooner instead of only right at the "
+                            "scene's meaningful geometry sits well short of the true draw distance, so "
+                            "the broadening reaches full width sooner instead of only right at the "
                             "far edge.",
                 .valueMin = 2,
                 .valueMax = 100,
@@ -1239,12 +1223,10 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "orientation as colour. Depth: linearized depth as repeating bands. "
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working. "
-                             "Distance Scale: the AO Distance Scaling boost actually applied this "
-                             "frame, mapped against a fixed 20x ceiling (black = unboosted/near, "
-                             "the option is off, or Strength is 100%; brighter = a bigger boost). "
-                             "Raising Strength brightens the far edge; lowering Range brings that "
-                             "brightness closer to the camera. Flat black everywhere is the correct, "
-                             "expected picture when the option is off.");
+                             "Distance Scale: where the AO Distance Scaling broadening is engaged "
+                             "(black = unboosted/near or the option is off, white = fully broadened/"
+                             "far). Lowering Range brings the white region closer to the camera. Flat "
+                             "black everywhere is the correct, expected picture when the option is off.");
             });
     });
 

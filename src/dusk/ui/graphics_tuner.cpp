@@ -84,8 +84,6 @@ int get_value(GraphicsOption option) {
         return static_cast<int>(getSettings().game.aoThickness.getValue() * 100.0f + 0.5f);
     case GraphicsOption::AmbientOcclusionDistanceRadiusScale:
         return getSettings().game.aoDistanceRadiusScale.getValue() ? 1 : 0;
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleStrength:
-        return static_cast<int>(getSettings().game.aoDistanceRadiusScaleStrength.getValue() * 100.0f + 0.5f);
     case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
         return static_cast<int>(getSettings().game.aoDistanceRadiusScaleRange.getValue() * 100.0f + 0.5f);
     case GraphicsOption::AmbientOcclusionTemporal:
@@ -185,9 +183,6 @@ void set_value(GraphicsOption option, int value) {
         break;
     case GraphicsOption::AmbientOcclusionDistanceRadiusScale:
         getSettings().game.aoDistanceRadiusScale.setValue(static_cast<bool>(std::clamp(value, 0, 1)));
-        break;
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleStrength:
-        getSettings().game.aoDistanceRadiusScaleStrength.setValue(std::clamp(value, 100, 2000) / 100.0f);
         break;
     case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
         getSettings().game.aoDistanceRadiusScaleRange.setValue(std::clamp(value, 2, 100) / 100.0f);
@@ -387,7 +382,6 @@ Rml::String format_graphics_setting_value(GraphicsOption option, int value) {
     case GraphicsOption::AmbientOcclusionThickness:
     case GraphicsOption::AmbientOcclusionSharpness:
     case GraphicsOption::AmbientOcclusionMotionResponse:
-    case GraphicsOption::AmbientOcclusionDistanceRadiusScaleStrength:
     case GraphicsOption::AmbientOcclusionDistanceRadiusScaleRange:
         return fmt::format("{}%", value);
     case GraphicsOption::AmbientOcclusionTemporalFrames:

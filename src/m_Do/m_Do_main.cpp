@@ -296,8 +296,7 @@ void main01(void) {
             aurora_set_ao_normal_smooth(s.aoNormalSmooth.getValue());
             aurora_set_ao_thickness(s.aoThickness.getValue());
             aurora_set_ao_distance_radius_scale(s.aoDistanceRadiusScale.getValue());
-            aurora_set_ao_distance_radius_scale_tuning(s.aoDistanceRadiusScaleStrength.getValue(),
-                s.aoDistanceRadiusScaleRange.getValue());
+            aurora_set_ao_distance_radius_scale_range(s.aoDistanceRadiusScaleRange.getValue());
             aurora_set_ao_temporal(s.aoTemporal.getValue());
             aurora_set_ao_temporal_frames(s.aoTemporalFrames.getValue());
             aurora_set_ao_denoise_sharpness(s.aoSharpness.getValue() / 100.0f);
