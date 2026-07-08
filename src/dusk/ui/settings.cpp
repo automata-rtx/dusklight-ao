@@ -1161,8 +1161,8 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working.");
             });
-        static constexpr std::array<const char*, 4> kShadowDebugModes{"Off", "Sun N.L", "Light Depth",
-                                                                      "Frustum Coverage"};
+        static constexpr std::array<const char*, 5> kShadowDebugModes{"Off", "Sun N.L", "Light Depth",
+                                                                      "Frustum Coverage", "Shadow Map"};
         leftPane.register_control(
             leftPane.add_select_button({
                 .key = "Sun Shadow Debug (WIP)",
@@ -1193,7 +1193,9 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "and it should track time of day. Light Depth: the scene reprojected into "
                              "the sun's view (grayscale depth-from-the-sun; purple = outside the sun "
                              "frustum). Frustum Coverage: green where the pixel is inside the sun's "
-                             "shadow frustum -- confirms the frustum's size/fit.");
+                             "shadow frustum -- confirms the frustum's size/fit. Shadow Map: the "
+                             "actual generated shadow map (opaque world replayed from the sun) sampled "
+                             "back onto the scene -- confirms caster capture + generation.");
             });
         config_int_select(leftPane, rightPane, getSettings().game.shadowDebugRadius,
             "Sun Shadow Debug Radius",
