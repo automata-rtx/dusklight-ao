@@ -80,6 +80,7 @@ UserSettings g_userSettings = {
         .aoTemporal {"game.aoTemporal", true},
         .aoTemporalFrames {"game.aoTemporalFrames", 5},
         .shadowDebugMode {"game.shadowDebugMode", 0},
+        .shadowDebugRadius {"game.shadowDebugRadius", 40000},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableFxaa {"game.enableFxaa", false},
@@ -298,6 +299,7 @@ void registerSettings() {
     Register(g_userSettings.game.aoTemporal);
     Register(g_userSettings.game.aoTemporalFrames);
     Register(g_userSettings.game.shadowDebugMode);
+    Register(g_userSettings.game.shadowDebugRadius);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.enableFxaa);
     Register(g_userSettings.game.enableFsr1);

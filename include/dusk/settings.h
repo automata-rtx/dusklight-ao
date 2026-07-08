@@ -208,6 +208,10 @@ struct UserSettings {
         // 3=light-frustum coverage). Requires AO enabled for now (the debug view rides the AO apply).
         // See aurora_set_shadow_debug.
         ConfigVar<int> shadowDebugMode;
+        // Half-extent (world units) of the Phase 1 debug sun-shadow frustum; live-tweakable from the
+        // Frustum Coverage debug view to dial in the fit for the current scene scale. See
+        // aurora_set_shadow_debug_radius.
+        ConfigVar<int> shadowDebugRadius;
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)

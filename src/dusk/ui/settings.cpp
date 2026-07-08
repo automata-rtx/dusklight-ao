@@ -1195,6 +1195,16 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "frustum). Frustum Coverage: green where the pixel is inside the sun's "
                              "shadow frustum -- confirms the frustum's size/fit.");
             });
+        config_int_select(leftPane, rightPane, getSettings().game.shadowDebugRadius,
+            "Sun Shadow Debug Radius",
+            "Half-extent (world units) of the WIP sun-shadow frustum, centred on the camera. Watch "
+            "the Frustum Coverage debug view and raise this until the green region covers the whole "
+            "playfield including distant terrain; the exact value found here is what the real "
+            "cascaded system will be fitted around.",
+            /*min=*/4000, /*max=*/200000, /*step=*/4000,
+            /*isDisabled=*/[] { return getSettings().game.shadowDebugMode.getValue() == 0; },
+            /*onChange=*/[](int v) { aurora_set_shadow_debug_radius(static_cast<float>(v)); },
+            /*suffix=*/"u");
     });
 
     add_tab("Input", [this](Rml::Element* content) {

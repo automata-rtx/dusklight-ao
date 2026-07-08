@@ -300,6 +300,7 @@ void main01(void) {
             // Sun shadow system (Phase 1 debug visualization).
             aurora_set_global_shadow_enabled(s.shadowDebugMode.getValue() != 0);
             aurora_set_shadow_debug(s.shadowDebugMode.getValue());
+            aurora_set_shadow_debug_radius(static_cast<float>(s.shadowDebugRadius.getValue()));
         }
 
         dusk::ui::update();
