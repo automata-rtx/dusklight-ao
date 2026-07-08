@@ -1086,19 +1086,24 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .step = 5,
             },
             mPrelaunch);
-        graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmooth,
-            GraphicsTunerProps{
-                .option = GraphicsOption::AmbientOcclusionNormalSmooth,
-                .title = "Normal Smoothing",
-                .helpText = "Smooths the surface orientation the occlusion uses so low-poly geometry "
-                            "doesn't shade as visible facets. On is recommended; turn it off to see the "
-                            "raw per-triangle shading.",
-                .valueMin = 0,
-                .valueMax = 1,
-                .defaultValue = 1,
-                .step = 1,
-            },
-            mPrelaunch);
+        // Normal Smoothing menu entry DISABLED for this build (the AO normal-smooth pass is
+        // commented out on the aurora side -- see the Pass 1c restore note in aurora-ao's
+        // lib/gfx/ao.cpp). The aoNormalSmooth ConfigVar, its GraphicsOption enum, and its
+        // get/set/format cases are left intact, so restoring this feature is just uncommenting the
+        // control below here AND the aurora-side blocks referenced in that Pass 1c note.
+        // graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoNormalSmooth,
+        //     GraphicsTunerProps{
+        //         .option = GraphicsOption::AmbientOcclusionNormalSmooth,
+        //         .title = "Normal Smoothing",
+        //         .helpText = "Smooths the surface orientation the occlusion uses so low-poly geometry "
+        //                     "doesn't shade as visible facets. On is recommended; turn it off to see the "
+        //                     "raw per-triangle shading.",
+        //         .valueMin = 0,
+        //         .valueMax = 1,
+        //         .defaultValue = 1,
+        //         .step = 1,
+        //     },
+        //     mPrelaunch);
         graphics_tuner_control(*this, leftPane, rightPane, getSettings().game.aoTemporal,
             GraphicsTunerProps{
                 .option = GraphicsOption::AmbientOcclusionTemporal,
