@@ -1161,6 +1161,40 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working.");
             });
+        static constexpr std::array<const char*, 4> kShadowDebugModes{"Off", "Sun N.L", "Light Depth",
+                                                                      "Frustum Coverage"};
+        leftPane.register_control(
+            leftPane.add_select_button({
+                .key = "Sun Shadow Debug (WIP)",
+                .getValue =
+                    [] {
+                        const int m = getSettings().game.shadowDebugMode.getValue();
+                        return kShadowDebugModes[(m >= 0 && m < static_cast<int>(kShadowDebugModes.size())) ? m : 0];
+                    },
+                .isModified = [] { return getSettings().game.shadowDebugMode.getValue() != 0; },
+            }),
+            rightPane, [](Pane& pane) {
+                for (int i = 0; i < static_cast<int>(kShadowDebugModes.size()); i++) {
+                    pane.add_button({
+                            .text = kShadowDebugModes[i],
+                            .isSelected = [i] { return getSettings().game.shadowDebugMode.getValue() == i; },
+                        })
+                        .on_pressed([i] {
+                            mDoAud_seStartMenu(kSoundItemChange);
+                            getSettings().game.shadowDebugMode.setValue(i);
+                            aurora_set_global_shadow_enabled(i != 0);
+                            aurora_set_shadow_debug(i);
+                            config::Save();
+                        });
+                }
+                pane.add_rml("Phase 1 foundation for scene-wide sun shadows. Requires Ambient "
+                             "Occlusion enabled (the debug view currently rides the AO apply). "
+                             "Sun N.L: Lambert shading from the sun -- faces toward the sun light up "
+                             "and it should track time of day. Light Depth: the scene reprojected into "
+                             "the sun's view (grayscale depth-from-the-sun; purple = outside the sun "
+                             "frustum). Frustum Coverage: green where the pixel is inside the sun's "
+                             "shadow frustum -- confirms the frustum's size/fit.");
+            });
     });
 
     add_tab("Input", [this](Rml::Element* content) {

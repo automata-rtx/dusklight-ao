@@ -297,6 +297,9 @@ void main01(void) {
             aurora_set_ao_thickness(s.aoThickness.getValue());
             aurora_set_ao_temporal(s.aoTemporal.getValue());
             aurora_set_ao_temporal_frames(s.aoTemporalFrames.getValue());
+            // Sun shadow system (Phase 1 debug visualization).
+            aurora_set_global_shadow_enabled(s.shadowDebugMode.getValue() != 0);
+            aurora_set_shadow_debug(s.shadowDebugMode.getValue());
         }
 
         dusk::ui::update();

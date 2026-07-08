@@ -2354,6 +2354,16 @@ int mDoGph_Painter() {
                 dusk::getSettings().game.aoTemporal.getValue()) {
                 aurora_set_ao_view_matrix(&camera_p->view.viewMtx[0][0]);
             }
+            // Sun-shadow (Phase 1 debug): push the camera view + world-space sun direction so the
+            // shadow module can build the light-space projection. The sun world position comes from
+            // the environment base light (tracks time of day); the direction is from the camera
+            // toward it. Only the first (main scene) camera each frame is used.
+            if (dusk::getSettings().game.shadowDebugMode.getValue() != 0) {
+                const cXyz& sunPos = dKy_getEnvlight()->base_light.mPosition;
+                const cXyz& camEye = camera_p->view.lookat.eye;
+                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunPos.x - camEye.x,
+                                        sunPos.y - camEye.y, sunPos.z - camEye.z);
+            }
 #endif
             dKy_setLight();
 #if TARGET_PC

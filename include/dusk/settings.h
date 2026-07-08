@@ -204,6 +204,10 @@ struct UserSettings {
         ConfigVar<float> aoThickness;          // occluder thickness multiplier (crevice darkness / coverage)
         ConfigVar<bool> aoTemporal;            // temporal reconstruction (camera-reprojected accumulation)
         ConfigVar<int> aoTemporalFrames;       // temporal accumulation depth in frames (blur vs stability)
+        // Sun shadow-map system, Phase 1 debug visualization (0=off, 1=sun N.L, 2=light-space depth,
+        // 3=light-frustum coverage). Requires AO enabled for now (the debug view rides the AO apply).
+        // See aurora_set_shadow_debug.
+        ConfigVar<int> shadowDebugMode;
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
