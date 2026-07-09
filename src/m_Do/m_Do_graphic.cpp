@@ -2365,32 +2365,58 @@ int mDoGph_Painter() {
             // shadow lands on the opposite azimuth), so negate x and z (a 180-degree azimuth rotation)
             // while keeping the elevation (y). Only the first (main scene) camera each frame is used.
             if (dusk::getSettings().game.shadowDebugMode.getValue() != 0) {
+                // SNAPSHOT the sun direction and only refresh it once the in-game time of day has moved
+                // by a threshold. In static-time areas (e.g. Ordon) it is computed once and then held
+                // perfectly fixed; in dynamic-time areas (e.g. Hyrule Field) it steps as the day
+                // advances. This keeps the distant light from micro-drifting frame to frame.
+                static const f32 kSunSnapStep = 2.0f; // in-game daytime units (day is 0..360)
+                static bool s_haveSun = false;
+                static f32 s_snapTime = 0.0f;
+                static f32 s_sunX = 0.0f;
+                static f32 s_sunY = 0.0f;
+                static f32 s_sunZ = 0.0f;
                 const f32 daytime = dKy_getEnvlight()->getDaytime();
-                f32 sun_angle;
-                if (daytime >= 90.0f && daytime <= 270.0f) {
-                    sun_angle = dKy_get_parcent(270.0f, 90.0f, daytime) * 150.0f + 105.0f;
-                } else {
-                    f32 a = daytime;
-                    if (a < 90.0f) {
-                        a += 360.0f;
-                    }
-                    sun_angle = dKy_get_parcent(450.0f, 270.0f, a) * 210.0f + 255.0f;
-                    if (sun_angle > 360.0f) {
-                        sun_angle -= 360.0f;
-                    }
+                f32 dt = daytime - s_snapTime; // shortest wrapped delta on the 0..360 day
+                while (dt > 180.0f) {
+                    dt -= 360.0f;
                 }
-                const f32 rad = sun_angle * 0.017453292519943295f; // deg -> rad
-                const f32 s = cM_fsin(rad);
-                const f32 c = cM_fcos(rad);
-                const f32 sunX = -s * 80000.0f;    // negated azimuth (raw offset x = sin*80000)
-                const f32 sunY = -c * 80000.0f;    // elevation, unchanged (raw offset y = -cos*80000)
-                const f32 sunZ = c * 48000.0f;     // negated azimuth (raw offset z = cos*-48000)
+                while (dt < -180.0f) {
+                    dt += 360.0f;
+                }
+                if (!s_haveSun || (dt < 0.0f ? -dt : dt) >= kSunSnapStep) {
+                    // Sun direction from the time-of-day sun angle only (the same angle
+                    // dScnKy_env_light_c::setSunpos uses to place sun_pos), no camera/player term.
+                    f32 sun_angle;
+                    if (daytime >= 90.0f && daytime <= 270.0f) {
+                        sun_angle = dKy_get_parcent(270.0f, 90.0f, daytime) * 150.0f + 105.0f;
+                    } else {
+                        f32 a = daytime;
+                        if (a < 90.0f) {
+                            a += 360.0f;
+                        }
+                        sun_angle = dKy_get_parcent(450.0f, 270.0f, a) * 210.0f + 255.0f;
+                        if (sun_angle > 360.0f) {
+                            sun_angle -= 360.0f;
+                        }
+                    }
+                    const f32 rad = sun_angle * 0.017453292519943295f; // deg -> rad
+                    const f32 s = cM_fsin(rad);
+                    const f32 c = cM_fcos(rad);
+                    // Negate x/z (180-degree azimuth rotation vs the raw offset; matches the real
+                    // shadow's cast direction); keep elevation (y). Magnitudes are arbitrary (aurora
+                    // normalizes), but kept as the game's 80000/48000 for parity with setSunpos.
+                    s_sunX = -s * 80000.0f;
+                    s_sunY = -c * 80000.0f;
+                    s_sunZ = c * 48000.0f;
+                    s_snapTime = daytime;
+                    s_haveSun = true;
+                }
                 // Focus the shadow frustum on the player so it is anchored to the world, not the
                 // camera (fall back to the camera target if the player isn't available).
                 fopAc_ac_c* player_p = dComIfGp_getPlayer(0);
                 const cXyz focus = player_p != NULL ? player_p->current.pos : camera_p->view.lookat.center;
-                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunX, sunY, sunZ, focus.x, focus.y,
-                                        focus.z);
+                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], s_sunX, s_sunY, s_sunZ, focus.x,
+                                        focus.y, focus.z);
             }
 #endif
             dKy_setLight();
