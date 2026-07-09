@@ -1207,6 +1207,13 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
             /*isDisabled=*/[] { return getSettings().game.shadowDebugMode.getValue() == 0; },
             /*onChange=*/[](int v) { aurora_set_shadow_debug_radius(static_cast<float>(v)); },
             /*suffix=*/"u");
+        config_bool_select(leftPane, rightPane, getSettings().game.shadowElevationClamp, {
+            .key = "Sun Shadow Elevation Clamp",
+            .helpText = "Clamps the sun's elevation to match the game's real shadow (keeps shadows "
+                        "shorter). Turn off to let the true, lower sun angle through for longer, more "
+                        "dramatic shadows.",
+            .isDisabled = [] { return getSettings().game.shadowDebugMode.getValue() == 0; },
+        });
     });
 
     add_tab("Input", [this](Rml::Element* content) {

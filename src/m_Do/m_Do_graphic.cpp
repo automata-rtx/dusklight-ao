@@ -2379,6 +2379,8 @@ int mDoGph_Painter() {
                 static f32 s_sunX = 0.0f;
                 static f32 s_sunY = 0.0f;
                 static f32 s_sunZ = 0.0f;
+                static bool s_lastClamp = true;
+                const bool clampElevation = dusk::getSettings().game.shadowElevationClamp.getValue();
                 const f32 daytime = dKy_getEnvlight()->getDaytime();
                 f32 dt = daytime - s_snapTime; // shortest wrapped delta on the 0..360 day
                 while (dt > 180.0f) {
@@ -2387,15 +2389,17 @@ int mDoGph_Painter() {
                 while (dt < -180.0f) {
                     dt += 360.0f;
                 }
-                if (!s_haveSun || (dt < 0.0f ? -dt : dt) >= kSunSnapStep) {
+                // Also re-snapshot immediately when the clamp toggle changes, so it takes effect even
+                // in static-time areas where the daytime threshold would never trigger.
+                if (!s_haveSun || clampElevation != s_lastClamp || (dt < 0.0f ? -dt : dt) >= kSunSnapStep) {
                     // Use the real shadow-casting light with the ACTOR (player) pivot, exactly as
                     // dDlst_shadowReal_c::setShadowRealMtx: dir = mLightPosWorld - actorPos, where the
-                    // sun's mLightPosWorld is the kankyo sun_pos. Then apply the same elevation clamp
-                    // (y/len >= 0.8) the real shadow uses so low-sun angles match the game rather than
-                    // splaying out. (We can lift this clamp later for more dramatic distant shadows.)
+                    // sun's mLightPosWorld is the kankyo sun_pos. Optionally apply the same elevation
+                    // clamp (y/len >= 0.8) the real shadow uses so low-sun angles match the game; with
+                    // the clamp off the true, lower sun angle produces longer/more dramatic shadows.
                     cXyz dir = dKy_getEnvlight()->sun_pos - focus;
                     const f32 len = dir.abs();
-                    if (len > 1.0f && dir.y / len < 0.8f) {
+                    if (clampElevation && len > 1.0f && dir.y / len < 0.8f) {
                         dir.y = len * 0.8f;
                         const f32 horiz2 = dir.abs2XZ();
                         if (horiz2 > 0.0001f) {
@@ -2411,6 +2415,7 @@ int mDoGph_Painter() {
                     s_sunY = dir.y;
                     s_sunZ = -dir.z;
                     s_snapTime = daytime;
+                    s_lastClamp = clampElevation;
                     s_haveSun = true;
                 }
                 aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], s_sunX, s_sunY, s_sunZ, focus.x,

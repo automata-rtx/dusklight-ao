@@ -212,6 +212,9 @@ struct UserSettings {
         // Frustum Coverage debug view to dial in the fit for the current scene scale. See
         // aurora_set_shadow_debug_radius.
         ConfigVar<int> shadowDebugRadius;
+        // Clamp the sun-shadow elevation to y/len >= 0.8 (matching the game's real shadow). Off lets
+        // the true, lower sun angle through for longer/more dramatic shadows.
+        ConfigVar<bool> shadowElevationClamp;
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
