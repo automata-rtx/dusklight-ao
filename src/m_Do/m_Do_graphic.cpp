@@ -2355,11 +2355,14 @@ int mDoGph_Painter() {
                 aurora_set_ao_view_matrix(&camera_p->view.viewMtx[0][0]);
             }
             // Sun-shadow (Phase 1 debug): push the camera view + world-space sun direction so the
-            // shadow module can build the light-space projection. The sun world position comes from
-            // the environment base light (tracks time of day); the direction is from the camera
-            // toward it. Only the first (main scene) camera each frame is used.
+            // shadow module can build the light-space projection. Use the kankyo sun position
+            // (dScnKy_env_light_c::sun_pos, set by setSunpos from the time-of-day sun angle as
+            // camera_eye + 80000-unit offset toward the sun), so (sun_pos - camEye) is the true,
+            // camera-INDEPENDENT direction toward the sun. (base_light.mPosition is placed near the
+            // actor, so it produced a camera-dependent, wrong-signed direction.) Only the first (main
+            // scene) camera each frame is used.
             if (dusk::getSettings().game.shadowDebugMode.getValue() != 0) {
-                const cXyz& sunPos = dKy_getEnvlight()->base_light.mPosition;
+                const cXyz& sunPos = dKy_getEnvlight()->sun_pos;
                 const cXyz& camEye = camera_p->view.lookat.eye;
                 aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunPos.x - camEye.x,
                                         sunPos.y - camEye.y, sunPos.z - camEye.z);
