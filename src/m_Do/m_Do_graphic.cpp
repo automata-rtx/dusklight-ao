@@ -2354,22 +2354,43 @@ int mDoGph_Painter() {
                 dusk::getSettings().game.aoTemporal.getValue()) {
                 aurora_set_ao_view_matrix(&camera_p->view.viewMtx[0][0]);
             }
-            // Sun-shadow (Phase 1 debug): push the camera view + world-space sun direction so the
-            // shadow module can build the light-space projection. Use the kankyo sun position
-            // (dScnKy_env_light_c::sun_pos, set by setSunpos from the time-of-day sun angle as
-            // camera_eye + 80000-unit offset toward the sun), so (sun_pos - camEye) is the true,
-            // camera-INDEPENDENT direction toward the sun. (base_light.mPosition is placed near the
-            // actor, so it produced a camera-dependent, wrong-signed direction.) Only the first (main
-            // scene) camera each frame is used.
+            // Sun-shadow (Phase 1 debug): push the camera view + a DISTANT sun direction + the frustum
+            // focus. The sun direction is derived purely from the time-of-day sun angle (the same
+            // angle dScnKy_env_light_c::setSunpos() uses to place sun_pos), with NO camera or player
+            // term -- so it is a true distant light whose angle only rotates through the game day and
+            // never drifts as the camera or Link moves. setSunpos builds sun_pos = camera_eye + offset
+            // where offset = (sin*80000, -cos*80000, cos*-48000); using (sun_pos - camEye) folded the
+            // camera in (and, via frame interpolation, drifted). The raw offset also points 180 degrees
+            // away in the GROUND PLANE from the actual shadow-casting direction (the game's real
+            // shadow lands on the opposite azimuth), so negate x and z (a 180-degree azimuth rotation)
+            // while keeping the elevation (y). Only the first (main scene) camera each frame is used.
             if (dusk::getSettings().game.shadowDebugMode.getValue() != 0) {
-                const cXyz& sunPos = dKy_getEnvlight()->sun_pos;
-                const cXyz& camEye = camera_p->view.lookat.eye;
+                const f32 daytime = dKy_getEnvlight()->getDaytime();
+                f32 sun_angle;
+                if (daytime >= 90.0f && daytime <= 270.0f) {
+                    sun_angle = dKy_get_parcent(270.0f, 90.0f, daytime) * 150.0f + 105.0f;
+                } else {
+                    f32 a = daytime;
+                    if (a < 90.0f) {
+                        a += 360.0f;
+                    }
+                    sun_angle = dKy_get_parcent(450.0f, 270.0f, a) * 210.0f + 255.0f;
+                    if (sun_angle > 360.0f) {
+                        sun_angle -= 360.0f;
+                    }
+                }
+                const f32 rad = sun_angle * 0.017453292519943295f; // deg -> rad
+                const f32 s = cM_fsin(rad);
+                const f32 c = cM_fcos(rad);
+                const f32 sunX = -s * 80000.0f;    // negated azimuth (raw offset x = sin*80000)
+                const f32 sunY = -c * 80000.0f;    // elevation, unchanged (raw offset y = -cos*80000)
+                const f32 sunZ = c * 48000.0f;     // negated azimuth (raw offset z = cos*-48000)
                 // Focus the shadow frustum on the player so it is anchored to the world, not the
                 // camera (fall back to the camera target if the player isn't available).
                 fopAc_ac_c* player_p = dComIfGp_getPlayer(0);
                 const cXyz focus = player_p != NULL ? player_p->current.pos : camera_p->view.lookat.center;
-                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunPos.x - camEye.x,
-                                        sunPos.y - camEye.y, sunPos.z - camEye.z, focus.x, focus.y, focus.z);
+                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunX, sunY, sunZ, focus.x, focus.y,
+                                        focus.z);
             }
 #endif
             dKy_setLight();
