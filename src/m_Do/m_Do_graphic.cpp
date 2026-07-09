@@ -2364,8 +2364,12 @@ int mDoGph_Painter() {
             if (dusk::getSettings().game.shadowDebugMode.getValue() != 0) {
                 const cXyz& sunPos = dKy_getEnvlight()->sun_pos;
                 const cXyz& camEye = camera_p->view.lookat.eye;
+                // Focus the shadow frustum on the player so it is anchored to the world, not the
+                // camera (fall back to the camera target if the player isn't available).
+                fopAc_ac_c* player_p = dComIfGp_getPlayer(0);
+                const cXyz focus = player_p != NULL ? player_p->current.pos : camera_p->view.lookat.center;
                 aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], sunPos.x - camEye.x,
-                                        sunPos.y - camEye.y, sunPos.z - camEye.z);
+                                        sunPos.y - camEye.y, sunPos.z - camEye.z, focus.x, focus.y, focus.z);
             }
 #endif
             dKy_setLight();
