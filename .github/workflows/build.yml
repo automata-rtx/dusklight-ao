@@ -281,3 +281,37 @@ jobs:
             build/install/*.dll
             build/install/res/
             build/install/debug.7z
+
+  release:
+    name: Publish release
+    if: github.ref == 'refs/heads/claude/standalone-release'
+    needs: [build-linux, build-apple, build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download all build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ github.run_id }} --repo ${{ github.repository }} --dir artifacts
+
+      - name: Zip artifact directories
+        run: |
+          cd artifacts
+          for d in */; do
+            d="${d%/}"
+            (cd "$d" && zip -qry "../${d}.zip" .)
+          done
+          ls -la
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create standalone-final artifacts/*.zip \
+            --repo ${{ github.repository }} \
+            --target ${{ github.sha }} \
+            --title "Standalone Final - aurora-fork build" \
+            --notes "Permanent snapshot of the last fully standalone fork build: aurora-integrated VBAO ambient occlusion and the Realtime Sun Shadows prototype, before the pivot to the Dusklight mod API. Content commit 3ef82d20a9 (claude/standalone-final); companion aurora-ao commit f7625b6 (claude/standalone-final). NOTE: this is the only build that runs the graphics features on iOS - code mods cannot run there."
