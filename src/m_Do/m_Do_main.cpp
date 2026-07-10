@@ -301,6 +301,8 @@ void main01(void) {
             aurora_set_global_shadow_enabled(s.shadowDebugMode.getValue() != 0);
             aurora_set_shadow_debug(s.shadowDebugMode.getValue());
             aurora_set_shadow_debug_radius(static_cast<float>(s.shadowDebugRadius.getValue()));
+            aurora_set_shadow_bias(static_cast<float>(s.shadowBias.getValue()));
+            aurora_set_shadow_map_resolution(s.shadowMapResolution.getValue());
         }
 
         dusk::ui::update();

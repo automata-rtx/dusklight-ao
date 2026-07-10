@@ -82,6 +82,8 @@ UserSettings g_userSettings = {
         .shadowDebugMode {"game.shadowDebugMode", 0},
         .shadowDebugRadius {"game.shadowDebugRadius", 4000},
         .shadowElevationClamp {"game.shadowElevationClamp", true},
+        .shadowBias {"game.shadowBias", 10},
+        .shadowMapResolution {"game.shadowMapResolution", 2048},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
         .resampler {"game.resampler", Resampler::Bilinear},
         .enableFxaa {"game.enableFxaa", false},
@@ -302,6 +304,8 @@ void registerSettings() {
     Register(g_userSettings.game.shadowDebugMode);
     Register(g_userSettings.game.shadowDebugRadius);
     Register(g_userSettings.game.shadowElevationClamp);
+    Register(g_userSettings.game.shadowBias);
+    Register(g_userSettings.game.shadowMapResolution);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.enableFxaa);
     Register(g_userSettings.game.enableFsr1);

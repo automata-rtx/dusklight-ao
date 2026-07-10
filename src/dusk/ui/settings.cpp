@@ -1161,8 +1161,9 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "Motion: temporal reprojection vectors (needs Temporal on) -- a coherent "
                              "colour flow while the camera moves means reprojection is working.");
             });
-        static constexpr std::array<const char*, 5> kShadowDebugModes{"Off", "Sun N.L", "Light Depth",
-                                                                      "Frustum Coverage", "Shadow Map"};
+        static constexpr std::array<const char*, 6> kShadowDebugModes{"Off", "Sun N.L", "Light Depth",
+                                                                      "Frustum Coverage", "Shadow Map",
+                                                                      "Shadows"};
         leftPane.register_control(
             leftPane.add_select_button({
                 .key = "Sun Shadow Debug (WIP)",
@@ -1195,7 +1196,9 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                              "frustum). Frustum Coverage: green where the pixel is inside the sun's "
                              "shadow frustum -- confirms the frustum's size/fit. Shadow Map: the "
                              "actual generated shadow map (opaque world replayed from the sun) sampled "
-                             "back onto the scene -- confirms caster capture + generation.");
+                             "back onto the scene -- confirms caster capture + generation. Shadows: "
+                             "the real effect -- shadowed, sun-lit surfaces are darkened by comparing "
+                             "each pixel against the shadow map (tune with Bias and Radius below).");
             });
         config_int_select(leftPane, rightPane, getSettings().game.shadowDebugRadius,
             "Sun Shadow Debug Radius",
@@ -1214,6 +1217,50 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                         "dramatic shadows.",
             .isDisabled = [] { return getSettings().game.shadowDebugMode.getValue() == 0; },
         });
+        config_int_select(leftPane, rightPane, getSettings().game.shadowBias,
+            "Sun Shadow Bias",
+            "Depth bias for the sun-shadow comparison, in world units along the light. Raise it "
+            "until shadow acne (striped/speckled self-shadowing on lit surfaces) disappears; too "
+            "high detaches shadows from their casters (peter-panning). Tune in the Shadows view.",
+            /*min=*/0, /*max=*/200, /*step=*/1,
+            /*isDisabled=*/[] { return getSettings().game.shadowDebugMode.getValue() == 0; },
+            /*onChange=*/[](int v) { aurora_set_shadow_bias(static_cast<float>(v)); },
+            /*suffix=*/"u");
+        static constexpr std::array<int, 3> kShadowMapResolutions{2048, 4096, 8192};
+        leftPane.register_control(
+            leftPane.add_select_button({
+                .key = "Sun Shadow Map Resolution",
+                .getValue =
+                    [] {
+                        return std::to_string(getSettings().game.shadowMapResolution.getValue());
+                    },
+                .isModified =
+                    [] {
+                        return getSettings().game.shadowMapResolution.getValue() !=
+                               getSettings().game.shadowMapResolution.getDefaultValue();
+                    },
+            }),
+            rightPane, [](Pane& pane) {
+                for (int res : kShadowMapResolutions) {
+                    pane.add_button({
+                            .text = std::to_string(res),
+                            .isSelected =
+                                [res] {
+                                    return getSettings().game.shadowMapResolution.getValue() == res;
+                                },
+                        })
+                        .on_pressed([res] {
+                            mDoAud_seStartMenu(kSoundItemChange);
+                            getSettings().game.shadowMapResolution.setValue(res);
+                            aurora_set_shadow_map_resolution(res);
+                            config::Save();
+                        });
+                }
+                pane.add_rml("Resolution of the square sun-shadow map. Higher is sharper (less "
+                             "pixelated shadow edges) at more GPU cost; the effective sharpness also "
+                             "depends on the Sun Shadow Debug Radius (smaller radius = more texels "
+                             "per world unit).");
+            });
     });
 
     add_tab("Input", [this](Rml::Element* content) {

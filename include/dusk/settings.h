@@ -215,6 +215,11 @@ struct UserSettings {
         // Clamp the sun-shadow elevation to y/len >= 0.8 (matching the game's real shadow). Off lets
         // the true, lower sun angle through for longer/more dramatic shadows.
         ConfigVar<bool> shadowElevationClamp;
+        // Receiver depth bias in world units along the light; counters shadow acne. Live-tunable.
+        // See aurora_set_shadow_bias.
+        ConfigVar<int> shadowBias;
+        // Square sun-shadow-map resolution (2048/4096/8192). See aurora_set_shadow_map_resolution.
+        ConfigVar<int> shadowMapResolution;
         ConfigVar<int> shadowResolutionMultiplier;
         ConfigVar<Resampler> resampler;
         ConfigVar<bool> enableFxaa; // pre-resample edge-smoothing filter (see Resampler)
