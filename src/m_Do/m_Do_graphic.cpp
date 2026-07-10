@@ -2369,37 +2369,42 @@ int mDoGph_Painter() {
                 fopAc_ac_c* player_p = dComIfGp_getPlayer(0);
                 const cXyz focus = player_p != NULL ? player_p->current.pos : camera_p->view.lookat.center;
 
-                // SNAPSHOT the sun direction and only refresh it once the in-game time of day has moved
-                // by a threshold. In static-time areas (e.g. Ordon) it is computed once and held fixed;
-                // in dynamic-time areas (e.g. Hyrule Field) it steps as the day advances. Keeps the
-                // distant light from micro-drifting frame to frame.
-                static const f32 kSunSnapStep = 2.0f; // in-game daytime units (day is 0..360)
-                static bool s_haveSun = false;
-                static f32 s_snapTime = 0.0f;
-                static f32 s_sunX = 0.0f;
-                static f32 s_sunY = 0.0f;
-                static f32 s_sunZ = 0.0f;
-                static bool s_lastClamp = true;
-                const bool clampElevation = dusk::getSettings().game.shadowElevationClamp.getValue();
+                // TRUE DIRECTIONAL LIGHT: the sun direction is a pure function of the time-of-day sun
+                // angle -- the same angle dScnKy_env_light_c::setSunpos() uses -- with NO camera or
+                // player position terms whatsoever. Earlier revisions derived it from world positions
+                // (sun_pos - focus, where sun_pos itself embeds the camera eye), so every refresh baked
+                // in a slightly different direction depending on where Link/the camera stood; because
+                // the frustum centre (Link) always maps to the middle of the shadow map, any direction
+                // error pins Link's shadow while sweeping every other shadow proportionally to its
+                // distance from him -- exactly the observed "everything but Link slides" artifact. A
+                // pure-time direction cannot depend on position, so shadows stay welded to their
+                // casters; it changes only as smoothly as the game clock (the sun crossing the sky).
                 const f32 daytime = dKy_getEnvlight()->getDaytime();
-                f32 dt = daytime - s_snapTime; // shortest wrapped delta on the 0..360 day
-                while (dt > 180.0f) {
-                    dt -= 360.0f;
+                f32 sun_angle;
+                if (daytime >= 90.0f && daytime <= 270.0f) {
+                    sun_angle = dKy_get_parcent(270.0f, 90.0f, daytime) * 150.0f + 105.0f;
+                } else {
+                    f32 a = daytime;
+                    if (a < 90.0f) {
+                        a += 360.0f;
+                    }
+                    sun_angle = dKy_get_parcent(450.0f, 270.0f, a) * 210.0f + 255.0f;
+                    if (sun_angle > 360.0f) {
+                        sun_angle -= 360.0f;
+                    }
                 }
-                while (dt < -180.0f) {
-                    dt += 360.0f;
-                }
-                // Also re-snapshot immediately when the clamp toggle changes, so it takes effect even
-                // in static-time areas where the daytime threshold would never trigger.
-                if (!s_haveSun || clampElevation != s_lastClamp || (dt < 0.0f ? -dt : dt) >= kSunSnapStep) {
-                    // Use the real shadow-casting light with the ACTOR (player) pivot, exactly as
-                    // dDlst_shadowReal_c::setShadowRealMtx: dir = mLightPosWorld - actorPos, where the
-                    // sun's mLightPosWorld is the kankyo sun_pos. Optionally apply the same elevation
-                    // clamp (y/len >= 0.8) the real shadow uses so low-sun angles match the game; with
-                    // the clamp off the true, lower sun angle produces longer/more dramatic shadows.
-                    cXyz dir = dKy_getEnvlight()->sun_pos - focus;
+                const f32 rad = sun_angle * 0.017453292519943295f; // deg -> rad
+                const f32 s = cM_fsin(rad);
+                const f32 c = cM_fcos(rad);
+                // setSunpos's offset toward the sun is (sin*80000, -cos*80000, -cos*48000); negate the
+                // horizontal (x,z) to match the real shadow's cast azimuth (confirmed on-screen against
+                // the real shadow), keep the elevation (y).
+                cXyz dir(-s * 80000.0f, -c * 80000.0f, c * 48000.0f);
+                // Optional elevation clamp (y/len >= 0.8), matching the game's real shadow so low-sun
+                // angles agree with it; off lets the true low angle through for longer dramatic shadows.
+                if (dusk::getSettings().game.shadowElevationClamp.getValue()) {
                     const f32 len = dir.abs();
-                    if (clampElevation && len > 1.0f && dir.y / len < 0.8f) {
+                    if (len > 1.0f && dir.y / len < 0.8f) {
                         dir.y = len * 0.8f;
                         const f32 horiz2 = dir.abs2XZ();
                         if (horiz2 > 0.0001f) {
@@ -2408,17 +2413,8 @@ int mDoGph_Painter() {
                             dir.z *= sc;
                         }
                     }
-                    // Aurora's world frame needs the horizontal (x,z) negated to match the real
-                    // shadow's cast azimuth (confirmed empirically against the real-shadow screenshots);
-                    // elevation (y) is kept.
-                    s_sunX = -dir.x;
-                    s_sunY = dir.y;
-                    s_sunZ = -dir.z;
-                    s_snapTime = daytime;
-                    s_lastClamp = clampElevation;
-                    s_haveSun = true;
                 }
-                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], s_sunX, s_sunY, s_sunZ, focus.x,
+                aurora_set_shadow_frame(&camera_p->view.viewMtx[0][0], dir.x, dir.y, dir.z, focus.x,
                                         focus.y, focus.z);
             }
 #endif
