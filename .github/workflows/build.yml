@@ -272,6 +272,15 @@ jobs:
       - name: Build
         run: cmake --build --preset x-windows-ci-${{matrix.preset}}
 
+      # The symbol manifest is written next to the built exe but never installed; stage it into
+      # the install tree so it ships with the game (by-name hook resolution needs it).
+      - name: Stage symbol manifest
+        run: |
+          $symdb = Get-ChildItem -Path build -Recurse -Filter dusklight.symdb |
+            Where-Object { $_.FullName -notmatch '\\install\\' } | Select-Object -First 1
+          if ($symdb) { Copy-Item $symdb.FullName build/install/dusklight.symdb }
+          else { Write-Warning "dusklight.symdb not found in build tree" }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -280,4 +289,48 @@ jobs:
             build/install/*.exe
             build/install/*.dll
             build/install/res/
+            build/install/sdk/
+            build/install/dusklight.symdb
             build/install/debug.7z
+
+  release:
+    name: Publish release
+    if: endsWith(github.ref, 'mod-platform')
+    needs: [build-linux, build-apple, build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download all build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ github.run_id }} --repo ${{ github.repository }} --dir artifacts
+
+      # The Windows x86_64 build carries the mod SDK link inputs; attach them as standalone
+      # release assets so mod CI can fetch them without unpacking the game zip.
+      - name: Extract mod SDK assets
+        run: |
+          mkdir sdk-assets
+          cp artifacts/*win32-msvc-x86_64/sdk/dusklight.lib sdk-assets/dusklight.lib
+          cp artifacts/*win32-msvc-x86_64/dusklight.symdb sdk-assets/dusklight.symdb
+
+      - name: Zip artifact directories
+        run: |
+          cd artifacts
+          for d in */; do
+            d="${d%/}"
+            (cd "$d" && zip -qry "../${d}.zip" .)
+          done
+          ls -la
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create platform-v1 artifacts/*.zip sdk-assets/dusklight.lib sdk-assets/dusklight.symdb \
+            --repo ${{ github.repository }} \
+            --target ${{ github.sha }} \
+            --title "Mod Platform v1 (upstream + PR 2193 gfx service)" \
+            --notes "The fixed base-game build our mods run on: pristine upstream Dusklight plus the PR #2193 mod-API gfx service, with NO bundled mods. Install this once; the mods iterate separately in the dusklight-mods repository (which pins this release as platform-v1). Extra assets: dusklight.lib (Windows import library mods link against) and dusklight.symdb (symbol manifest for by-name hooks) from the Windows x86_64 build."
