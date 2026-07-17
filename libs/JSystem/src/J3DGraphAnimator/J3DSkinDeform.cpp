@@ -6,6 +6,10 @@
 #include "JSystem/JKernel/JKRHeap.h"
 #include <cstring>
 
+#if TARGET_PC
+#include "dusk/gpu_skinning.h"
+#endif
+
 J3DSkinNList::J3DSkinNList() {
     field_0x0 = NULL;
     field_0x4 = NULL;
@@ -628,6 +632,12 @@ void J3DSkinDeform::deformVtxNrm_S16(J3DVertexBuffer* pVtxBuffer) const {
 
 void J3DSkinDeform::deform(J3DModel* pModel) {
     J3D_ASSERT_NULLPTR(1270, pModel != NULL);
+
+#if TARGET_PC
+    if (dusk::gpu_skin::try_deform(this, pModel)) {
+        return;
+    }
+#endif
 
     if (pModel->checkFlag(J3DMdlFlag_SkinPosCpu)) {
         onFlag(2);

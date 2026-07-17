@@ -11,6 +11,10 @@
 #include "global.h"
 #include "tracy/Tracy.hpp"
 
+#if TARGET_PC
+#include "dusk/gpu_skinning.h"
+#endif
+
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
     mMaxSize = ALIGN_NEXT(maxSize, 0x20);
     mpDisplayList[0] = JKR_NEW_ARRAY_ARGS(char, mMaxSize, 0x20);
@@ -401,7 +405,15 @@ void J3DShapePacket::drawFast() {
             J3DDifferedTexMtx::sTexGenBlock = NULL;
         }
 
+#if TARGET_PC
+        const bool duskSkin = dusk::gpu_skin::begin_shape(this);
+#endif
         mpShape->drawFast();
+#if TARGET_PC
+        if (duskSkin) {
+            dusk::gpu_skin::end_shape();
+        }
+#endif
     }
 }
 

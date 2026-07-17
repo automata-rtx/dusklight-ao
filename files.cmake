@@ -1443,6 +1443,8 @@ set(DUSK_FILES
         src/dusk/game_clock.cpp
         src/dusk/gamepad_color.cpp
         src/dusk/globals.cpp
+        src/dusk/gpu_skinning.cpp
+        src/dusk/gpu_skinning.h
         src/dusk/gyro.cpp
         src/dusk/http/http.hpp
         src/dusk/imgui/ImGuiActorSpawner.cpp

@@ -52,6 +52,10 @@ public:
         J3DPSMtx33CopyFrom34(mtx, (Mtx3P)mNrmMtx[i]);
     }
     Mtx3P getNrmMtx(int i) { return mNrmMtx[i]; }
+#if TARGET_PC
+    Mtx* getPosMtx() const { return mPosMtx; }
+    J3DSkinNList* getSkinNList() const { return mSkinNList; }
+#endif
     void onFlag(u32 flag) { mFlags |= flag; }
     void offFlag(u32 flag) { mFlags &= ~flag; }
     bool checkFlag(u32 flag) { return mFlags & flag ? true : false; }
