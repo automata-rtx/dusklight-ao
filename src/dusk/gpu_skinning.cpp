@@ -2,11 +2,13 @@
 
 #if TARGET_PC
 
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
 #include <dolphin/gx/GXAurora.h>
 
+#include "dusk/settings.h"
 #include "JSystem/J3DGraphAnimator/J3DJointTree.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "JSystem/J3DGraphAnimator/J3DModelData.h"
@@ -40,9 +42,13 @@ struct Descriptor {
     const InfluenceRec* influences;
     u32 jointCount;
     u32 vtxCount;
+    const void* prevPalette; // previous-frame palette for the motion-vector view, else null
 };
 
 std::unordered_map<const J3DModel*, Descriptor> s_active;
+
+// Previous-frame joint palettes (12 f32 per joint), kept only while the motion-vector view is on.
+std::unordered_map<const J3DModel*, std::vector<f32>> s_prevPalettes;
 
 // Invert J3DSkinDeform's per-joint skin lists into a per-position influence table. This mirrors the
 // exact linear-blend the CPU fast path performs (same joints, same weights), so the GPU result is
@@ -110,14 +116,40 @@ bool try_deform(J3DSkinDeform* skinDeform, J3DModel* model) {
         return false;
     }
 
-    // Compute the per-joint palette (anm * invBind), exactly as the skipped CPU path would.
-    skinDeform->calcAnmInvJointMtx(mtxBuffer);
+    const u32 jointCount = jointTree->getJointNum();
+    Mtx* posMtx = skinDeform->getPosMtx();
+
+    // Motion-vector debug view: before recomputing, snapshot the previous frame's palette (which
+    // posMtx still holds) so the shader can derive per-vertex screen motion from the pose change.
+    const bool debug = dusk::getSettings().game.skinMotionVectors;
+    GXSetSkinningDebugView(debug);
+    const void* prevPalette = nullptr;
+    if (debug) {
+        std::vector<f32>& prev = s_prevPalettes[model];
+        const size_t floats = static_cast<size_t>(jointCount) * 12;
+        const bool hadPrev = prev.size() == floats;
+        if (hadPrev) {
+            std::memcpy(prev.data(), posMtx, floats * sizeof(f32));
+        }
+        // Compute the per-joint palette (anm * invBind), exactly as the skipped CPU path would.
+        skinDeform->calcAnmInvJointMtx(mtxBuffer);
+        if (!hadPrev) {
+            // First frame for this model: previous == current, so no motion is shown.
+            const f32* cur = reinterpret_cast<const f32*>(posMtx);
+            prev.assign(cur, cur + floats);
+        }
+        prevPalette = prev.data();
+    } else {
+        s_prevPalettes.erase(model);
+        skinDeform->calcAnmInvJointMtx(mtxBuffer);
+    }
 
     Descriptor desc;
-    desc.palette = skinDeform->getPosMtx();
+    desc.palette = posMtx;
     desc.influences = table.records.data();
-    desc.jointCount = jointTree->getJointNum();
+    desc.jointCount = jointCount;
     desc.vtxCount = modelData->getVtxNum();
+    desc.prevPalette = prevPalette;
     s_active[model] = desc;
     return true; // skip the CPU vertex deform; the shader blends from the rest pose
 }
@@ -129,7 +161,7 @@ bool begin_shape(J3DShapePacket* packet) {
     }
     const Descriptor& desc = it->second;
     GXSetSkinning(desc.palette, desc.jointCount, desc.influences, desc.vtxCount, kMaxInfluences,
-                  *packet->getBaseMtxPtr());
+                  *packet->getBaseMtxPtr(), desc.prevPalette);
     return true;
 }
 

@@ -200,6 +200,7 @@ struct UserSettings {
         ConfigVar<float> bloomMultiplier;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
+        ConfigVar<bool> skinMotionVectors;
         ConfigVar<bool> enableTextureReplacements;
         ConfigVar<FrameInterpMode> enableFrameInterpolation;
         ConfigVar<int> internalResolutionScale;

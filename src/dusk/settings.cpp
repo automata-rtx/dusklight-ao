@@ -68,6 +68,7 @@ UserSettings g_userSettings = {
         .bloomMultiplier {"game.bloomMultiplier", 1.0f},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
+        .skinMotionVectors {"game.skinMotionVectors", false},
         .enableTextureReplacements {"game.enableTextureReplacements", true},
         .enableFrameInterpolation {"game.enableFrameInterpolation", FrameInterpMode::Off},
         .internalResolutionScale {"game.internalResolutionScale", 0},
@@ -275,6 +276,7 @@ void registerSettings() {
     Register(g_userSettings.game.bloomMultiplier);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
+    Register(g_userSettings.game.skinMotionVectors);
     Register(g_userSettings.game.enableTextureReplacements);
     Register(g_userSettings.game.internalResolutionScale);
     Register(g_userSettings.game.resampler);
