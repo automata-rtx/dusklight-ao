@@ -1528,12 +1528,12 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                 .helpText = "Show gyro sensor values in the input viewer.",
                 .isDisabled = [] { return !getSettings().game.showInputViewer; },
             });
-        config_bool_select(leftPane, rightPane, getSettings().game.skinMotionVectors,
+        config_bool_select(leftPane, rightPane, getSettings().game.skinDebugView,
             {
-                .key = "GPU Skinning Motion Vectors",
-                .helpText = "Debug view: render GPU-skinned characters as a motion-vector "
-                            "visualization. Animated limbs light up (red/green) while static parts "
-                            "stay dark blue - proof that skinning is running on the GPU.",
+                .key = "Visualize GPU Skinning",
+                .helpText = "Debug view: colour skinned characters by GPU bone/matrix index. Each "
+                            "bone shows a distinct hue and the coloured regions deform as the "
+                            "character animates - proof the GPU is skinning them per-vertex.",
             });
         leftPane.add_section("Game");
         leftPane.register_control(

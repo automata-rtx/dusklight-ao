@@ -2359,6 +2359,7 @@ int mDoGph_Painter() {
 
 #if TARGET_PC
             dusk::mods::gfx_run_stage(GFX_STAGE_SCENE_BEGIN, &camera_p->view, view_port);
+            GXSetSkinningDebugView(dusk::getSettings().game.skinDebugView);
 #endif
 
             #if DEBUG
