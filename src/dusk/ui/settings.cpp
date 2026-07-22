@@ -142,6 +142,10 @@ bool try_parse_backend(std::string_view backend, AuroraBackend& outBackend) {
         outBackend = BACKEND_WEBGPU;
         return true;
     }
+    if (backend == "d3d9") {
+        outBackend = BACKEND_D3D9;
+        return true;
+    }
     if (backend == "null") {
         outBackend = BACKEND_NULL;
         return true;
@@ -168,6 +172,8 @@ std::string_view backend_name(AuroraBackend backend) {
         return "OpenGL ES";
     case BACKEND_WEBGPU:
         return "WebGPU";
+    case BACKEND_D3D9:
+        return "D3D9 (Fixed-Function)";
     case BACKEND_NULL:
         return "Null";
     }
@@ -191,6 +197,8 @@ std::string_view backend_id(AuroraBackend backend) {
         return "opengles";
     case BACKEND_WEBGPU:
         return "webgpu";
+    case BACKEND_D3D9:
+        return "d3d9";
     case BACKEND_NULL:
         return "null";
     }

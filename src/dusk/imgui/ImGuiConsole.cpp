@@ -454,6 +454,8 @@ namespace dusk {
             return "OpenGL ES"sv;
         case BACKEND_WEBGPU:
             return "WebGPU"sv;
+        case BACKEND_D3D9:
+            return "D3D9 (Fixed-Function)"sv;
         case BACKEND_NULL:
             return "Null"sv;
         }
@@ -477,6 +479,8 @@ namespace dusk {
             return "opengles"sv;
         case BACKEND_WEBGPU:
             return "webgpu"sv;
+        case BACKEND_D3D9:
+            return "d3d9"sv;
         case BACKEND_NULL:
             return "null"sv;
         }
@@ -513,6 +517,10 @@ namespace dusk {
         }
         if (backend == "webgpu") {
             outBackend = BACKEND_WEBGPU;
+            return true;
+        }
+        if (backend == "d3d9") {
+            outBackend = BACKEND_D3D9;
             return true;
         }
         if (backend == "null") {
