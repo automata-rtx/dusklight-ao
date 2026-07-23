@@ -11,6 +11,10 @@
 #include "f_op/f_op_kankyo_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
+
+#if TARGET_PC
+#include <aurora/aurora.h>
+#endif
 #include <cstring>
 #if TARGET_PC
 #include "dusk/frame_interpolation.h"
@@ -4505,6 +4509,15 @@ void dKyr_drawStar(Mtx drawMtx, u8** tex) {
 
 void drawCloudShadow(Mtx drawMtx, u8** tex) {
     ZoneScoped;
+#if TARGET_PC
+    // Moya drifting cloud-shadow overlays are intentionally not rendered on
+    // the D3D9 fixed-function backend (RTX Remix path-traces real shadows).
+    // Guarded here, at the single draw funnel, in addition to the packet-level
+    // gate (docs/dx9-fixed-function.md).
+    if (aurora_get_backend() == BACKEND_D3D9) {
+        return;
+    }
+#endif
     dScnKy_env_light_c* envlight = dKy_getEnvlight();
     dKankyo_cloud_Packet* cloud_packet = g_env_light.mpCloudPacket;
     camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
