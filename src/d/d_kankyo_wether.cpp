@@ -15,6 +15,10 @@
 #include <cstring>
 #include "m_Do/m_Do_audio.h"
 
+#if TARGET_PC
+#include <aurora/aurora.h>
+#endif
+
 static void dKyw_pntlight_set(WIND_INFLUENCE* pntwind);
 
 static J3DPacket* dKyw_setDrawPacketList(J3DPacket* i_packet, int i_type) {
@@ -95,6 +99,14 @@ CLOUD_EFF::~CLOUD_EFF() {}
 CLOUD_EFF::CLOUD_EFF() {}
 
 void dKankyo_cloud_Packet::draw() {
+#if TARGET_PC
+    // The moya drifting cloud-shadow projection is intentionally disabled on
+    // the D3D9 fixed-function backend: RTX Remix path-traces real shadows and
+    // the projected fake ones would fight them (docs/dx9-fixed-function.md).
+    if (aurora_get_backend() == BACKEND_D3D9) {
+        return;
+    }
+#endif
     drawCloudShadow(j3dSys.getViewMtx(), &mpResTex);
 }
 
