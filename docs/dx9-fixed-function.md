@@ -29,10 +29,17 @@ executable and launch with the d3d9 backend.
 ## Game-side behavior & limitations in D3D9 mode
 
 - **RmlUi menus (settings/prelaunch UI) are unavailable** — Aurora's RmlUi
-  backend renders through WebGPU, which is not initialized in this mode.
-  `dusk::ui::update()` no-ops via its `rmlui::is_initialized()` guard.
-  Configure via the config file or CLI, or switch settings while running a
-  WebGPU-family backend. The in-game HUD/menus (J2D, drawn through GX) work.
+  backend renders through WebGPU, which is not initialized in this mode. All
+  UI document creation is skipped at startup (`game_main` gates on
+  `dusk::ui::initialize()`), including the prelaunch game picker, the
+  first-run preset window, and the crash-report consent dialog. Configure via
+  the config file or CLI, or switch settings while running a WebGPU-family
+  backend. The in-game HUD/menus (J2D, drawn through GX) work.
+- **The game must be launchable without the prelaunch picker**: set
+  `backend.isoPath` in `config.json` (to your .rvz/.iso) or pass
+  `--dvd <path>` on the command line. With neither, the game exits with
+  "No DVD image specified, unable to boot!". Recommended D3D9 launch:
+  `dusklight --backend d3d9 --dvd <path-to-game.rvz>`.
 - **Graphics mods (WGSL: AO, realtime shadows, …) are inert** — the mod gfx
   stages (`push_custom_draw`, `create_pass`, `resolve_pass`) return false in
   D3D9 mode. Remix's path tracer replaces these effects wholesale.

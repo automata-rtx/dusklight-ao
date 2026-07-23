@@ -694,10 +694,17 @@ int game_main(int argc, char* argv[]) {
     }
 
     dusk::texture_replacements::reload();
-    dusk::ui::initialize();
-    dusk::ui::push_document(std::make_unique<dusk::ui::Overlay>(), true, true);
-    dusk::ui::push_document(std::make_unique<dusk::ui::TouchControls>(), false, true);
-    dusk::ui::push_document(std::make_unique<dusk::ui::MenuBar>(), false);
+    // RmlUi is unavailable on backends without WebGPU (D3D9 fixed-function
+    // mode); Document subclasses dereference their Rml document in their
+    // constructors, so no UI documents may be created at all in that case.
+    const bool uiAvailable = dusk::ui::initialize();
+    if (uiAvailable) {
+        dusk::ui::push_document(std::make_unique<dusk::ui::Overlay>(), true, true);
+        dusk::ui::push_document(std::make_unique<dusk::ui::TouchControls>(), false, true);
+        dusk::ui::push_document(std::make_unique<dusk::ui::MenuBar>(), false);
+    } else {
+        DuskLog.info("RmlUi menus unavailable on this backend; UI documents disabled");
+    }
 
     // Invalidate a bad saved isoPath so that Dusklight can't get blocked from starting up.
     // This is only a metadata check; full hash verification is handled by the prelaunch UI.
@@ -772,6 +779,14 @@ int game_main(int argc, char* argv[]) {
             dusk::config::save();
         }
 
+        if (!skipPreLaunchUI && !uiAvailable) {
+            // Without RmlUi there is no prelaunch UI to pick a game with; fall
+            // through to the configured/CLI DVD path (fatals below with a clear
+            // message if none is usable).
+            DuskLog.warn(
+                "Prelaunch UI unavailable on this backend; set backend.isoPath in config or pass --dvd <path>");
+            skipPreLaunchUI = true;
+        }
         if (!skipPreLaunchUI) {
             dusk::ui::push_document(std::make_unique<dusk::ui::Prelaunch>(), true);
 
@@ -808,12 +823,12 @@ int game_main(int argc, char* argv[]) {
     }
 
 #if DUSK_ENABLE_SENTRY_NATIVE
-    if (dusk::crash_reporting::get_consent() == dusk::crash_reporting::Consent::Unknown) {
+    if (uiAvailable && dusk::crash_reporting::get_consent() == dusk::crash_reporting::Consent::Unknown) {
         dusk::ui::push_document(std::make_unique<dusk::ui::CrashReportWindow>());
     }
 #endif
 
-    if (!dusk::getSettings().backend.wasPresetChosen) {
+    if (uiAvailable && !dusk::getSettings().backend.wasPresetChosen) {
         dusk::ui::push_document(std::make_unique<dusk::ui::PresetWindow>());
     }
 
