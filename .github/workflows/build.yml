@@ -295,13 +295,15 @@ jobs:
             build/install/debug.7z
             build/install/sdk/
 
-  # ── automata-rtx delta: publish the platform-v2-test release ──────────────────────────────
-  # Gated to this branch; upstream game code is otherwise untouched. Publishes the per-platform
-  # game builds AND the mod SDK link stubs as top-level assets, so dusklight-mods (pointing
-  # DUSKLIGHT_SDK_STUB_URL here) auto-downloads them.
+  # ── automata-rtx delta: publish the mod-platform test release ─────────────────────────────
+  # Gated to the platform branches; upstream game code is otherwise untouched. Publishes the
+  # per-platform game builds AND the mod SDK link stubs as top-level assets, so dusklight-mods
+  # (pointing DUSKLIGHT_SDK_STUB_URL at one of these releases) auto-downloads them.
+  #   main                                          -> platform-v2-test   (the stable mod platform)
+  #   claude/thin-gbuffer-authored-normals-wgqupt   -> platform-gbuffer-test (in-progress feature)
   release:
-    name: Publish platform-v2-test release
-    if: endsWith(github.ref, 'claude/dusklight-platform-rebuild-rqhsaw')
+    name: Publish mod platform release
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/thin-gbuffer-authored-normals-wgqupt'
     needs: [build-linux, build-apple, build-android, build-windows]
     runs-on: ubuntu-latest
     permissions:
@@ -340,11 +342,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Idempotent: this is a test tag that may be republished on re-push.
-          gh release delete platform-v2-test --repo ${{ github.repository }} --yes --cleanup-tag || true
-          gh release create platform-v2-test artifacts/*.zip sdk-assets/* \
+          set -euo pipefail
+          COMMON_NOTES="Game code is pristine upstream Dusklight 76b56cd8 (the base the official mod template pins); the only changes over mainline are this release-publishing job and the extern/aurora submodule repointed to automata-rtx/aurora-ao (upstream aurora 81f12f31 + enlarged per-frame streaming buffers: Index 4 MB, Vertex 16 MB, Storage 16 MB; Uniform/TextureUpload 24 MB unchanged) so the mods' multi-pass shadow-map replays no longer overflow them. This SDK auto-downloads its link stub, so the mod SDK link inputs are attached as top-level assets for the dusklight-mods CI (which sets DUSKLIGHT_SDK_STUB_URL to this release): windows-amd64.lib, windows-arm64.lib, stub-macos-arm64, stub-macos-x86_64, stub-android-aarch64.so. The by-name-hook symbol manifest is embedded inside dusklight.exe (shipped in the win32-msvc-x86_64 game zip). Install the win32-msvc-x86_64 build to run the mods."
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAG=platform-v2-test
+            TITLE="Mod Platform v2-test (upstream Dusklight 76b56cd8 + enlarged aurora buffers)"
+            NOTES="TEST base-game build for mod development — the stable mod platform. $COMMON_NOTES"
+          else
+            TAG=platform-gbuffer-test
+            TITLE="Mod Platform gbuffer-test (platform-v2 + thin g-buffer authored normals)"
+            NOTES="TEST base-game build for mod development — platform-v2 PLUS the in-progress thin g-buffer (aurora writes the game's authored view-space normals to a second RGBA8 target; exposed through the gfx service as GfxResolveDesc::normal / GfxResolvedTargets::normal). Use this build when testing mods against authored normals; use platform-v2-test otherwise. $COMMON_NOTES"
+          fi
+          # Idempotent: these are test tags that may be republished on re-push.
+          gh release delete "$TAG" --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create "$TAG" artifacts/*.zip sdk-assets/* \
             --repo ${{ github.repository }} \
             --target ${{ github.sha }} \
             --prerelease \
-            --title "Mod Platform v2-test (upstream Dusklight 76b56cd8 + enlarged aurora buffers)" \
-            --notes "TEST base-game build for mod development, tracking the official Dusklight mod template's pinned base (upstream Dusklight 76b56cd8). Game code is pristine upstream; the only changes over mainline are this release-publishing job and the extern/aurora submodule repointed to automata-rtx/aurora-ao (upstream aurora 81f12f31 + enlarged per-frame streaming buffers: Index 4 MB, Vertex 16 MB, Storage 16 MB; Uniform/TextureUpload 24 MB unchanged) so the mods' multi-pass shadow-map replays no longer overflow them. This SDK auto-downloads its link stub, so the mod SDK link inputs are attached as top-level assets for the dusklight-mods CI (which sets DUSKLIGHT_SDK_STUB_URL to this release): windows-amd64.lib, windows-arm64.lib, stub-macos-arm64, stub-macos-x86_64, stub-android-aarch64.so. The by-name-hook symbol manifest is embedded inside dusklight.exe (shipped in the win32-msvc-x86_64 game zip). Install the win32-msvc-x86_64 build to run the mods."
+            --title "$TITLE" \
+            --notes "$NOTES"
