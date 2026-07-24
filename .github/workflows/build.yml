@@ -275,7 +275,18 @@ jobs:
       - name: Install dependencies
         run: |
           choco install ninja
-          vcpkg install freetype:${{matrix.vcpkg_arch}}-windows zstd:${{matrix.vcpkg_arch}}-windows
+          # vcpkg source downloads occasionally hit transient TLS failures on
+          # hosted runners (curl error 35), which vcpkg treats as fatal.
+          # Retrying is safe: already-installed ports are skipped.
+          $attempts = 0
+          do {
+            vcpkg install freetype:${{matrix.vcpkg_arch}}-windows zstd:${{matrix.vcpkg_arch}}-windows
+            if ($LASTEXITCODE -eq 0) { break }
+            $attempts++
+            if ($attempts -ge 3) { exit 1 }
+            Write-Host "vcpkg install failed (attempt $attempts of 3); retrying in 20s..."
+            Start-Sleep -Seconds 20
+          } while ($true)
 
       - name: Configure CMake
         run: cmake --preset x-windows-ci-${{matrix.preset}}
