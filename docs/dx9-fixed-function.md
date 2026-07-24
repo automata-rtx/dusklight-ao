@@ -26,6 +26,34 @@ Windows only. Any of:
 For Remix: place the RTX Remix runtime's `d3d9.dll` next to the Dusklight
 executable and launch with the d3d9 backend.
 
+## Running under RTX Remix — required rtx.conf settings
+
+Create/edit `rtx.conf` next to the executable:
+
+```ini
+# REQUIRED for game input. Remix's default ("new") GUI input method creates an
+# invisible overlay window that registers raw keyboard input with
+# RIDEV_NOLEGACY, which suppresses normal Windows key messages for the whole
+# process - SDL (and therefore the game) stops receiving keyboard input from
+# the moment the Remix splash appears, while Remix's own hotkeys (Alt+X)
+# keep working. The old method routes input through a window-proc hook that
+# always forwards messages to the game. This option is read at startup only.
+rtx.useNewGuiInputMethod = False
+```
+
+Notes:
+
+- **Camera / world space:** the game hands its camera matrix to the backend
+  every frame (`J3DSys::setViewMtx` → aurora `GXSetViewMtx`), so Remix sees a
+  real VIEW transform, world-space geometry, and object→world skinning bones.
+  Without this (older builds), Remix's camera manager rejected every draw
+  ("Unknown camera"), which scattered skinned character parts and disabled
+  Remix features like Anti-Culling.
+- If characters look wrong under Remix, check the Remix log for
+  `Cannot decompose the matrices for a skinned mesh` or
+  `draw call has bones but no blend weight buffer` — both indicate a stale
+  build of this branch (fixed in aurora checkpoints 3.3/3.4).
+
 ## Game-side behavior & limitations in D3D9 mode
 
 - **RmlUi menus (settings/prelaunch UI) are unavailable** — Aurora's RmlUi
@@ -47,10 +75,11 @@ executable and launch with the d3d9 backend.
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
   but nothing is rendered.
-- EFB-copy consumers (real-shadow silhouettes, minimap ripple, heat
-  distortion) sample a black placeholder in v1; post-processing (bloom etc.)
-  is skipped by design. See `extern/aurora/docs/dx9/unsupported-effects.md`
-  for the full list and Remix-side compensation notes.
+- EFB color copies and offscreen passes are real (StretchRect /
+  render-target textures); depth-format copies still use a neutral
+  white/alpha-0 placeholder, and post-processing (bloom etc.) is skipped by
+  design. See `extern/aurora/docs/dx9/unsupported-effects.md` for the full
+  list and Remix-side compensation notes.
 - GPU skinning: both the PNMTXIDX matrix-palette path (all normal characters)
   and the `GXSetSkinning` extension path (`src/dusk/gpu_skinning.cpp`, the two
   `J3DSkinDeform` actors) map to fixed-function indexed vertex blending —
