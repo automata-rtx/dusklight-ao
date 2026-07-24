@@ -53,6 +53,16 @@ Notes:
   `Cannot decompose the matrices for a skinned mesh` or
   `draw call has bones but no blend weight buffer` — both indicate a stale
   build of this branch (fixed in aurora checkpoints 3.3/3.4).
+- **VRAM growing without bound / textures flickering in the
+  categorize-textures tab** indicates a stale build (fixed in aurora
+  checkpoint 3.5): the backend now keeps D3D9 texture objects stable across
+  frames (content-addressed cache; per-size EFB copy targets) because Remix
+  tracks textures by object and holds references across frames.
+- **Recommended: set Bloom to Off** (Settings → Bloom, or
+  `game.bloomMode` in the config) when running under Remix. The classic
+  bloom is a screen-space EFB filter chain; the path tracer replaces this
+  class of effect, and the filter quads only overlay raster-derived blur on
+  top of Remix's output.
 
 ## Game-side behavior & limitations in D3D9 mode
 
