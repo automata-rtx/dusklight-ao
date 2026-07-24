@@ -290,8 +290,61 @@ jobs:
           path: |
             build/install/*.exe
             build/install/*.dll
-            build/install/*.symdb
             build/install/res/
             build/install/mods/
             build/install/debug.7z
             build/install/sdk/
+
+  # ── automata-rtx delta: publish the platform-v2-test release ──────────────────────────────
+  # Gated to this branch; upstream game code is otherwise untouched. Publishes the per-platform
+  # game builds AND the mod SDK link stubs as top-level assets, so dusklight-mods (pointing
+  # DUSKLIGHT_SDK_STUB_URL here) auto-downloads them.
+  release:
+    name: Publish platform-v2-test release
+    if: endsWith(github.ref, 'claude/dusklight-platform-rebuild-rqhsaw')
+    needs: [build-linux, build-apple, build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download all build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ github.run_id }} --repo ${{ github.repository }} --dir artifacts
+
+      - name: Collect mod SDK link stubs (top-level release assets)
+        # The mod SDK downloads these version-independent link stubs from DUSKLIGHT_SDK_STUB_URL
+        # (dusklight-mods points that at this release). Asset names must match what add_mod
+        # requests: windows-<arch>.lib, stub-macos-<arch>, stub-android-<arch>.so.
+        run: |
+          set -euo pipefail
+          mkdir sdk-assets
+          cp artifacts/*win32-msvc-x86_64/sdk/windows-*.lib      sdk-assets/
+          cp artifacts/*win32-msvc-arm64/sdk/windows-*.lib       sdk-assets/
+          cp artifacts/*macos-appleclang-arm64/sdk/stub-macos-*  sdk-assets/
+          cp artifacts/*macos-appleclang-x86_64/sdk/stub-macos-* sdk-assets/
+          cp artifacts/*android-arm64/sdk/stub-android-*.so      sdk-assets/
+          ls -la sdk-assets
+
+      - name: Zip artifact directories
+        run: |
+          cd artifacts
+          for d in */; do
+            d="${d%/}"
+            (cd "$d" && zip -qry "../${d}.zip" .)
+          done
+          ls -la
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Idempotent: this is a test tag that may be republished on re-push.
+          gh release delete platform-v2-test --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create platform-v2-test artifacts/*.zip sdk-assets/* \
+            --repo ${{ github.repository }} \
+            --target ${{ github.sha }} \
+            --prerelease \
+            --title "Mod Platform v2-test (upstream Dusklight 76b56cd8 + enlarged aurora buffers)" \
+            --notes "TEST base-game build for mod development, tracking the official Dusklight mod template's pinned base (upstream Dusklight 76b56cd8). Game code is pristine upstream; the only changes over mainline are this release-publishing job and the extern/aurora submodule repointed to automata-rtx/aurora-ao (upstream aurora 81f12f31 + enlarged per-frame streaming buffers: Index 4 MB, Vertex 16 MB, Storage 16 MB; Uniform/TextureUpload 24 MB unchanged) so the mods' multi-pass shadow-map replays no longer overflow them. This SDK auto-downloads its link stub, so the mod SDK link inputs are attached as top-level assets for the dusklight-mods CI (which sets DUSKLIGHT_SDK_STUB_URL to this release): windows-amd64.lib, windows-arm64.lib, stub-macos-arm64, stub-macos-x86_64, stub-android-aarch64.so. The by-name-hook symbol manifest is embedded inside dusklight.exe (shipped in the win32-msvc-x86_64 game zip). Install the win32-msvc-x86_64 build to run the mods."
