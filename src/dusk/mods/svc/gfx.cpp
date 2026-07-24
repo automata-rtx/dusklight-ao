@@ -147,6 +147,7 @@ void draw_trampoline(const aurora::gfx::DrawContext& ctx, const wgpu::RenderPass
         .target_width = ctx.targetWidth,
         .target_height = ctx.targetHeight,
         .uses_reversed_z = aurora::gfx::uses_reversed_z(),
+        .normal_format = static_cast<WGPUTextureFormat>(ctx.normalFormat),
     };
 
     std::string failure;
@@ -351,7 +352,8 @@ ModResult gfx_resolve_pass(LoadedMod& mod, const GfxResolveDesc& desc, GfxResolv
 
     aurora::gfx::ResolvedTargets resolved;
     if (!aurora::gfx::resolve_pass(
-            aurora::gfx::ResolveDesc{.color = desc.color, .depth = desc.depth}, resolved))
+            aurora::gfx::ResolveDesc{.color = desc.color, .depth = desc.depth, .normal = desc.normal},
+            resolved))
     {
         return MOD_UNAVAILABLE;
     }
@@ -364,6 +366,8 @@ ModResult gfx_resolve_pass(LoadedMod& mod, const GfxResolveDesc& desc, GfxResolv
     out.color_format = static_cast<WGPUTextureFormat>(resolved.colorFormat);
     out.width = resolved.width;
     out.height = resolved.height;
+    out.normal = resolved.normal.Get();
+    out.normal_format = static_cast<WGPUTextureFormat>(resolved.normalFormat);
     return MOD_OK;
 }
 
@@ -584,6 +588,7 @@ ModResult gfx_get_device_info(ModContext* context, GfxDeviceInfo* outInfo) {
     outInfo->depth_format = static_cast<WGPUTextureFormat>(aurora::gfx::depth_format());
     outInfo->sample_count = aurora::gfx::sample_count();
     outInfo->uses_reversed_z = aurora::gfx::uses_reversed_z();
+    outInfo->normal_format = static_cast<WGPUTextureFormat>(aurora::gfx::normal_format());
     return MOD_OK;
 }
 

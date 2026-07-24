@@ -639,6 +639,10 @@ int game_main(int argc, char* argv[]) {
         config.pauseOnFocusLost = dusk::getSettings().game.pauseOnFocusLost;
         config.imGuiInitCallback = &aurora_imgui_init_callback;
         config.allowTextureDumps = false;
+        // Enable the thin g-buffer normal target so screen-space mods can consume the game's
+        // authored vertex normals instead of reconstructing them from depth. Adds one RGBA8
+        // render target; could be gated on a video setting if the cost is unwanted.
+        config.enableNormalBuffer = true;
         auroraInfo = aurora_initialize(argc, argv, &config);
     }
 

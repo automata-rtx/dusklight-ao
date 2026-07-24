@@ -56,11 +56,15 @@ typedef struct GfxDeviceInfo {
     WGPUTextureFormat depth_format; /* scene depth target format */
     uint32_t sample_count;          /* scene pass MSAA sample count */
     bool uses_reversed_z;           /* true means depth 1.0 is near */
+    /* Thin g-buffer normal target format, or WGPUTextureFormat_Undefined when the host normal
+     * buffer is disabled. When set, resolve_pass can produce GfxResolvedTargets::normal, and
+     * custom draws recorded into the scene pass must declare a matching second color target. */
+    WGPUTextureFormat normal_format;
 } GfxDeviceInfo;
 
 #define GFX_DEVICE_INFO_INIT                                                                       \
     {sizeof(GfxDeviceInfo), NULL, NULL, WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,  \
-        1u, false}
+        1u, false, WGPUTextureFormat_Undefined}
 
 /*
  * Passed to GfxDrawFn on the render worker thread; valid only during the call. The pass pipeline,
@@ -81,6 +85,10 @@ typedef struct GfxDrawContext {
     uint32_t target_width;
     uint32_t target_height;
     bool uses_reversed_z;
+    /* Second (thin g-buffer normal) color target format of the pass this draw is recorded into,
+     * or WGPUTextureFormat_Undefined. When set, the draw's pipeline MUST declare a matching
+     * second color target (write mask off if it does not write normals) to match the pass. */
+    WGPUTextureFormat normal_format;
 } GfxDrawContext;
 
 typedef void (*GfxDrawFn)(ModContext* ctx, const GfxDrawContext* draw_ctx, const void* payload,
@@ -124,9 +132,10 @@ typedef struct GfxResolveDesc {
     uint32_t struct_size;
     bool color;
     bool depth;
+    bool normal; /* view-space normal snapshot; requires the host normal buffer to be enabled */
 } GfxResolveDesc;
 
-#define GFX_RESOLVE_DESC_INIT {sizeof(GfxResolveDesc), true, false}
+#define GFX_RESOLVE_DESC_INIT {sizeof(GfxResolveDesc), true, false, false}
 
 typedef struct GfxResolvedTargets {
     uint32_t struct_size;
@@ -135,10 +144,16 @@ typedef struct GfxResolvedTargets {
     WGPUTextureFormat color_format;
     uint32_t width;
     uint32_t height;
+    /* single-sample view-space normal snapshot in normal_format (RGBA8Unorm: xyz*0.5+0.5, w =
+     * validity). NULL when not requested or the host normal buffer is disabled. Appended after
+     * height for struct_size-based ABI compatibility. */
+    WGPUTextureView normal;
+    WGPUTextureFormat normal_format;
 } GfxResolvedTargets;
 
 #define GFX_RESOLVED_TARGETS_INIT                                                                  \
-    {sizeof(GfxResolvedTargets), NULL, NULL, WGPUTextureFormat_Undefined, 0u, 0u}
+    {sizeof(GfxResolvedTargets), NULL, NULL, WGPUTextureFormat_Undefined, 0u, 0u, NULL,            \
+     WGPUTextureFormat_Undefined}
 
 /*
  * Passed to GfxComputeFn on the render worker thread; valid only during the call. The encoder is
