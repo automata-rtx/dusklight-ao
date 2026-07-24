@@ -98,5 +98,9 @@ Notes:
 ## Branches
 
 This work lives on the `Fixed-Function` branch of `dusklight-ao` and
-`aurora-ao` (development branch `claude/dusklight-dx9-fixed-function-6uoy92`),
-based on the GPU-skinning branch `claude/gpu-skinning-72pstj`.
+`aurora-ao` — the integration branch, which only advances by merging the
+working branch `Fixed-Function-dev` at tested checkpoints. All development
+happens on `Fixed-Function-dev` (both repos; dusklight's `extern/aurora`
+pin tracks the matching aurora branch). The lineage includes the GPU
+skinning work and shares its fork-point ancestry with `ao`/`main`, so
+mainline updates can be backported by merge/cherry-pick.
