@@ -893,6 +893,17 @@ int game_main(int argc, char* argv[]) {
         });
 #endif
 #endif
+        if (auroraInfo.backend == BACKEND_D3D9) {
+            // The D3D9 fixed-function backend never initializes WebGPU, so mod
+            // graphics stages are inert and a native mod that touches the
+            // renderer takes the process down on load. Drop every search dir
+            // instead, which lands on the same "no mods found" path a clean
+            // install takes. Deliberately not written back to config.json:
+            // switching between a modded build and a D3D9 test build should
+            // need no config edits.
+            DuskLog.info("D3D9 backend: mods are unsupported here, skipping mod discovery");
+            modDirs.clear();
+        }
         dusk::mods::ModLoader::instance().set_search_dirs(std::move(modDirs));
     }
 #if TARGET_ANDROID
