@@ -75,6 +75,10 @@ Notes:
   `terrainTextures`, …) persist across runs and silently hide or reclassify
   textures in later sessions. Clear them before judging a new build.
 
+> Planned successor: the bloom table below will eventually be pushed by the
+> game automatically via the kankyo→Remix bridge — see
+> [`kankyo-remix.md`](kankyo-remix.md) for the design.
+
 ## Dusklight bloom in Remix
 
 The game's own bloom has to be off under Remix (above), so the "Dusk" bloom
