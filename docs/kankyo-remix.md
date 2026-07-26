@@ -442,6 +442,49 @@ colour/amount, base weight. One calibration knob is needed:
 
 ## Part V — Implementation plan
 
+### Verification state (read this first)
+
+What has actually been observed running, as of 2026-07-26. Everything below
+compiles: dusklight/aurora are CI-green on all 8 targets (Windows MSVC
+x86_64 + arm64, macOS x3, Linux x2, Android) at dusklight `f5defc6` /
+aurora `a7b47ac`, and the Remix fork is green on all three Windows configs
+at `896bffe` (merged to `main` via PR #1).
+
+**Confirmed working in-game** (owner test session, build `cea9f2f`-era):
+- The kankyo bridge feed is live: Dusklight bloom renders and its colour
+  tracks time of day. Not yet calibrated — it does not look like the
+  game's bloom, and the owner's rtx.conf values (`burnIntensity = 5`,
+  `dusklightBlurRatio = 255`, `dusklightThreshold = 0`) were chosen to
+  make it *visible*, not accurate. Re-baseline these.
+- GX→D3D9 fog forwarding reaches Remix. Faithful mode (composite depth
+  fog) looks consistent; volumetric mode reacts more strongly to kankyo's
+  fog near/far than expected.
+- Vanilla Remix post FX (vignette, chromatic aberration, motion blur) work
+  once their strength values are raised well above Remix's defaults — the
+  defaults are near-invisible at 3440x1440. No Remix bug; nothing to fix.
+
+**Built and CI-green but NEVER RUN** — treat as unverified:
+- **The whole sun/moon distant light** (`updateCelestialLight`, Phase 4).
+  Written after the last test session. Specifically unproven at runtime:
+  `dxvk_RegisterD3D9Device` succeeding against aurora's device; the
+  handedness of the direction handed to Remix (hence the Flip Direction
+  debug checkbox in Tools → Remix Bridge); whether the intensity defaults
+  (sun 5.0 / moon 0.3) are anywhere near right; and whether the light
+  survives aurora's device recreation on resize.
+- `aurora_dx9_get_device()` (aurora checkpoint 3.18).
+- The mono overlay (twilight desaturation) and composite base weight —
+  these only engage in twilight/wolf-senses palettes, which the test
+  session did not reach.
+- Sky tagging has not been done at all; it is a manual one-time step in
+  the Remix texture-categories UI (see dx9-fixed-function.md).
+
+**First-run checklist for the sun/moon light:** Tools → Remix Bridge should
+read `device: registered | SUN`. Walk past a lantern — the sun direction
+must not move (that is the whole point of deriving it from the orbit
+rather than the game's shadow-light selection). Watch a dawn (daytime
+~67.5–75) for the moon→sun crossfade. If shadows fall from the wrong side,
+tick Flip Direction; if that fixes it, the sign belongs in the code.
+
 ### Status log
 
 - **Phase 0 + Phase 1: implemented** (game: `src/dusk/remix_bridge.{cpp,hpp}`,
@@ -582,7 +625,15 @@ colour/amount, base weight. One calibration knob is needed:
      palette-correct colour, fading over distance pre-tonemap; toggling
      `rtx.enableFog` kills it.
 
-### Phase 3 — ambient grade (fork + bridge)
+### Phase 3 — ambient grade (fork + bridge)  ← NEXT
+
+Note before starting: Phase 3 changes overall scene tint, and the sun/moon
+light (Phase 4, above) changes overall scene lighting. Both are unverified
+at runtime, so land Phase 3 behind its own `rtx.dusklight.grade.enable`
+(default **false**) as planned — that keeps the two independently
+bisectable when the owner does test, instead of two unproven systems
+changing the image at once.
+
 1. Fork: `rtx.dusklight.grade.*` response options + tint math in the grade
    stage (chromaOnly normalization, strength, maxDarkening).
 2. Bridge: push `actorAmbient`/`bgAmbient`.
