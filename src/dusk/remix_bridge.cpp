@@ -140,6 +140,20 @@ std::string formatColor(u8 r, u8 g, u8 b) {
     return buffer;
 }
 
+// The ambient colours are GXColorS10: signed 16 bit fields that the hardware treated as
+// signed 10 bit. The environment blend keeps them inside 0..255, but events add colours in
+// before clamping, so clamp here rather than trust it.
+std::string formatColorS10(const GXColorS10& color) {
+    const auto norm = [](s16 value) {
+        return std::clamp(static_cast<float>(value), 0.0f, 255.0f) / 255.0f;
+    };
+
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.5g, %.5g, %.5g", norm(color.r), norm(color.g),
+                  norm(color.b));
+    return buffer;
+}
+
 const char* formatBool(bool value) {
     return value ? "True" : "False";
 }
@@ -414,6 +428,21 @@ void pushKankyoState() {
     push("rtx.dusklight.env.bloomScreenBlend", formatBool(bloom->mMode == 1));
     push("rtx.dusklight.env.monoColor", formatColor(mono.r, mono.g, mono.b));
     push("rtx.dusklight.env.monoAmount", formatFloat(mono.a / 255.0f));
+
+    // Ambient colours. On the original hardware these tinted every surface at shading time -
+    // actors through their tevstr, room geometry through the BG layers - and they are the
+    // single biggest carrier of the game's time-of-day, weather and area mood. The path
+    // tracer lights the scene itself, so nothing consumes them under Remix any more; the
+    // fork's grade stage (rtx.dusklight.grade.*) puts their colour back over the final image.
+    //
+    // These are already the fully blended per-frame values: setLight() ran the four-way
+    // palette blend, folded in the event add-colours and applied the global ratios before we
+    // read them. BG layer 0 is the main room layer (the one the game itself reuses when it
+    // needs "the" background ambient, e.g. for mirror reflections).
+    const dScnKy_env_light_c* env = dKy_getEnvlight();
+
+    push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
+    push("rtx.dusklight.env.bgAmbient", formatColorS10(env->bg_amb_col[0]));
 }
 #endif  // DUSK_REMIX_BRIDGE_SUPPORTED
 

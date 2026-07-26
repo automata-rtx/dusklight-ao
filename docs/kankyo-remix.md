@@ -323,13 +323,22 @@ exactly (mono → gather → composite, with the base weight applied at
 composite so the bloom gathers from the *undimmed* image):
 
 ```
+// ambient mood tint (emulates the lost kankyo relight)             [Phase 3 ✅]
+c    = c * lerp(1, tint(actorAmbient, bgAmbient), gradeStrength)    // see IV.6
 // prepass (before the pyramid, in-place on the HDR final output)   [Phase 1 ✅]
 c    = lerp(c, lumaProxy(c) * monoColor, monoAmount)
-// ambient mood tint (emulates the lost kankyo relight)             [Phase 3]
-c    = c * lerp(1, tint(actorAmbient, bgAmbient), gradeStrength)    // see IV.6
 // composite (existing bloom composite shader)                      [Phase 1 ✅]
 out  = c_orig_or_prepassed * baseWeight + bloom * tintCol * (screen ? 1-dst : 1)
 ```
+
+*(The grade moved ahead of the mono overlay during implementation. The
+draft had it between mono and composite, but that is not where the GC put
+it: the ambient was applied per surface during **shading**, and the mono
+overlay and bloom were the post pass in `draw2()` that ran afterwards. The
+two do not commute — `lumaProxy` is linear, so `grey(c·t) ≠ grey(c)·t`
+unless `t` is neutral — so the order is worth getting right. Grading first
+also means the mono overlay desaturates an already-graded image, which is
+what twilight did.)*
 
 New options (all in the fork, all live-tunable):
 
@@ -342,18 +351,51 @@ New options (all in the fork, all live-tunable):
   `rtx.dusklight.grade.strength` (0–1, default 0.65),
   `rtx.dusklight.grade.chromaOnly` (default true — normalize the tint to
   preserve luminance so auto exposure doesn't fight it; see IV.6),
-  `rtx.dusklight.grade.maxDarkening` (floor on the tint, default 0.35).
+  `rtx.dusklight.grade.actorAmbientWeight` (0–1, default 0.25 — the two
+  ambients collapse into one multiply, weighted by screen share),
+  `rtx.dusklight.grade.maxDarkening` (0.35) and
+  `rtx.dusklight.grade.maxBrightening` (2.0) as the response rails.
 - `rtx.dusklight.env.*` as plain options (Vector3/float/bool) with
   defaults = neutral, flagged **NoSave** so a UI "save settings" doesn't
   bake a random Tuesday's dusk into user.conf (verify `RtxOptionLayer::
   save()` honours NoSave; if not, fix that in the fork first — checklist
   item P1.4).
 
-Implementation shape: mirror the existing pass structure —
-`bloom_dusklight_grade.comp.slang` + push-constant struct in
-`shaders/rtx/pass/bloom/bloom.h`, dispatched at the top of
-`DxvkBloom::dispatch` when the Dusklight path or grade is active. It's a
-single full-screen RW pass, same cost class as bloom composite.
+Implementation shape (as built): its own `RtxPass`,
+`rtx_render/rtx_dusklight_grade.{h,cpp}` +
+`shaders/rtx/pass/dusklight/dusklight_grade.{h,comp.slang}`, dispatched
+from `RtxContext` immediately before `dispatchBloom`. The draft had it as
+another step inside `DxvkBloom::dispatch`; a separate pass is better here
+because the grade is not part of the bloom — folding it in would have made
+`rtx.bloom.enable = False` silently take the ambient grade with it, and
+the point of the phase gating is that the two fail independently.
+
+The tint has no per-pixel variation, so all of the response shaping runs on
+the CPU (`resolveGrade()`) and the shader is a single multiply. That also
+lets `resolveGrade()` report the resolved tint in the UI, and lets the pass
+skip its dispatch entirely when the tint comes out neutral — which is what
+makes "bridge off ⇒ image identical to baseline" exact rather than
+approximate.
+
+**Rails, and why they are applied twice.** The floor/ceiling act on the
+tint's overall *level* first (by scaling, so hue survives) and only then
+per channel. A per-channel-only clamp destroys exactly what the grade is
+for: a night ambient is dark in all three channels, so clamping each one
+against a 0.35 floor flattens it to neutral grey. Scaling first lifts it to
+the floor with its blue cast intact. Under `chromaOnly` the level is 1 by
+construction so only the per-channel backstop can fire — and it must,
+because normalizing a strongly saturated ambient leaves its dominant
+channel several times above 1.
+
+**Considered and rejected: weighting the grade by pixel darkness.** In TEV
+the ambient was a *lift* (`matColor · (ambient + Σ lights)`), so it
+dominated shadowed surfaces and was swamped on lit ones; weighting the tint
+by `1/(1 + luma)` would emulate that far better than a flat multiply. It
+was dropped because "darkness" has no stable meaning here: the grade runs
+pre-tonemap, before auto exposure updates, so the luminance threshold
+separating shadow from light would drift with scene exposure and the knob
+would be untunable. Revisit if the grade ever moves after tone mapping, or
+if exposure is pinned.
 
 ### IV.4 Fog: implement the designed GX→D3D9 mapping in aurora
 
@@ -464,6 +506,13 @@ at `896bffe` (merged to `main` via PR #1).
   defaults are near-invisible at 3440x1440. No Remix bug; nothing to fix.
 
 **Built and CI-green but NEVER RUN** — treat as unverified:
+- **The whole Phase 3 ambient grade** (`DxvkDusklightGrade` in the fork,
+  the two `rtx.dusklight.env.*ambient` pushes in the bridge). It ships
+  **off** (`rtx.dusklight.grade.enable = False`), so it cannot affect a
+  test run until it is switched on deliberately. Unproven at runtime: that
+  the ambients arrive at sane values (watch them in Tools → Remix Bridge
+  and in the grade UI's "Resolved tint" line), and whether 0.65 strength
+  reads as mood or as a colour cast.
 - **The whole sun/moon distant light** (`updateCelestialLight`, Phase 4).
   Written after the last test session. Specifically unproven at runtime:
   `dxvk_RegisterD3D9Device` succeeding against aurora's device; the
@@ -526,6 +575,18 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
     exposure), the first-fog-wins capture picking a stray draw (watch the
     Remix dev menu fog panel), and underwater palettes (very dense fog)
     tripping `rtx.volumetrics.waterFogDensityThreshold` and flipping modes.
+- **Phase 3: implemented, untested** (fork: `DxvkDusklightGrade`, its own
+  `RtxPass` dispatched immediately before the bloom rather than folded into
+  it, so `rtx.bloom.enable = False` does not silently take the grade with
+  it; `rtx.dusklight.grade.*` response options; a CPU-resolved constant
+  tint, so the shader is one multiply and the pass skips itself when the
+  tint is neutral. Bridge: `actorAmbient`/`bgAmbient` pushed from
+  `g_env_light`). Two design points that changed from the draft during
+  implementation are written up in IV.3: the grade runs *before* the mono
+  overlay (that is the order the GC had — ambient at shading time, mono in
+  the post pass), and the response rails act on the tint's level before
+  they act per channel (a per-channel-only floor flattens a night ambient
+  to grey). Defaults ship with `enable = False`.
 - **Phase 4 (partial): sun/moon distant light implemented.** The bridge now
   drives one Remix distant light through the light API
   (`CreateLight`/`DrawLightInstance` each frame; device registered via a new
@@ -625,23 +686,51 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
      palette-correct colour, fading over distance pre-tonemap; toggling
      `rtx.enableFog` kills it.
 
-### Phase 3 — ambient grade (fork + bridge)  ← NEXT
+### Phase 3 — ambient grade (fork + bridge)  — implemented, untested
 
-Note before starting: Phase 3 changes overall scene tint, and the sun/moon
-light (Phase 4, above) changes overall scene lighting. Both are unverified
-at runtime, so land Phase 3 behind its own `rtx.dusklight.grade.enable`
-(default **false**) as planned — that keeps the two independently
-bisectable when the owner does test, instead of two unproven systems
-changing the image at once.
+Steps 1 and 2 are done; step 3 needs the game running.
 
-1. Fork: `rtx.dusklight.grade.*` response options + tint math in the grade
-   stage (chromaOnly normalization, strength, maxDarkening).
-2. Bridge: push `actorAmbient`/`bgAmbient`.
-3. Tune defaults on the four canonical test scenes: Ordon noon (should be
-   ≈ neutral), Ordon dusk (warm shift), Faron rain (cool desat), any
+1. ✅ Fork: `DxvkDusklightGrade` (`rtx_render/rtx_dusklight_grade.{h,cpp}`,
+   `shaders/rtx/pass/dusklight/dusklight_grade.{h,comp.slang}`), dispatched
+   from `RtxContext` immediately before the bloom. Response options
+   `rtx.dusklight.grade.{enable,strength,chromaOnly,actorAmbientWeight,
+   maxDarkening,maxBrightening}`, UI under Rendering → Post-Processing →
+   Dusklight Ambient Grade (which also prints the resolved tint live).
+2. ✅ Bridge: `rtx.dusklight.env.actorAmbient` / `bgAmbient` pushed from
+   `g_env_light.actor_amb_col` / `bg_amb_col[0]` — the fully blended
+   per-frame values, after the four-way palette blend, event add-colours
+   and global ratios. BG layer 0 is the main room layer, the one the game
+   itself reuses when it needs "the" background ambient (`d_a_mirror`).
+3. ⬜ Tune defaults on the four canonical test scenes: Ordon noon (should
+   be ≈ neutral), Ordon dusk (warm shift), Faron rain (cool desat), any
    twilight zone (full look together with Phase 1).
    - *Acceptance*: time-of-day/weather grade the path-traced frame; bridge
      off ⇒ image identical to pre-phase baseline.
+
+**Shipped off by default.** `rtx.dusklight.grade.enable` defaults to
+false. Phase 3 changes scene *tint* and the Phase 4 sun/moon light changes
+scene *lighting*; both are unverified at runtime, and turning them on one
+at a time is the difference between a five-minute bisect and an afternoon.
+
+**What the defaults do**, from a simulation of `resolveGrade()` (the
+ambients are illustrative, not measured from stage data — TP's palettes
+live in `.dzs` files, not in the repo):
+
+| ambient (actor / bg) | `chromaOnly` on (default) | `chromaOnly` off |
+| :-- | :-- | :-- |
+| neutral grey 180,180,180 | 1.000 1.000 1.000 *(pass skipped)* | 0.809 0.809 0.809 |
+| noon, faint cool | 0.982 1.001 1.039 | 0.841 0.855 0.885 |
+| dusk, warm | 1.228 0.954 0.779 | 0.841 0.688 0.590 |
+| night, cool dark | 0.876 1.003 1.332 | 0.578 0.579 0.694 |
+| rain, desaturated cool | 0.943 1.009 1.076 | 0.611 0.641 0.670 |
+| twilight, gold | 1.127 1.007 0.578 | 0.845 0.769 0.578 |
+| pure red (a real debug state) | 1.650 0.578 0.578 | 1.420 0.578 0.578 |
+| black ambient | 1.000 1.000 1.000 *(pass skipped)* | 0.578 0.578 0.578 |
+
+Two properties to hold on to: a neutral ambient resolves to exactly white
+and skips the dispatch (so noon costs nothing and changes nothing), and the
+rails contain the pathological red case that would otherwise resolve to a
+4.7× red multiplier.
 
 ### Phase 4 — sun/moon light + sky (aurora + fork + bridge)
 As designed in IV.7: `dxvk_RegisterD3D9Device` hook in aurora, distant

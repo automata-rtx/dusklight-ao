@@ -64,6 +64,11 @@ rtx.fogColorScale = 1.0
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
 
+# AMBIENT GRADE: re-applies the colour of the game's ambient term, which the
+# path tracer replaced. Off by default; turn it on once the rest of the
+# bridge is behaving, so a colour shift is never ambiguous about its source.
+#rtx.dusklight.grade.enable = True
+
 # The kankyo bridge also drives a sun/moon distant light through the Remix
 # API (game-side settings: game.remixSunMoonLight / remixSunIntensity /
 # remixMoonIntensity / remixCelestialAngle, tunable in Tools > Remix
@@ -146,6 +151,41 @@ carried straight across from `game.bloom*` / the ImGui Bloom window:
 | `rtx.bloom.dusklightSaturationPoint` | 1.0 | 8-bit clip per pass |
 | `rtx.bloom.dusklightTint` | 1, 1, 1 | `mBlendColor` rgb |
 | `rtx.bloom.dusklightScreenBlend` | False | `mMode == 1` |
+
+## Ambient grade in Remix
+
+The game's environment system also computes an *ambient* colour per area,
+per time of day and per weather, and on the original hardware it tinted
+every surface in the scene during shading. Path tracing lights the scene
+itself, so that tint is simply gone under Remix even though the game still
+computes it. **Rendering → Post-Processing → Dusklight Ambient Grade**
+puts its colour back, as one multiply over the frame just before bloom:
+
+```ini
+rtx.dusklight.grade.enable = True
+```
+
+| rtx.conf option | Default | What it does |
+| :-- | :-: | :-- |
+| `rtx.dusklight.grade.strength` | 0.65 | How far towards the ambient tint the image is graded |
+| `rtx.dusklight.grade.chromaOnly` | True | Grade colour only, not brightness — keeps auto exposure out of the loop |
+| `rtx.dusklight.grade.actorAmbientWeight` | 0.25 | Mix between the game's actor and background ambients |
+| `rtx.dusklight.grade.maxDarkening` | 0.35 | How far down the grade may take the image |
+| `rtx.dusklight.grade.maxBrightening` | 2.0 | How far up the grade may take the image |
+
+It is fed by the bridge (`rtx.dusklight.env.actorAmbient` / `bgAmbient`)
+and does nothing without it, so it is off by default. The panel prints the
+resolved tint live, which is the quickest way to tell "the grade is doing
+nothing" from "the grade is doing nothing *visible*".
+
+Leave `chromaOnly` on unless you have disabled auto exposure. With it on, a
+neutral ambient (roughly: noon) resolves to exactly white and the pass
+skips itself, so the grade only ever costs you something when the game's
+mood has actually moved off neutral. With it off, the ambient drives
+overall brightness too — closer to the original at night and indoors, but
+auto exposure will spend the next second undoing it.
+
+## Dusklight bloom options
 
 `rtx.bloom.steps` (labelled Radius in the UI) sets how deep the pyramid goes;
 the game uses five levels, which is also Remix's default. `rtx.bloom.burnIntensity`
