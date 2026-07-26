@@ -62,6 +62,20 @@ struct CelestialLightDebug {
 
 const CelestialLightDebug& celestialDebug();
 
+// State of the game's local point lights (torches, braziers, lanterns, Midna,
+// dungeon lights - everything registered through dKy_plight_set) mirrored into
+// Remix as sphere lights. Aurora does not forward GX lights to D3D9, so without
+// this Remix sees no game light at all indoors or at night.
+struct LocalLightsDebug {
+    bool enabled;
+    int tracked;         // lights with a live Remix handle
+    int drawn;           // drawn into the scene this frame
+    uint64_t creates;    // cumulative CreateLight calls
+    uint64_t destroys;   // cumulative DestroyLight calls
+};
+
+const LocalLightsDebug& localLightsDebug();
+
 // Session-only debug toggle: negates the pushed light direction, for quickly
 // diagnosing a handedness mismatch between game and Remix world space.
 bool& celestialFlipDirection();

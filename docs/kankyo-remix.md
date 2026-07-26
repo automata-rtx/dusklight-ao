@@ -471,14 +471,18 @@ colour/amount, base weight. One calibration knob is needed:
   `game.remixSunMoonLight` and let users pick it *or* hand-placed RTX
   lights. Twilight/interiors: skip drawing the light (interiors detect via
   `dKy_SunMoon_Light_Check()`.)
-- **Sky/vrbox tint** (`env.skyColor`/`env.hazeColor` are already pushed):
+- **Sky/vrbox tint** (note: `env.skyColor`/`env.hazeColor` were designed
+  here but Phase 1 shipped only the bloom set, so nothing pushes them
+  today; adding them is a two-line change once there is a consumer):
   investigate whether the vrbox raster draws reach Remix's sky probe with
   TEV tint applied (TFACTOR path in `dx9_tev.cpp`); if yes, nothing to do;
   if no, drive a low-intensity dome light or sky brightness from the
   pushed colours.
-- **Dungeon point lights** (`dungeonlight_col[6]` + `DUNGEON_LIGHT`
-  positions) via the light API — replaces hand-placed approximations in
-  interiors, colours tracking palettes automatically.
+- **Local point lights** (implemented — see the status log). The design
+  originally scoped this to the dungeon lights; the right list turned out
+  to be `g_env_light.pointlight[100]`, which the dungeon lights register
+  into along with every torch, brazier, lantern, campfire, Midna glow and
+  bomb flash in the game (`dKy_plight_set`).
 
 ---
 
@@ -506,6 +510,14 @@ at `896bffe` (merged to `main` via PR #1).
   defaults are near-invisible at 3440x1440. No Remix bug; nothing to fix.
 
 **Built and CI-green but NEVER RUN** — treat as unverified:
+- **The local point lights** (`updateLocalLights`). Ships **off**
+  (`game.remixLocalLights`). Unproven at runtime: whether the intensity
+  derived from Remix's own conversion actually reads right in TP's scale,
+  whether the 4-unit sphere radius puts emitters inside wall sconces (the
+  failure mode Remix's own docs warn about for converted lights), and
+  whether the create/destroy churn is acceptable in a busy room. The
+  create/destroy lifecycle itself is exercised by a stub harness, so the
+  bookkeeping is not the risk; the look is.
 - **The whole Phase 3 ambient grade** (`DxvkDusklightGrade` in the fork,
   the two `rtx.dusklight.env.*ambient` pushes in the bridge). It ships
   **off** (`rtx.dusklight.grade.enable = False`), so it cannot affect a
@@ -619,6 +631,50 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   vanilla's constant actor sun diffuse (126,110,89 normalized); moon is a
   cool counterpart. With `rtx.fallbackLightMode = 1` (NoLightsPresent) the
   fallback light yields automatically once this light exists.
+- **Phase 4 (local lights): implemented, untested.** The bridge mirrors
+  `g_env_light.pointlight[0..99]` — everything registered through
+  `dKy_plight_set`: torches, braziers, lanterns, campfires, Midna, bomb
+  flashes, and the dungeon lights — into Remix sphere lights, created and
+  destroyed as their actors come and go.
+
+  **Why this matters more than it sounds.** Aurora deliberately does not
+  forward GX lights to D3D9 (unsupported-effects #16: "Remix relights
+  everything"), so Remix sees *no* game light at all. Outdoors the
+  sun/moon distant light now covers that. Indoors and at night nothing
+  did: the scene fell through to Remix's fallback light. These are the
+  lights those scenes were lit by.
+
+  **Intensity is not a tuning constant.** It reuses Remix's own
+  legacy-light conversion (`LightUtils::calculateIntensity`): work out how
+  far the original light was meant to reach, then solve for the radiance a
+  sphere light of fixed radius needs to still be perceptible there —
+  `radiance = reach² · 0.01 / (π · radius²)`. The game hands us the reach
+  directly, because `LIGHT_INFLUENCE::mPow` *is* that distance
+  (`dKy_light_influence_id` treats "closer than mPow" as "inside this
+  light"). So these lights land in the same intensity range as the lights
+  of any other Remix title rather than in a range we invented. A torch
+  (`mPow` 500, colour AF5D00) resolves to radiance ≈ 49.7, 26.4, 0 at the
+  default 4-unit radius — which is also Remix's own default radius for
+  converted point lights.
+
+  Identity is the `LIGHT_INFLUENCE`'s address, mixed into a 64-bit hash: it
+  lives inside its actor, so it holds still exactly as long as the light
+  does. Re-creates are epsilon-gated on position and radiance (0.5 world
+  units, ~6mm at TP's scale) so a carried torch does not cross the API lock
+  every frame. Lights whose actor is gone are destroyed, which is what
+  keeps Remix's external-light map from growing all session as rooms load.
+  On resize the handles are dropped without destroying — they belonged to
+  the device that went away with them.
+
+  Settings: `game.remixLocalLights` (**off** by default — third unverified
+  system, same reasoning as the grade), `game.remixLocalLightIntensity`
+  (1.0), `game.remixLocalLightRadius` (4.0), all live in Tools → Remix
+  Bridge with drawn/tracked/create/destroy counters.
+
+  Not done: `mFluctuation` (the flicker amount; every torch sets 1.0, bombs
+  100) is ignored for now — applying it would mean a re-create every frame
+  for every flickering light. Worth revisiting once the base look is
+  calibrated.
 - **Sky (Phase 4 remainder): manual tagging is the right mechanism.** The
   vrbox is drawn by the game with the *main* camera, so
   `rtx.skyAutoDetect` (which keys on a separate sky camera) is unlikely to

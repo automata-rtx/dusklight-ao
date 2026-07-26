@@ -71,6 +71,9 @@ UserSettings g_userSettings = {
         .remixSunIntensity {"game.remixSunIntensity", 5.0f},
         .remixMoonIntensity {"game.remixMoonIntensity", 0.3f},
         .remixCelestialAngle {"game.remixCelestialAngle", 2.0f},
+        .remixLocalLights {"game.remixLocalLights", false},
+        .remixLocalLightIntensity {"game.remixLocalLightIntensity", 1.0f},
+        .remixLocalLightRadius {"game.remixLocalLightRadius", 4.0f},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
@@ -284,6 +287,9 @@ void registerSettings() {
     Register(g_userSettings.game.remixSunIntensity);
     Register(g_userSettings.game.remixMoonIntensity);
     Register(g_userSettings.game.remixCelestialAngle);
+    Register(g_userSettings.game.remixLocalLights);
+    Register(g_userSettings.game.remixLocalLightIntensity);
+    Register(g_userSettings.game.remixLocalLightRadius);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);

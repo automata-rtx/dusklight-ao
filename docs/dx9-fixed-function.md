@@ -77,6 +77,17 @@ rtx.fogColorScale = 1.0
 rtx.fallbackLightMode = 1
 ```
 
+**Local lights (game-side, off by default).** Aurora does not forward GX
+lights to D3D9, so Remix sees no light from the game itself; outdoors the
+sun/moon light covers that, but interiors and night fall through to Remix's
+fallback light. `game.remixLocalLights` mirrors the game's live point-light
+list — torches, braziers, lanterns, campfires, Midna, bomb flashes and the
+dungeon lights — into Remix sphere lights, with intensity derived the same
+way Remix derives it for a legacy D3D9 light. Tune with
+`game.remixLocalLightIntensity` and `game.remixLocalLightRadius` (Tools →
+Remix Bridge). Keep `rtx.fallbackLightMode = 1` so the fallback light
+yields to them.
+
 **Sky setup (one-time):** tag the vrbox textures as Sky in the Remix dev
 menu (texture categories): sky dome, both cloud layers, horizon haze, and
 the sun/moon billboards. The vrbox uses the main camera, so

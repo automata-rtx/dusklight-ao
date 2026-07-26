@@ -203,6 +203,9 @@ struct UserSettings {
         ConfigVar<float> remixSunIntensity;
         ConfigVar<float> remixMoonIntensity;
         ConfigVar<float> remixCelestialAngle;
+        ConfigVar<bool> remixLocalLights;
+        ConfigVar<float> remixLocalLightIntensity;
+        ConfigVar<float> remixLocalLightRadius;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;

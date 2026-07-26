@@ -37,6 +37,8 @@ std::vector<PushedVar> s_vars;
 CelestialLightDebug s_celestial = {};
 bool s_celestialFlip = false;
 
+LocalLightsDebug s_localDebug = {};
+
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
 
@@ -175,6 +177,10 @@ const char* formatBool(bool value) {
 constexpr uint64_t kCelestialLightHash = 0xD05C114D00000001ull;
 
 void* s_registeredDevice = nullptr;
+// Set when the D3D9 device is replaced (aurora recreates it on resize). Every
+// light handle belongs to the old device's scene, so they must be re-created
+// rather than destroyed - the object that owned them is already gone.
+bool s_lightsNeedRecreate = false;
 bool s_celestialLightExists = false;
 remixapi_LightHandle s_celestialHandle = nullptr;
 float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
@@ -203,9 +209,10 @@ bool ensureDeviceRegistered() {
         }
 
         s_registeredDevice = device;
-        // The external light lives in the device's scene state; recreate it
+        // External lights live in the device's scene state; recreate them
         // against the new device.
         s_celestialLightExists = false;
+        s_lightsNeedRecreate = true;
         BridgeLog.info("registered D3D9 device with the Remix API");
     }
 
@@ -408,6 +415,250 @@ void updateCelestialLight() {
     s_celestial.radiance[2] = radiance[2];
 }
 
+// --- Local point lights ------------------------------------------------------
+//
+// Mirrors the game's live point-light list (g_env_light.pointlight, everything
+// registered through dKy_plight_set: torches, braziers, lanterns, campfires,
+// Midna, bomb flashes, dungeon lights) into Remix sphere lights.
+//
+// This is not a nicety. Aurora's D3D9 backend deliberately does not forward GX
+// lights to D3D9 - the GC light model does not survive the translation and
+// Remix relights everything anyway - so Remix currently sees no game light at
+// all. Outdoors the sun/moon distant light covers that; indoors and at night
+// nothing does, and the scene falls back to Remix's fallback light. These are
+// the lights that were meant to carry those scenes.
+//
+// Intensity is derived with Remix's own legacy-light conversion rather than a
+// tuning constant, so these land in the same range as lights in any other Remix
+// title. See localLightRadiance() for the derivation.
+
+constexpr uint64_t kLocalLightHashBase = 0xD05C114E00000000ull;
+
+struct TrackedLocalLight {
+    uint64_t hash;
+    remixapi_LightHandle handle;
+    const LIGHT_INFLUENCE* source;
+    float position[3];
+    float radiance[3];
+    float radius;
+    bool seen;
+};
+
+std::vector<TrackedLocalLight> s_localLights;
+
+// Stable per-light identity. The LIGHT_INFLUENCE lives inside its actor, so the
+// address holds still for as long as the light does. If an actor is freed and
+// another lands on the same address the hash is reused, which is harmless: the
+// tracking below simply sees the parameters change and re-creates it.
+uint64_t localLightHash(const LIGHT_INFLUENCE* influence) {
+    uint64_t value = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(influence));
+
+    // Standard 64-bit finalizer; the low bits of an allocation address are the
+    // least distinctive, so mix before truncating.
+    value ^= value >> 33;
+    value *= 0xff51afd7ed558ccdull;
+    value ^= value >> 33;
+    value *= 0xc4ceb9fe1a85ec53ull;
+    value ^= value >> 33;
+
+    return kLocalLightHashBase | (value & 0xffffffffull);
+}
+
+// Radiance for a sphere light standing in for one of the game's point lights.
+//
+// Deliberately the same maths Remix applies to a legacy D3D9 light
+// (LightUtils::calculateIntensity): work out how far the original light was
+// meant to reach, then solve for the radiance a sphere light of a fixed radius
+// needs to still be perceptible at that distance.
+//
+//   radiance = reach^2 * kNewLightEndValue / (pi * radius^2)
+//
+// The game hands us the reach directly. LIGHT_INFLUENCE::mPow *is* the distance
+// at which the light stops mattering - dKy_light_influence_id treats "closer
+// than mPow" as "inside this light" - which is exactly what Remix derives from
+// a D3D9 attenuation curve. So these lights land in the same intensity range as
+// the lights of every other Remix title, without a fudge factor.
+bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float scale,
+                        float outRadiance[3]) {
+    const float channel[3] = {static_cast<float>(influence.mColor.r),
+                              static_cast<float>(influence.mColor.g),
+                              static_cast<float>(influence.mColor.b)};
+    const float brightest = std::max(channel[0], std::max(channel[1], channel[2]));
+
+    if (brightest <= 0.0f || influence.mPow <= 0.01f || radius <= 0.0f) {
+        return false;
+    }
+
+    // Remix's threshold for "still perceptible" (kNewLightEndValue in
+    // rtx_lights.h). Kept as a literal because it is part of Remix's
+    // conversion, not a knob of ours.
+    constexpr float kNewLightEndValue = 0.01f;
+    constexpr float kPi = 3.14159265358979323846f;
+
+    const float reach = influence.mPow;
+    const float intensity =
+        (reach * reach) * kNewLightEndValue / (kPi * radius * radius) * scale;
+
+    for (int i = 0; i < 3; i++) {
+        outRadiance[i] = (channel[i] / brightest) * intensity;
+    }
+
+    return true;
+}
+
+void destroyLocalLight(TrackedLocalLight& light) {
+    if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
+        s_interface.DestroyLight(light.handle);
+        s_localDebug.destroys++;
+    }
+
+    light.handle = nullptr;
+}
+
+void releaseLocalLights() {
+    for (TrackedLocalLight& light : s_localLights) {
+        destroyLocalLight(light);
+    }
+
+    s_localLights.clear();
+    s_localDebug.tracked = 0;
+    s_localDebug.drawn = 0;
+}
+
+void updateLocalLights() {
+    s_localDebug.drawn = 0;
+    s_localDebug.enabled = false;
+
+    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
+        s_interface.dxvk_RegisterD3D9Device == nullptr) {
+        return;
+    }
+
+    if (!getSettings().game.remixLocalLights.getValue() || !dusk::IsGameLaunched) {
+        releaseLocalLights();
+        return;
+    }
+
+    if (!ensureDeviceRegistered()) {
+        return;
+    }
+
+    s_localDebug.enabled = true;
+
+    if (s_lightsNeedRecreate) {
+        // Drop the handles without destroying them: they refer to a device that
+        // no longer exists, and its light manager went with it.
+        s_localLights.clear();
+        s_lightsNeedRecreate = false;
+    }
+
+    const float radius = std::max(getSettings().game.remixLocalLightRadius.getValue(), 0.01f);
+    const float scale = std::max(getSettings().game.remixLocalLightIntensity.getValue(), 0.0f);
+
+    for (TrackedLocalLight& tracked : s_localLights) {
+        tracked.seen = false;
+    }
+
+    const dScnKy_env_light_c* env = dKy_getEnvlight();
+
+    for (int i = 0; i < 100; i++) {
+        const LIGHT_INFLUENCE* influence = env->pointlight[i];
+        if (influence == nullptr) {
+            continue;
+        }
+
+        float radiance[3];
+        if (!localLightRadiance(*influence, radius, scale, radiance)) {
+            continue;
+        }
+
+        const float position[3] = {influence->mPosition.x, influence->mPosition.y,
+                                   influence->mPosition.z};
+        const uint64_t hash = localLightHash(influence);
+
+        TrackedLocalLight* tracked = nullptr;
+        for (TrackedLocalLight& candidate : s_localLights) {
+            if (candidate.hash == hash) {
+                tracked = &candidate;
+                break;
+            }
+        }
+
+        if (tracked == nullptr) {
+            s_localLights.push_back(TrackedLocalLight {hash, nullptr, influence, {}, {}, 0.0f, false});
+            tracked = &s_localLights.back();
+        }
+
+        tracked->seen = true;
+        tracked->source = influence;
+
+        // Torches move with the actor carrying them and brighten as they catch,
+        // so re-create on any real change - but not on float noise, since every
+        // re-create crosses the API lock and re-enters the light manager.
+        constexpr float kPositionEpsilon = 0.5f;   // world units, ~6mm at TP's scale
+        constexpr float kRadianceEpsilon = 0.01f;
+
+        const bool changed =
+            tracked->handle == nullptr ||
+            std::fabs(position[0] - tracked->position[0]) > kPositionEpsilon ||
+            std::fabs(position[1] - tracked->position[1]) > kPositionEpsilon ||
+            std::fabs(position[2] - tracked->position[2]) > kPositionEpsilon ||
+            std::fabs(radiance[0] - tracked->radiance[0]) > kRadianceEpsilon ||
+            std::fabs(radiance[1] - tracked->radiance[1]) > kRadianceEpsilon ||
+            std::fabs(radiance[2] - tracked->radiance[2]) > kRadianceEpsilon ||
+            std::fabs(radius - tracked->radius) > 0.001f;
+
+        if (changed) {
+            remixapi_LightInfoSphereEXT sphere = {};
+            sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+            sphere.position = {position[0], position[1], position[2]};
+            sphere.radius = radius;
+            sphere.shaping_hasvalue = 0;
+            sphere.volumetricRadianceScale = 1.0f;
+
+            remixapi_LightInfo info = {};
+            info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+            info.pNext = &sphere;
+            info.hash = hash;
+            info.radiance = {radiance[0], radiance[1], radiance[2]};
+
+            remixapi_LightHandle handle = nullptr;
+            if (s_interface.CreateLight(&info, &handle) != REMIXAPI_ERROR_CODE_SUCCESS) {
+                tracked->handle = nullptr;
+                continue;
+            }
+
+            tracked->handle = handle;
+            tracked->position[0] = position[0];
+            tracked->position[1] = position[1];
+            tracked->position[2] = position[2];
+            tracked->radiance[0] = radiance[0];
+            tracked->radiance[1] = radiance[1];
+            tracked->radiance[2] = radiance[2];
+            tracked->radius = radius;
+            s_localDebug.creates++;
+        }
+
+        if (s_interface.DrawLightInstance(tracked->handle) == REMIXAPI_ERROR_CODE_SUCCESS) {
+            s_localDebug.drawn++;
+        }
+    }
+
+    // Lights whose actor is gone. Remix keeps an entry per created handle until
+    // it is destroyed, so dropping them here is what stops the light manager's
+    // map growing for the whole session as rooms load and unload.
+    for (size_t i = s_localLights.size(); i-- > 0;) {
+        if (!s_localLights[i].seen) {
+            destroyLocalLight(s_localLights[i]);
+            s_localLights.erase(
+                s_localLights.begin() +
+                static_cast<std::vector<TrackedLocalLight>::difference_type>(i));
+        }
+    }
+
+    s_localDebug.tracked = static_cast<int>(s_localLights.size());
+}
+
 void pushKankyoState() {
     mDoGph_gInf_c::bloom_c* bloom = mDoGph_gInf_c::getBloom();
 
@@ -508,6 +759,7 @@ void tick() {
 
     pushKankyoState();
     updateCelestialLight();
+    updateLocalLights();
 #endif
 }
 
@@ -525,6 +777,10 @@ const CelestialLightDebug& celestialDebug() {
 
 bool& celestialFlipDirection() {
     return s_celestialFlip;
+}
+
+const LocalLightsDebug& localLightsDebug() {
+    return s_localDebug;
 }
 
 }  // namespace remix
