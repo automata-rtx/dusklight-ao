@@ -27,6 +27,45 @@ void DrawRemixBridgeWindow(bool& open) {
     ImGui::Text("total pushes: %llu",
                 static_cast<unsigned long long>(remix::totalPushes()));
 
+    ImGui::SeparatorText("Sun / Moon distant light");
+    {
+        auto& settings = getSettings().game;
+
+        bool lightEnabled = settings.remixSunMoonLight.getValue();
+        if (ImGui::Checkbox("Sun/Moon Light", &lightEnabled)) {
+            settings.remixSunMoonLight.setValue(lightEnabled);
+        }
+
+        const remix::CelestialLightDebug& cel = remix::celestialDebug();
+        ImGui::SameLine();
+        ImGui::Text("device: %s | %s", cel.deviceRegistered ? "registered" : "-",
+                    cel.active ? (cel.isDay ? "SUN" : "MOON") : "inactive");
+
+        float sunIntensity = settings.remixSunIntensity.getValue();
+        if (ImGui::SliderFloat("Sun Intensity", &sunIntensity, 0.0f, 50.0f, "%.2f")) {
+            settings.remixSunIntensity.setValue(sunIntensity);
+        }
+
+        float moonIntensity = settings.remixMoonIntensity.getValue();
+        if (ImGui::SliderFloat("Moon Intensity", &moonIntensity, 0.0f, 10.0f, "%.2f")) {
+            settings.remixMoonIntensity.setValue(moonIntensity);
+        }
+
+        float angle = settings.remixCelestialAngle.getValue();
+        if (ImGui::SliderFloat("Angular Diameter", &angle, 0.1f, 10.0f, "%.2f deg")) {
+            settings.remixCelestialAngle.setValue(angle);
+        }
+
+        ImGui::Checkbox("Flip Direction (debug)", &remix::celestialFlipDirection());
+
+        if (cel.active) {
+            ImGui::Text("dir: %.3f, %.3f, %.3f  fade: %.2f", cel.direction[0], cel.direction[1],
+                        cel.direction[2], cel.fade);
+            ImGui::Text("radiance: %.2f, %.2f, %.2f", cel.radiance[0], cel.radiance[1],
+                        cel.radiance[2]);
+        }
+    }
+
     ImGui::SeparatorText("Pushed variables");
     if (ImGui::BeginTable("remix_bridge_vars", 3,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {

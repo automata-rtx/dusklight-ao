@@ -63,7 +63,22 @@ rtx.fogColorScale = 1.0
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
+
+# The kankyo bridge also drives a sun/moon distant light through the Remix
+# API (game-side settings: game.remixSunMoonLight / remixSunIntensity /
+# remixMoonIntensity / remixCelestialAngle, tunable in Tools > Remix
+# Bridge). With fallbackLightMode = 1 the Remix fallback light yields
+# automatically while the sun/moon exists.
+rtx.fallbackLightMode = 1
 ```
+
+**Sky setup (one-time):** tag the vrbox textures as Sky in the Remix dev
+menu (texture categories): sky dome, both cloud layers, horizon haze, and
+the sun/moon billboards. The vrbox uses the main camera, so
+`rtx.skyAutoDetect` won't reliably catch it — texture tagging will. Once
+tagged, the sky renders into Remix's sky probe with kankyo's palette tints
+(so time-of-day sky colour reaches reflections/GI); adjust with
+`rtx.skyBrightness`.
 
 Notes:
 

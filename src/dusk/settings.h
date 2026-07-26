@@ -199,6 +199,10 @@ struct UserSettings {
         ConfigVar<BloomMode> bloomMode;
         ConfigVar<float> bloomMultiplier;
         ConfigVar<bool> remixKankyoBridge;
+        ConfigVar<bool> remixSunMoonLight;
+        ConfigVar<float> remixSunIntensity;
+        ConfigVar<float> remixMoonIntensity;
+        ConfigVar<float> remixCelestialAngle;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;

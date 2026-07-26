@@ -67,6 +67,10 @@ UserSettings g_userSettings = {
         .bloomMode {"game.bloomMode", BloomMode::Dusk},
         .bloomMultiplier {"game.bloomMultiplier", 1.0f},
         .remixKankyoBridge {"game.remixKankyoBridge", true},
+        .remixSunMoonLight {"game.remixSunMoonLight", true},
+        .remixSunIntensity {"game.remixSunIntensity", 5.0f},
+        .remixMoonIntensity {"game.remixMoonIntensity", 0.3f},
+        .remixCelestialAngle {"game.remixCelestialAngle", 2.0f},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
@@ -276,6 +280,10 @@ void registerSettings() {
     Register(g_userSettings.game.bloomMode);
     Register(g_userSettings.game.bloomMultiplier);
     Register(g_userSettings.game.remixKankyoBridge);
+    Register(g_userSettings.game.remixSunMoonLight);
+    Register(g_userSettings.game.remixSunIntensity);
+    Register(g_userSettings.game.remixMoonIntensity);
+    Register(g_userSettings.game.remixCelestialAngle);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);

@@ -1,15 +1,24 @@
 #include "dusk/remix_bridge.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 #include <aurora/aurora.h>
 
 #include "dusk/logging.h"
+#include "dusk/main.h"
 #include "dusk/settings.h"
+#include "d/d_com_inf_game.h"
+#include "d/d_kankyo.h"
 #include "m_Do/m_Do_graphic.h"
+
+#include <cmath>
 
 #if defined(_WIN32)
 #define DUSK_REMIX_BRIDGE_SUPPORTED 1
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <remix/remix_c.h>
 #else
@@ -25,6 +34,9 @@ BridgeStatus s_status = BridgeStatus::Uninitialized;
 uint64_t s_totalPushes = 0;
 
 std::vector<PushedVar> s_vars;
+
+CelestialLightDebug s_celestial = {};
+bool s_celestialFlip = false;
 
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
@@ -133,6 +145,211 @@ const char* formatBool(bool value) {
     return value ? "True" : "False";
 }
 
+// --- Sun/moon distant light -------------------------------------------------
+//
+// Drives one Remix distant light from the vanilla game's astronomical sun/moon
+// angles. Important subtlety: the game's actual shadow-casting "sun" light is a
+// LOCAL light hovering near Link, and its selection snaps to lanterns and other
+// point lights when Link approaches them (SetBaseLight / lightStatus). A
+// distant light must not inherit either property, so the direction is taken
+// from setSunpos's orbit (sun_pos/moon_pos), which is pure time-of-day
+// geometry: offsets from the camera eye on a fixed 80000-unit arc.
+//
+// Day/night follows SetBaseLight's window (sun while 67.5 < daytime < 292.5,
+// moon otherwise), with a short crossfade at each boundary instead of the
+// vanilla hard swap so the light never pops.
+
+constexpr uint64_t kCelestialLightHash = 0xD05C114D00000001ull;
+
+void* s_registeredDevice = nullptr;
+bool s_celestialLightExists = false;
+remixapi_LightHandle s_celestialHandle = nullptr;
+float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
+float s_lastRadiance[3] = {0.0f, 0.0f, 0.0f};
+float s_lastAngle = 0.0f;
+
+// The Remix API needs the D3D9 device registered before any scene calls.
+// Aurora recreates the device on window resize, so re-register on change.
+bool ensureDeviceRegistered() {
+    void* device = aurora_dx9_get_device();
+    if (device == nullptr) {
+        s_celestial.deviceRegistered = false;
+        return false;
+    }
+
+    if (device != s_registeredDevice) {
+        // Under Remix the game-facing IDirect3DDevice9 is implemented by the
+        // same object as its 9Ex interface, which is what RegisterD3D9Device
+        // dynamic_casts back out of this pointer.
+        remixapi_ErrorCode err = s_interface.dxvk_RegisterD3D9Device(
+            reinterpret_cast<IDirect3DDevice9Ex*>(device));
+        if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
+            BridgeLog.warn("dxvk_RegisterD3D9Device failed ({})", static_cast<int>(err));
+            s_celestial.deviceRegistered = false;
+            return false;
+        }
+
+        s_registeredDevice = device;
+        // The external light lives in the device's scene state; recreate it
+        // against the new device.
+        s_celestialLightExists = false;
+        BridgeLog.info("registered D3D9 device with the Remix API");
+    }
+
+    s_celestial.deviceRegistered = true;
+    return true;
+}
+
+// 0..1 ramp over `width` daytime units inside the window [begin, end].
+float windowFade(float daytime, float begin, float end, float width) {
+    if (daytime <= begin || daytime >= end) {
+        return 0.0f;
+    }
+
+    const float edge = std::min(daytime - begin, end - daytime);
+    return std::min(edge / width, 1.0f);
+}
+
+void updateCelestialLight() {
+    s_celestial.active = false;
+
+    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
+        s_interface.dxvk_RegisterD3D9Device == nullptr) {
+        return;
+    }
+
+    if (!getSettings().game.remixSunMoonLight.getValue() || !dusk::IsGameLaunched) {
+        return;
+    }
+
+    // Outdoor stages with a sky only; false in twilight, interiors and the
+    // handful of special stages. Deliberately NOT the shadow-light selection.
+    if (dKy_SunMoon_Light_Check() != TRUE) {
+        return;
+    }
+
+    camera_process_class* camera = dComIfGp_getCamera(0);
+    if (camera == nullptr) {
+        return;
+    }
+
+    if (!ensureDeviceRegistered()) {
+        return;
+    }
+
+    dScnKy_env_light_c* env = dKy_getEnvlight();
+    const float daytime = env->getDaytime();
+
+    // SetBaseLight's sun window, with a crossfade over 7.5 daytime units
+    // (about 30 in-game minutes) at each boundary.
+    const bool isDay = daytime > 67.5f && daytime < 292.5f;
+    float fade;
+    cXyz offset;
+
+    if (isDay) {
+        fade = windowFade(daytime, 67.5f, 292.5f, 7.5f);
+        offset = env->sun_pos - camera->view.lookat.eye;
+    } else {
+        // Night window wraps midnight: 292.5 -> 360/0 -> 67.5.
+        const float sinceDusk = daytime >= 292.5f ? daytime - 292.5f : daytime + 67.5f;
+        fade = windowFade(sinceDusk, 0.0f, 135.0f, 7.5f);
+        // moon_pos is already the eye-relative offset (SetBaseLight adds eye).
+        offset = env->moon_pos;
+    }
+
+    const float lengthSq = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+    if (!(lengthSq > 1.0f) || fade <= 0.0f) {
+        return;
+    }
+
+    const float invLength = 1.0f / std::sqrt(lengthSq);
+
+    // Distant light direction is the direction the light travels: from the
+    // celestial body toward the scene.
+    float dir[3] = {-offset.x * invLength, -offset.y * invLength, -offset.z * invLength};
+    if (s_celestialFlip) {
+        dir[0] = -dir[0];
+        dir[1] = -dir[1];
+        dir[2] = -dir[2];
+    }
+
+    // Vanilla's sun diffuse for actors is the constant warm (126,110,89);
+    // normalized against red that is the day tint. The moon tint is our own
+    // cool counterpart (the vanilla night look comes from ambients).
+    const float sunColor[3] = {1.0f, 0.873f, 0.706f};
+    const float moonColor[3] = {0.55f, 0.65f, 0.95f};
+
+    const float intensity = fade * (isDay ? getSettings().game.remixSunIntensity.getValue()
+                                          : getSettings().game.remixMoonIntensity.getValue());
+    const float* color = isDay ? sunColor : moonColor;
+    const float radiance[3] = {color[0] * intensity, color[1] * intensity, color[2] * intensity};
+    const float angle = getSettings().game.remixCelestialAngle.getValue();
+
+    // Re-creating with the same hash is the API's update mechanism; only do it
+    // when something moved beyond quantization noise.
+    const float kDirEps = 0.001f;   // ~0.06 degrees
+    const float kRadEps = 0.005f;
+    const bool changed = !s_celestialLightExists ||
+                         std::fabs(dir[0] - s_lastDir[0]) > kDirEps ||
+                         std::fabs(dir[1] - s_lastDir[1]) > kDirEps ||
+                         std::fabs(dir[2] - s_lastDir[2]) > kDirEps ||
+                         std::fabs(radiance[0] - s_lastRadiance[0]) > kRadEps ||
+                         std::fabs(radiance[1] - s_lastRadiance[1]) > kRadEps ||
+                         std::fabs(radiance[2] - s_lastRadiance[2]) > kRadEps ||
+                         std::fabs(angle - s_lastAngle) > 0.01f;
+
+    if (changed) {
+        remixapi_LightInfoDistantEXT distant = {};
+        distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+        distant.direction = {dir[0], dir[1], dir[2]};
+        distant.angularDiameterDegrees = angle;
+        distant.volumetricRadianceScale = 1.0f;
+
+        remixapi_LightInfo info = {};
+        info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+        info.pNext = &distant;
+        info.hash = kCelestialLightHash;
+        info.radiance = {radiance[0], radiance[1], radiance[2]};
+
+        remixapi_LightHandle handle = nullptr;
+        remixapi_ErrorCode err = s_interface.CreateLight(&info, &handle);
+        if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
+            if (s_celestialLightExists) {
+                BridgeLog.warn("CreateLight(sun/moon) failed ({})", static_cast<int>(err));
+            }
+            s_celestialLightExists = false;
+            return;
+        }
+
+        s_celestialHandle = handle;
+        s_celestialLightExists = true;
+        s_lastDir[0] = dir[0];
+        s_lastDir[1] = dir[1];
+        s_lastDir[2] = dir[2];
+        s_lastRadiance[0] = radiance[0];
+        s_lastRadiance[1] = radiance[1];
+        s_lastRadiance[2] = radiance[2];
+        s_lastAngle = angle;
+    }
+
+    // The active-light list is cleared by Remix every frame; an undrawn light
+    // simply doesn't exist that frame.
+    remixapi_ErrorCode err = s_interface.DrawLightInstance(s_celestialHandle);
+    if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
+        return;
+    }
+
+    s_celestial.active = true;
+    s_celestial.isDay = isDay;
+    s_celestial.fade = fade;
+    s_celestial.direction[0] = dir[0];
+    s_celestial.direction[1] = dir[1];
+    s_celestial.direction[2] = dir[2];
+    s_celestial.radiance[0] = radiance[0];
+    s_celestial.radiance[1] = radiance[1];
+    s_celestial.radiance[2] = radiance[2];
+}
+
 void pushKankyoState() {
     mDoGph_gInf_c::bloom_c* bloom = mDoGph_gInf_c::getBloom();
 
@@ -217,6 +434,7 @@ void tick() {
     }
 
     pushKankyoState();
+    updateCelestialLight();
 #endif
 }
 
@@ -226,6 +444,14 @@ const std::vector<PushedVar>& debugVars() {
 
 uint64_t totalPushes() {
     return s_totalPushes;
+}
+
+const CelestialLightDebug& celestialDebug() {
+    return s_celestial;
+}
+
+bool& celestialFlipDirection() {
+    return s_celestialFlip;
 }
 
 }  // namespace remix

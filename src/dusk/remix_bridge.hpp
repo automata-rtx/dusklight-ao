@@ -46,5 +46,25 @@ struct PushedVar {
 const std::vector<PushedVar>& debugVars();
 uint64_t totalPushes();
 
+// State of the sun/moon distant light driven through the Remix light API (see
+// docs/kankyo-remix.md, Phase 4). The direction follows the vanilla game's
+// astronomical sun/moon angles (setSunpos), NOT the game's shadow-casting
+// light selection - that one snaps to nearby local lights, which a distant
+// light must never do.
+struct CelestialLightDebug {
+    bool deviceRegistered;
+    bool active;      // drawn this frame
+    bool isDay;
+    float fade;       // 0..1 crossfade near the day/night boundary
+    float direction[3];
+    float radiance[3];
+};
+
+const CelestialLightDebug& celestialDebug();
+
+// Session-only debug toggle: negates the pushed light direction, for quickly
+// diagnosing a handedness mismatch between game and Remix world space.
+bool& celestialFlipDirection();
+
 }  // namespace remix
 }  // namespace dusk

@@ -483,6 +483,43 @@ colour/amount, base weight. One calibration knob is needed:
     exposure), the first-fog-wins capture picking a stray draw (watch the
     Remix dev menu fog panel), and underwater palettes (very dense fog)
     tripping `rtx.volumetrics.waterFogDensityThreshold` and flipping modes.
+- **Phase 4 (partial): sun/moon distant light implemented.** The bridge now
+  drives one Remix distant light through the light API
+  (`CreateLight`/`DrawLightInstance` each frame; device registered via a new
+  `aurora_dx9_get_device()` accessor, re-registered after resize-recreation).
+  Direction comes from `setSunpos`'s astronomical orbit (sun while
+  67.5 < daytime < 292.5, moon otherwise, crossfaded over ±7.5 daytime
+  units) — deliberately **not** from the game's shadow-light selection,
+  which snaps to nearby lanterns. Gated on `dKy_SunMoon_Light_Check()`
+  (outdoor stages only; false in twilight/interiors). Tuning:
+  `game.remixSunMoonLight` (on), `game.remixSunIntensity` (5),
+  `game.remixMoonIntensity` (0.3), `game.remixCelestialAngle` (2°), all
+  live-editable in Tools → Remix Bridge, plus a debug direction-flip
+  checkbox in case game→Remix handedness needs the sign. Sun tint is
+  vanilla's constant actor sun diffuse (126,110,89 normalized); moon is a
+  cool counterpart. With `rtx.fallbackLightMode = 1` (NoLightsPresent) the
+  fallback light yields automatically once this light exists.
+- **Sky (Phase 4 remainder): manual tagging is the right mechanism.** The
+  vrbox is drawn by the game with the *main* camera, so
+  `rtx.skyAutoDetect` (which keys on a separate sky camera) is unlikely to
+  catch it; Remix's texture tagging is. One-time setup in the Remix dev
+  menu (texture categories → Sky): tag the vrbox sky dome, both cloud
+  layers (kumo), the horizon haze (kasumi) and sun/moon billboard
+  textures. Once tagged, the sky raster draws land in Remix's sky probe
+  *with their TEV tints* — i.e. kankyo's per-palette sky colours reach
+  reflections and GI automatically; scale with `rtx.skyBrightness`.
+  Programmatic tagging was evaluated and rejected for now: it would
+  require reproducing Remix's exact texture-content hash game-side.
+- **Owner test feedback (first bloom/fog session), to address:**
+  - Dusklight bloom renders and tracks time of day, but doesn't yet look
+    like the game's — calibration pass pending (threshold scale vs. the
+    scene's HDR range, gain distribution, and the burnIntensity=5 +
+    blurRatio=255 test values need re-baselining once the sun light lands).
+  - Volumetric fog mode reacts more strongly to kankyo's fog near/far than
+    expected; faithful mode is consistent.
+    `rtx.volumetrics.enableFogMaxDistanceRemap = False` (owner already set
+    it) is the intended lever — it pins the medium's density and leaves
+    only the colour game-driven. Revisit defaults after the light exists.
 - **Owner tuning note:** auto exposure may simply be disabled for reference
   (`rtx.autoExposure.enabled = False`) instead of clamping it — with AE off
   the pre-tonemap range is fixed, which makes `dusklightThresholdScale`
