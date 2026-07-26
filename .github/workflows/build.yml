@@ -277,11 +277,28 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
+      # Persist the source tarballs vcpkg downloads. When the binary cache
+      # misses (a compiler update changes every package ABI, for example)
+      # vcpkg otherwise has to re-fetch sources from their upstream hosts, and
+      # an outage there fails the build outright - freetype's host,
+      # gitlab.freedesktop.org, returned 504 for every attempt on 2026-07-26
+      # and took two builds down before a line of our code was compiled.
+      # A restored tarball is reused without any network access.
+      - name: Cache vcpkg downloads
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\downloads
+          key: vcpkg-downloads-${{runner.os}}-${{matrix.vcpkg_arch}}-freetype-zstd
+          restore-keys: |
+            vcpkg-downloads-${{runner.os}}-${{matrix.vcpkg_arch}}-
+            vcpkg-downloads-${{runner.os}}-
+
       - name: Install dependencies
         run: |
           choco install ninja
-          # vcpkg source downloads occasionally hit transient TLS failures on
-          # hosted runners (curl error 35), which vcpkg treats as fatal.
+          # vcpkg source downloads occasionally fail on hosted runners:
+          # transient TLS failures (curl error 35), or an upstream source host
+          # being down (curl 504). vcpkg treats either as fatal.
           # Retrying is safe: already-installed ports are skipped.
           $attempts = 0
           do {
