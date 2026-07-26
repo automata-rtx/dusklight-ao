@@ -522,14 +522,14 @@ at `896bffe` (merged to `main` via PR #1).
   the two `rtx.dusklight.env.*ambient` pushes in the bridge). It ships
   **off** (`rtx.dusklight.grade.enable = False`), so it cannot affect a
   test run until it is switched on deliberately. Unproven at runtime: that
-  the ambients arrive at sane values (watch them in Tools → Remix Bridge
+  the ambients arrive at sane values (watch them in Remix's Dusklight tab
   and in the grade UI's "Resolved tint" line), and whether 0.65 strength
   reads as mood or as a colour cast.
 - **The whole sun/moon distant light** (`updateCelestialLight`, Phase 4).
   Written after the last test session. Specifically unproven at runtime:
   `dxvk_RegisterD3D9Device` succeeding against aurora's device; the
   handedness of the direction handed to Remix (hence the Flip Direction
-  debug checkbox in Tools → Remix Bridge); whether the intensity defaults
+  debug checkbox in Remix's Dusklight tab); whether the intensity defaults
   (sun 5.0 / moon 0.3) are anywhere near right; and whether the light
   survives aurora's device recreation on resize.
 - `aurora_dx9_get_device()` (aurora checkpoint 3.18).
@@ -572,7 +572,7 @@ shading much — a real distant sun changes it completely — and the sky is
 not tagged yet, so there is no fill light at all and every surface is
 either lit by one hard 2°-diameter source or in black shadow.
 
-*Decisive test*: Tools → Remix Bridge now prints the sun's **azimuth and
+*Decisive test*: Remix's **Dusklight tab** prints the sun's **azimuth and
 elevation** in degrees, both computed from time of day alone. Run a lap
 and watch them. If they hold still, the direction is not tied to anything —
 then tick **Lock Direction** and circle a tree: if its shadow stays
@@ -587,8 +587,8 @@ Sun azimuth/elevation over a day, for reference (azimuth 0 = +Z, 90 = +X):
 handover at dusk swings the direction ~150° — which is why the crossfade
 takes the intensity to zero across it.
 
-**First-run checklist for the sun/moon light:** Tools → Remix Bridge should
-read `device: registered | SUN`. Walk past a lantern — the sun direction
+**First-run checklist for the sun/moon light:** Remix's Dusklight tab should
+report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
 must not move (that is the whole point of deriving it from the orbit
 rather than the game's shadow-light selection). Watch a dawn (daytime
 ~67.5–75) for the moon→sun crossfade. If shadows fall from the wrong side,
@@ -674,7 +674,7 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   (outdoor stages only; false in twilight/interiors). Tuning:
   `game.remixSunMoonLight` (on), `game.remixSunIntensity` (5),
   `game.remixMoonIntensity` (0.3), `game.remixCelestialAngle` (2°), all
-  live-editable in Tools → Remix Bridge, plus a debug direction-flip
+  live-editable in Remix's Dusklight tab, plus a debug direction-flip
   checkbox in case game→Remix handedness needs the sign. Sun tint is
   vanilla's constant actor sun diffuse (126,110,89 normalized); moon is a
   cool counterpart. With `rtx.fallbackLightMode = 1` (NoLightsPresent) the
@@ -736,8 +736,8 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
 
   Settings: `game.remixLocalLights` (**off** by default — third unverified
   system, same reasoning as the grade), `game.remixLocalLightIntensity`
-  (1.0), `game.remixLocalLightRadius` (4.0), all live in Tools → Remix
-  Bridge with drawn/tracked/create/destroy counters.
+  (1.0), `game.remixLocalLightRadius` (4.0), all live in Remix's Dusklight
+  tab with drawn/tracked counters.
 
   Not done: `mFluctuation` (the flicker amount; every torch sets 1.0, bombs
   100) is ignored for now — applying it would mean a re-create every frame
@@ -771,6 +771,35 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   exactly as authored. The chroma-only default for the Phase 3 grade
   matters less in that configuration but remains the right default for
   AE-on setups.
+
+### Where the controls live (and why they are not in the game)
+
+The game's ImGui is **never drawn in D3D9 mode** — its overlay renders
+through WebGPU, which is not initialized here
+(`docs/dx9-fixed-function.md`, limitations). So the "Remix Bridge" debug
+window built in Phase 0 is invisible in the one mode the whole feature
+exists for, and every instruction to open it was unfollowable. That was a
+real design error, caught by the owner rather than by us.
+
+The controls therefore live in **Remix's own ImGui overlay**, in a
+`Dusklight` tab, as ordinary `rtx.dusklight.game.*` options. The game reads
+them back every frame through a `getRtxOptionValue` export on the Remix DLL
+— the Remix API only *writes* config variables, and extending
+`remixapi_Interface` with a getter would break its ABI (its size is
+asserted), so this rides the same plain `__declspec(dllexport)` mechanism
+the fork already uses for `writeMarkdownDocumentation`.
+
+Direction of travel:
+
+- **Remix → game**: the settings (`rtx.dusklight.game.*`), polled each frame.
+  The game's own `game.remix*` config values remain as the fallback for a
+  Remix build without the export, and for backends where the bridge is inert.
+- **Game → Remix**: state (`rtx.dusklight.env.*`), pushed as before. Light
+  status — azimuth, elevation, day/night, fade, device registration, local
+  light counts — is pushed too, purely so the tab can display it.
+
+The game-side Remix Bridge window is kept: it still works on the WebGPU
+backends, where it is the only way to edit the fallback values.
 
 ### Phase 0 — plumbing (dusklight)
 1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;

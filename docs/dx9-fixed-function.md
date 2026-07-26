@@ -70,22 +70,22 @@ rtx.fogColorScale = 1.0
 #rtx.dusklight.grade.enable = True
 
 # The kankyo bridge also drives a sun/moon distant light through the Remix
-# API (game-side settings: game.remixSunMoonLight / remixSunIntensity /
-# remixMoonIntensity / remixCelestialAngle, tunable in Tools > Remix
-# Bridge). With fallbackLightMode = 1 the Remix fallback light yields
-# automatically while the sun/moon exists.
+# API. Its settings live in Remix's own Dusklight tab (and here as
+# rtx.dusklight.game.*), NOT in the game - the game's debug UI is not drawn
+# at all in this mode. With fallbackLightMode = 1 the Remix fallback light
+# yields automatically while the sun/moon exists.
 rtx.fallbackLightMode = 1
 ```
 
 **Local lights (game-side, off by default).** Aurora does not forward GX
 lights to D3D9, so Remix sees no light from the game itself; outdoors the
 sun/moon light covers that, but interiors and night fall through to Remix's
-fallback light. `game.remixLocalLights` mirrors the game's live point-light
-list — torches, braziers, lanterns, campfires, Midna, bomb flashes and the
-dungeon lights — into Remix sphere lights, with intensity derived the same
-way Remix derives it for a legacy D3D9 light. Tune with
-`game.remixLocalLightIntensity` and `game.remixLocalLightRadius` (Tools →
-Remix Bridge). Keep `rtx.fallbackLightMode = 1` so the fallback light
+fallback light. `rtx.dusklight.game.localLights` mirrors the game's live
+point-light list — torches, braziers, lanterns, campfires, Midna, bomb
+flashes and the dungeon lights — into Remix sphere lights, with intensity
+derived the same way Remix derives it for a legacy D3D9 light. Tune with
+`rtx.dusklight.game.localLightIntensity` and `…localLightRadius` in the
+Dusklight tab. Keep `rtx.fallbackLightMode = 1` so the fallback light
 yields to them.
 
 **Sky setup (one-time):** tag the vrbox textures as Sky in the Remix dev
@@ -136,7 +136,7 @@ Notes:
 > Dusklight bloom follows it (`rtx.bloom.dusklightFollowGame`). The manual
 > values below still apply when the bridge is off or the game isn't
 > running. Design: [`kankyo-remix.md`](kankyo-remix.md); debug via
-> Tools → Remix Bridge in the ImGui console.
+> the **Dusklight tab** in Remix's own ImGui overlay (Alt+X).
 
 ## Dusklight bloom in Remix
 
@@ -259,7 +259,12 @@ whole image — raise it, or set it to 0 to disable clamping entirely.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
-  but nothing is rendered.
+  but nothing is rendered. This is why the Remix-facing settings live in
+  Remix's own **Dusklight tab** rather than in the game's debug windows: in
+  this mode the game cannot draw a UI at all, so anything that needs tuning
+  against the path-traced image has to be reachable from Remix's overlay.
+  The game hosts them as `rtx.dusklight.game.*` options and polls them every
+  frame.
 - EFB color copies and offscreen passes are real (StretchRect /
   render-target textures); depth-format copies still use a neutral
   white/alpha-0 placeholder, and post-processing (bloom etc.) is skipped by

@@ -24,6 +24,11 @@ void DrawRemixBridgeWindow(bool& open) {
 
     ImGui::SameLine();
     ImGui::Text("status: %s", remix::statusString());
+    ImGui::TextWrapped(
+        "Note: this window is not drawn at all on the D3D9 backend - the ImGui overlay renders "
+        "through WebGPU, which that backend never initializes. Under Remix these settings are "
+        "edited from Remix's own Dusklight tab (rtx.dusklight.game.*), and the values here are "
+        "only the fallback for a Remix build without the option getter.");
     ImGui::Text("total pushes: %llu",
                 static_cast<unsigned long long>(remix::totalPushes()));
 

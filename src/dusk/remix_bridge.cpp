@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 #include <aurora/aurora.h>
 
@@ -46,6 +47,58 @@ aurora::Module BridgeLog("remix-bridge");
 bool s_initAttempted = false;
 remixapi_Interface s_interface = {};
 
+// The Remix API can only write config variables. Our settings are edited from
+// Remix's own Dusklight tab - the game's debug UI is not drawn at all in D3D9
+// mode - so we also have to read them back, which rides a plain export rather
+// than remixapi_Interface (whose size is asserted, so extending it would break
+// its ABI). Absent on a Remix build older than the tab; the game's own config
+// values are the fallback then.
+typedef uint32_t(*PFN_getRtxOptionValue)(const char* key, char* outValue, uint32_t valueSize);
+PFN_getRtxOptionValue s_getOption = nullptr;
+
+// Reads a Remix option, or returns false if this Remix build has no getter or
+// does not know the key.
+bool readOption(const char* key, std::string& outValue) {
+    if (s_getOption == nullptr) {
+        return false;
+    }
+
+    char buffer[64];
+    const uint32_t size = s_getOption(key, buffer, sizeof(buffer));
+    if (size == 0 || size > sizeof(buffer)) {
+        return false;
+    }
+
+    outValue.assign(buffer);
+    return true;
+}
+
+bool readOptionBool(const char* key, bool fallback) {
+    std::string value;
+    if (!readOption(key, value)) {
+        return fallback;
+    }
+
+    return value == "True" || value == "true" || value == "1";
+}
+
+float readOptionFloat(const char* key, float fallback) {
+    std::string value;
+    if (!readOption(key, value)) {
+        return fallback;
+    }
+
+    // strtof rather than stof: no exception dependency, and an unparseable value
+    // should fall back rather than propagate out of the frame loop.
+    char* end = nullptr;
+    const float parsed = std::strtof(value.c_str(), &end);
+    if (end == value.c_str()) {
+        return fallback;
+    }
+
+    return parsed;
+}
+
 void initialize() {
     s_initAttempted = true;
     s_status = BridgeStatus::NotUnderRemix;
@@ -86,6 +139,13 @@ void initialize() {
         s_status = BridgeStatus::InitFailed;
         BridgeLog.warn("remixapi interface has no SetConfigVariable; kankyo bridge disabled");
         return;
+    }
+
+    s_getOption = reinterpret_cast<PFN_getRtxOptionValue>(
+        reinterpret_cast<void*>(GetProcAddress(d3d9, "getRtxOptionValue")));
+    if (s_getOption == nullptr) {
+        BridgeLog.warn("this Remix build has no getRtxOptionValue export; the Dusklight tab "
+                       "cannot drive the game and config.json values are used instead");
     }
 
     s_status = BridgeStatus::Active;
@@ -292,7 +352,9 @@ void updateCelestialLight() {
         return;
     }
 
-    if (!getSettings().game.remixSunMoonLight.getValue() || !dusk::IsGameLaunched) {
+    if (!readOptionBool("rtx.dusklight.game.sunMoonLight",
+                        getSettings().game.remixSunMoonLight.getValue()) ||
+        !dusk::IsGameLaunched) {
         return;
     }
 
@@ -343,7 +405,10 @@ void updateCelestialLight() {
     // Pinned for diagnosis: the direction below depends on nothing but time of
     // day, so if the lighting still swings around while this is on, whatever is
     // moving it is downstream of us.
-    if (s_celestialLock && s_celestialLockValid) {
+    const bool lockDirection =
+        readOptionBool("rtx.dusklight.game.celestialLock", s_celestialLock);
+
+    if (lockDirection && s_celestialLockValid) {
         toBody[0] = s_celestialLockedToBody[0];
         toBody[1] = s_celestialLockedToBody[1];
         toBody[2] = s_celestialLockedToBody[2];
@@ -357,7 +422,7 @@ void updateCelestialLight() {
     // A distant light is defined purely by the direction its light travels,
     // which is the reverse of the direction to the body.
     float dir[3] = {-toBody[0], -toBody[1], -toBody[2]};
-    if (s_celestialFlip) {
+    if (readOptionBool("rtx.dusklight.game.celestialFlip", s_celestialFlip)) {
         dir[0] = -dir[0];
         dir[1] = -dir[1];
         dir[2] = -dir[2];
@@ -369,11 +434,15 @@ void updateCelestialLight() {
     const float sunColor[3] = {1.0f, 0.873f, 0.706f};
     const float moonColor[3] = {0.55f, 0.65f, 0.95f};
 
-    const float intensity = fade * (isDay ? getSettings().game.remixSunIntensity.getValue()
-                                          : getSettings().game.remixMoonIntensity.getValue());
+    const float intensity =
+        fade * (isDay ? readOptionFloat("rtx.dusklight.game.sunIntensity",
+                                        getSettings().game.remixSunIntensity.getValue())
+                      : readOptionFloat("rtx.dusklight.game.moonIntensity",
+                                        getSettings().game.remixMoonIntensity.getValue()));
     const float* color = isDay ? sunColor : moonColor;
     const float radiance[3] = {color[0] * intensity, color[1] * intensity, color[2] * intensity};
-    const float angle = getSettings().game.remixCelestialAngle.getValue();
+    const float angle = readOptionFloat("rtx.dusklight.game.celestialAngle",
+                                        getSettings().game.remixCelestialAngle.getValue());
 
     // Re-creating with the same hash is the API's update mechanism; only do it
     // when something moved beyond quantization noise.
@@ -580,7 +649,9 @@ void updateLocalLights() {
         return;
     }
 
-    if (!getSettings().game.remixLocalLights.getValue() || !dusk::IsGameLaunched) {
+    if (!readOptionBool("rtx.dusklight.game.localLights",
+                        getSettings().game.remixLocalLights.getValue()) ||
+        !dusk::IsGameLaunched) {
         releaseLocalLights();
         return;
     }
@@ -598,8 +669,12 @@ void updateLocalLights() {
         s_lightsNeedRecreate = false;
     }
 
-    const float radius = std::max(getSettings().game.remixLocalLightRadius.getValue(), 0.01f);
-    const float scale = std::max(getSettings().game.remixLocalLightIntensity.getValue(), 0.0f);
+    const float radius = std::max(
+        readOptionFloat("rtx.dusklight.game.localLightRadius",
+                        getSettings().game.remixLocalLightRadius.getValue()), 0.01f);
+    const float scale = std::max(
+        readOptionFloat("rtx.dusklight.game.localLightIntensity",
+                        getSettings().game.remixLocalLightIntensity.getValue()), 0.0f);
 
     for (TrackedLocalLight& tracked : s_localLights) {
         tracked.seen = false;
@@ -749,6 +824,35 @@ void pushKankyoState() {
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
     push("rtx.dusklight.env.bgAmbient", formatColorS10(env->bg_amb_col[0]));
 }
+
+// Reports what the lights are actually doing, so Remix's Dusklight tab can show
+// it. This is the only place any of it is visible: the game's own debug window
+// is never drawn in the D3D9 mode this feature exists for.
+//
+// Pushed after the lights have run, so a frame's readout matches the frame that
+// produced it. The diff cache means a steady scene costs nothing.
+void pushLightStatus() {
+    push("rtx.dusklight.env.deviceRegistered", formatBool(s_celestial.deviceRegistered));
+    push("rtx.dusklight.env.sunActive", formatBool(s_celestial.active));
+    push("rtx.dusklight.env.sunIsDay", formatBool(s_celestial.isDay));
+    push("rtx.dusklight.env.sunFade", formatFloat(s_celestial.fade));
+
+    // Rounded to a tenth of a degree: these change continuously as time passes,
+    // and pushing full precision would re-cross the API lock every frame for a
+    // readout nobody can read that finely anyway.
+    const auto roundTenth = [](float value) {
+        return std::round(value * 10.0f) / 10.0f;
+    };
+
+    push("rtx.dusklight.env.sunAzimuth", formatFloat(roundTenth(s_celestial.azimuth)));
+    push("rtx.dusklight.env.sunElevation", formatFloat(roundTenth(s_celestial.elevation)));
+
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.drawn);
+    push("rtx.dusklight.env.localLightsDrawn", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
+    push("rtx.dusklight.env.localLightsTracked", buffer);
+}
 #endif  // DUSK_REMIX_BRIDGE_SUPPORTED
 
 }  // namespace
@@ -785,7 +889,10 @@ void tick() {
         return;
     }
 
-    const bool wantEnabled = getSettings().game.remixKankyoBridge.getValue();
+    // Remix's Dusklight tab owns this once the bridge has connected; before that (and on a
+    // Remix build without the getter) the game's own config value decides.
+    const bool wantEnabled = readOptionBool("rtx.dusklight.game.bridgeEnable",
+                                            getSettings().game.remixKankyoBridge.getValue());
 
     if (!s_initAttempted) {
         if (!wantEnabled) {
@@ -814,6 +921,7 @@ void tick() {
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();
+    pushLightStatus();
 #endif
 }
 
