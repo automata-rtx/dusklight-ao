@@ -62,7 +62,8 @@ Notes:
   `game.bloomMode` in the config) when running under Remix. The classic
   bloom is a screen-space EFB filter chain; the path tracer replaces this
   class of effect, and the filter quads only overlay raster-derived blur on
-  top of Remix's output.
+  top of Remix's output. Use Remix's own bloom instead — see
+  "Dusklight bloom in Remix" below.
 - **Resizing the window blacks out briefly, by design.** Remix does not
   re-derive its UI overlay from a D3D9 device `Reset` — the HUD would keep the
   scale it had when the device was created — so the backend fully recreates
@@ -73,6 +74,65 @@ Notes:
   investigating (`rtx.ignoreTextures`, `ignoreTransparencyLayerTextures`,
   `terrainTextures`, …) persist across runs and silently hide or reclassify
   textures in later sessions. Clear them before judging a new build.
+
+## Dusklight bloom in Remix
+
+The game's own bloom has to be off under Remix (above), so the "Dusk" bloom
+mode — the one the settings menu offers as an alternative to Classic — was
+ported into our dxvk-remix fork as a post-processing option. Turn it on in
+the Remix UI under **Rendering → Post-Processing → Bloom → Dusklight Bloom**,
+or in `rtx.conf`:
+
+```ini
+rtx.bloom.dusklight = True
+```
+
+The port keeps the game's parameter names and ranges, so values can be
+carried straight across from `game.bloom*` / the ImGui Bloom window:
+
+| rtx.conf option | Default | Game equivalent |
+| :-- | :-: | :-- |
+| `rtx.bloom.dusklightThreshold` | 0.5 | `mPoint` (128/255) |
+| `rtx.bloom.dusklightBlurSize` | 64 | `mBlureSize` |
+| `rtx.bloom.dusklightBlurRatio` | 128 | `mBlureRatio` |
+| `rtx.bloom.dusklightFalloff` | 0.25 | upsample alpha base |
+| `rtx.bloom.dusklightSaturationPoint` | 1.0 | 8-bit clip per pass |
+| `rtx.bloom.dusklightTint` | 1, 1, 1 | `mBlendColor` rgb |
+| `rtx.bloom.dusklightScreenBlend` | False | `mMode == 1` |
+
+`rtx.bloom.steps` (labelled Radius in the UI) sets how deep the pyramid goes;
+the game uses five levels, which is also Remix's default. `rtx.bloom.burnIntensity`
+still scales the final composite. `rtx.bloom.luminanceThreshold` is *not* used
+in this mode — Dusklight thresholds by subtracting from each channel rather
+than by weighting with luminance, which is what keeps coloured highlights
+saturated, so it gets its own threshold option.
+
+What makes it look different from Remix's default bloom, in `draw2()` order
+(`src/m_Do/m_Do_graphic.cpp`):
+
+1. **Subtractive threshold.** `-mPoint` is added to every channel and the
+   result clamps at zero — a hard cut with a linear ramp above it, rather
+   than Remix's smooth luminance rolloff.
+2. **A ring blur at every pyramid level.** Eight taps evenly spaced around a
+   circle, no center tap, at a fixed screen-space radius. Remix's default
+   pyramid gets all of its blur from the downsample kernel alone.
+3. **Per-level gain that is allowed to clip.** The total brightness is spread
+   over the passes as its N-th root, and each pass saturates. The comment in
+   `draw2()` is explicit that the clipping is deliberate — it is what gives
+   bright sources their washed-out white cores.
+4. **Geometrically weighted upsample.** Each level is folded into the one
+   above it with weight `falloff^(1/level)` instead of being summed at full
+   strength, so the wide levels sit under the narrow ones.
+
+One deliberate deviation: the first (threshold) pass uses Remix's 13-tap
+downsample kernel rather than the game's plain copy. The input there is
+raytraced HDR colour, and a single bright pixel with a box filter makes the
+whole bloom flicker frame to frame.
+
+Note that `dusklightThreshold` and `dusklightSaturationPoint` are in the
+linear HDR range the image sits in *before* tonemapping, not 0..1 display
+values. If bloom looks flat and dim, the saturation point is clipping the
+whole image — raise it, or set it to 0 to disable clamping entirely.
 
 ## Game-side behavior & limitations in D3D9 mode
 
