@@ -72,11 +72,30 @@ function(ensure_symgen required)
         set(_url "${_SYMGEN_RELEASE_BASE_URL}/${_asset}")
         message(STATUS "dusklight: Fetching symgen ${_SYMGEN_VERSION} (${_asset})")
         file(MAKE_DIRECTORY "${_symgen_dir}")
-        file(DOWNLOAD "${_url}" "${_symgen}"
-                TLS_VERIFY ON
-                STATUS _download_status
-                SHOW_PROGRESS)
-        list(GET _download_status 0 _download_code)
+        # Retry: this is a single point of failure for the whole configure step,
+        # and GitHub's release CDN does drop connections ("Server returned
+        # nothing (no headers, no data)" took a CI job down on 2026-07-26,
+        # before a line of our code was compiled). A partial file is removed
+        # between attempts so a truncated download cannot be mistaken for a good
+        # one.
+        set(_download_code 1)
+        foreach (_attempt RANGE 1 3)
+            file(DOWNLOAD "${_url}" "${_symgen}"
+                    TLS_VERIFY ON
+                    STATUS _download_status
+                    SHOW_PROGRESS)
+            list(GET _download_status 0 _download_code)
+            if (_download_code EQUAL 0)
+                break()
+            endif ()
+            list(GET _download_status 1 _download_message)
+            file(REMOVE "${_symgen}")
+            if (_attempt LESS 3)
+                message(STATUS "symgen: download attempt ${_attempt} of 3 failed "
+                        "(${_download_message}); retrying")
+                execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 5)
+            endif ()
+        endforeach ()
         if (NOT _download_code EQUAL 0)
             list(GET _download_status 1 _download_message)
             file(REMOVE "${_symgen}")
