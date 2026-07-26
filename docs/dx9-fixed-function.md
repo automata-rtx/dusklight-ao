@@ -63,6 +63,16 @@ Notes:
   bloom is a screen-space EFB filter chain; the path tracer replaces this
   class of effect, and the filter quads only overlay raster-derived blur on
   top of Remix's output.
+- **Resizing the window blacks out briefly, by design.** Remix does not
+  re-derive its UI overlay from a D3D9 device `Reset` — the HUD would keep the
+  scale it had when the device was created — so the backend fully recreates
+  the device on a size change instead. Remix restarts its renderer and the
+  texture cache rebuilds, which is the pause you see. The change is debounced,
+  so dragging a window edge stays responsive and rebuilds once you let go.
+- **Keep experiment tags out of `rtx.conf`.** Categories set while
+  investigating (`rtx.ignoreTextures`, `ignoreTransparencyLayerTextures`,
+  `terrainTextures`, …) persist across runs and silently hide or reclassify
+  textures in later sessions. Clear them before judging a new build.
 
 ## Game-side behavior & limitations in D3D9 mode
 
@@ -78,9 +88,16 @@ Notes:
   `--dvd <path>` on the command line. With neither, the game exits with
   "No DVD image specified, unable to boot!". Recommended D3D9 launch:
   `dusklight --backend d3d9 --dvd <path-to-game.rvz>`.
-- **Graphics mods (WGSL: AO, realtime shadows, …) are inert** — the mod gfx
-  stages (`push_custom_draw`, `create_pass`, `resolve_pass`) return false in
-  D3D9 mode. Remix's path tracer replaces these effects wholesale.
+- **Mods are disabled entirely on this backend.** Mod graphics stages
+  (`push_custom_draw`, `create_pass`, `resolve_pass`) are inert here since
+  WebGPU is never initialized, and a native mod that touches the renderer
+  crashed the process at load — so every mod search directory is dropped when
+  the active backend is D3D9 (`m_Do_main.cpp`), landing on the same "no mods
+  found" path a clean install takes. The log line is
+  `D3D9 backend: mods are unsupported here, skipping mod discovery`.
+  **`config.json` is not rewritten**, so the same config moves between a
+  modded build and a D3D9 test build with no edits either way. Remix's path
+  tracer replaces the graphics mods' effects wholesale.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
