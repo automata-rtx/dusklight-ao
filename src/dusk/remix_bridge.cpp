@@ -584,6 +584,14 @@ void updateLocalLights() {
             }
         }
 
+        if (tracked != nullptr && tracked->source != influence && tracked->seen) {
+            // Two live lights hashed to the same value. Vanishingly unlikely
+            // (~1e-7 for a roomful), but without this the two would fight over
+            // one Remix light and re-create it twice a frame forever, which
+            // costs far more than the light is worth. The incumbent keeps it.
+            continue;
+        }
+
         if (tracked == nullptr) {
             s_localLights.push_back(TrackedLocalLight {hash, nullptr, influence, {}, {}, 0.0f, false});
             tracked = &s_localLights.back();
