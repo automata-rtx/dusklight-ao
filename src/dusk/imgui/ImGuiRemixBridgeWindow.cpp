@@ -57,12 +57,23 @@ void DrawRemixBridgeWindow(bool& open) {
         }
 
         ImGui::Checkbox("Flip Direction (debug)", &remix::celestialFlipDirection());
+        ImGui::Checkbox("Lock Direction (debug)", &remix::celestialLockDirection());
 
         if (cel.active) {
+            // Azimuth/elevation first: it is the readout that answers "is the
+            // sun following me?" at a glance. Both are computed from time of
+            // day alone, so they must not move while the player does.
+            ImGui::Text("azimuth: %6.1f deg   elevation: %5.1f deg", cel.azimuth,
+                        cel.elevation);
             ImGui::Text("dir: %.3f, %.3f, %.3f  fade: %.2f", cel.direction[0], cel.direction[1],
                         cel.direction[2], cel.fade);
             ImGui::Text("radiance: %.2f, %.2f, %.2f", cel.radiance[0], cel.radiance[1],
                         cel.radiance[2]);
+            ImGui::TextWrapped(
+                "Azimuth/elevation depend on time of day and nothing else. If they hold still "
+                "while you run in a circle but the lighting still swings, the direction is fine "
+                "and something downstream is rotating it - lock it and check whether a tree's "
+                "shadow stays put on the ground as you circle the tree.");
         }
     }
 

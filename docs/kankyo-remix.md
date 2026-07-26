@@ -539,6 +539,54 @@ at `896bffe` (merged to `main` via PR #1).
 - Sky tagging has not been done at all; it is a manual one-time step in
   the Remix texture-categories UI (see dx9-fixed-function.md).
 
+**"The sun seems tied to Link" — investigated 2026-07-26, no tie found.**
+Reported after the first session with the light: running in a circle in
+Hyrule Field dramatically changed what was shadowed. Four things were
+checked, and none of them can carry a dependency on the player:
+
+1. `setSunpos` (`d_kankyo.cpp:1666`) has **no rotation term at all**:
+   `sun_pos = eye + (sin a·80000, −cos a·80000, −cos a·48000)`, with `a` a
+   function of `daytime` only. The eye is a translation and cancels in the
+   direction. (The earlier numerical check varied camera *position* over 720
+   times — it would not have caught an orientation dependency, so this was
+   re-read rather than re-run.)
+2. `dKy_SunMoon_Light_Check()` (`d_kankyo.cpp:10974`) keys on the stage name
+   and darkworld state only — it cannot toggle as the player moves inside
+   Hyrule Field.
+3. Remix's `direction` convention is the one we push: `distant_light.slangh:78`
+   samples at `position - direction·100000`, i.e. `direction` is the
+   direction light *travels*. Our `-toBody` is correct.
+4. Aurora hands Remix true world space (`world = modelView · viewInv`,
+   `dx9_draw.cpp:354/361/505`), so Remix's world is the game's world.
+
+Also ruled out: the clock (`time_change_rate` 0.012/frame ⇒ ~0.6°/s of sun
+motion — visible over a minute, not over a lap), and baked lighting
+(`D3DRS_LIGHTING = FALSE` in `dx9_backend.cpp:83`; aurora never evaluates
+the GX light model, so vanilla's Link-following light reaches neither the
+vertex colours nor the albedo).
+
+The likeliest explanation is that this is a **correct** world-fixed sun,
+and it feels wrong for two compounding reasons: vanilla's shadow-casting
+light was local and followed Link, so turning around never changed the
+shading much — a real distant sun changes it completely — and the sky is
+not tagged yet, so there is no fill light at all and every surface is
+either lit by one hard 2°-diameter source or in black shadow.
+
+*Decisive test*: Tools → Remix Bridge now prints the sun's **azimuth and
+elevation** in degrees, both computed from time of day alone. Run a lap
+and watch them. If they hold still, the direction is not tied to anything —
+then tick **Lock Direction** and circle a tree: if its shadow stays
+anchored to the tree, the light is behaving, and the fix is fill light
+(sky tagging, `rtx.skyBrightness`) rather than the sun. If the numbers
+move, or the shadow swings while locked, that is a real bug and the lock
+narrows it to everything downstream of the bridge.
+
+Sun azimuth/elevation over a day, for reference (azimuth 0 = +Z, 90 = +X):
+06:00 +81°/15°, 08:00 +63°/37°, 12:00 0°/59°, 16:00 −63°/37°, 18:00
+−81°/15°. The moon runs the same arc half a day out of phase, so the
+handover at dusk swings the direction ~150° — which is why the crossfade
+takes the intensity to zero across it.
+
 **First-run checklist for the sun/moon light:** Tools → Remix Bridge should
 read `device: registered | SUN`. Walk past a lantern — the sun direction
 must not move (that is the whole point of deriving it from the orbit

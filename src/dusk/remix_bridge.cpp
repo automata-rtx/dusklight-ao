@@ -36,6 +36,7 @@ std::vector<PushedVar> s_vars;
 
 CelestialLightDebug s_celestial = {};
 bool s_celestialFlip = false;
+bool s_celestialLock = false;
 
 LocalLightsDebug s_localDebug = {};
 
@@ -186,6 +187,8 @@ remixapi_LightHandle s_celestialHandle = nullptr;
 float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
 float s_lastRadiance[3] = {0.0f, 0.0f, 0.0f};
 float s_lastAngle = 0.0f;
+float s_celestialLockedToBody[3] = {0.0f, 0.0f, 0.0f};
+bool s_celestialLockValid = false;
 
 // The Remix API needs the D3D9 device registered before any scene calls.
 // Aurora recreates the device on window resize, so re-register on change.
@@ -328,6 +331,28 @@ void updateCelestialLight() {
 
     float toBody[3];
     celestialDirectionTo(orbitTime, toBody);
+
+    // Compass bearing and height, purely for the debug readout: this is the
+    // quickest way to see whether the sun is holding still while the player
+    // moves, which is the question that comes up every time the lighting looks
+    // like it is following someone around.
+    constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+    s_celestial.elevation = std::asin(std::clamp(toBody[1], -1.0f, 1.0f)) * kRadToDeg;
+    s_celestial.azimuth = std::atan2(toBody[0], toBody[2]) * kRadToDeg;
+
+    // Pinned for diagnosis: the direction below depends on nothing but time of
+    // day, so if the lighting still swings around while this is on, whatever is
+    // moving it is downstream of us.
+    if (s_celestialLock && s_celestialLockValid) {
+        toBody[0] = s_celestialLockedToBody[0];
+        toBody[1] = s_celestialLockedToBody[1];
+        toBody[2] = s_celestialLockedToBody[2];
+    } else {
+        s_celestialLockedToBody[0] = toBody[0];
+        s_celestialLockedToBody[1] = toBody[1];
+        s_celestialLockedToBody[2] = toBody[2];
+        s_celestialLockValid = true;
+    }
 
     // A distant light is defined purely by the direction its light travels,
     // which is the reverse of the direction to the body.
@@ -806,6 +831,10 @@ const CelestialLightDebug& celestialDebug() {
 
 bool& celestialFlipDirection() {
     return s_celestialFlip;
+}
+
+bool& celestialLockDirection() {
+    return s_celestialLock;
 }
 
 const LocalLightsDebug& localLightsDebug() {

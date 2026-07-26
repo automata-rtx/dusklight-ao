@@ -58,6 +58,12 @@ struct CelestialLightDebug {
     float fade;       // 0..1 crossfade near the day/night boundary
     float direction[3];
     float radiance[3];
+    // Where the body sits in the world, in degrees, for eyeballing whether the
+    // sun is actually holding still. Azimuth is a compass bearing about the
+    // world's up axis (0 = +Z, 90 = +X); elevation is height above the horizon.
+    // Taken before the debug flip, so these are the game's own astronomy.
+    float azimuth;
+    float elevation;
 };
 
 const CelestialLightDebug& celestialDebug();
@@ -79,6 +85,13 @@ const LocalLightsDebug& localLightsDebug();
 // Session-only debug toggle: negates the pushed light direction, for quickly
 // diagnosing a handedness mismatch between game and Remix world space.
 bool& celestialFlipDirection();
+
+// Session-only debug toggle: pins the light direction at whatever it was when
+// the lock was switched on. The direction the bridge computes depends on
+// nothing but time of day, so if shadows still swing about while this is on,
+// whatever is moving them is downstream of the bridge - the space Remix reads
+// the direction in, not the direction itself.
+bool& celestialLockDirection();
 
 }  // namespace remix
 }  // namespace dusk
