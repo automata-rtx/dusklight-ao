@@ -794,9 +794,37 @@ light lifecycle in the bridge, vrbox tint investigation, dungeon lights
 stretch goal.
 
 ### Phase 5 — polish
-rtx.conf template ships tuned defaults; documentation pass
-(`docs/dx9-fixed-function.md` + this doc's status log); XFog evaluation;
-HDR threshold calibration table per area if needed.
+
+- ✅ **XFog evaluation — nothing to do, and forwarding it would be wrong.**
+  GX fog is computed from projected depth (planar); `GXSetFogRangeAdj`
+  adds a per-column correction table whose whole purpose is to make that
+  planar depth behave like *radial* distance, so fog does not thin out at
+  the screen edges. Remix's composite fog already measures radial
+  distance — `viewDistance = length(viewPosition)`
+  (`composite.comp.slang:700`), fed straight into the `D3DFOG_LINEAR`
+  ramp. So the correction is already applied by construction; forwarding
+  the table would double-correct.
+
+  TP does keep it on: `mFogAdjEnable = true` at kankyo init
+  (`d_kankyo.cpp:1257`) and `GxXFog_set()` runs immediately after every
+  scene `GFSetFog(GX_FOG_PERSP_LIN, …)` (`d_kankyo.cpp:9459`). Every
+  `GXSetFogRangeAdj(GX_DISABLE, …)` in the game is on a 2D/UI/menu/movie
+  path where fog is off anyway. Aurora records the same conclusion at
+  `lib/dx9/dx9_draw.cpp:178`.
+- ✅ **rtx.conf template + documentation pass** — `dx9-fixed-function.md`
+  carries both fog modes, the bloom table, the ambient grade table and the
+  local light notes; this doc's status log and verification section are
+  current.
+- ⬜ **HDR threshold calibration table per area** — needs the game running.
+- ⬜ **Re-baseline the owner's test values** (`burnIntensity = 5`,
+  `dusklightBlurRatio = 255`, `dusklightThreshold = 0`) once the lights
+  are verified; they were picked to make the bloom visible, not accurate.
+
+### CI coverage note
+The fork's workflow only built `main` and `release/**`, so a `claude/**`
+branch got no build until its PR opened. `claude/**` is now in the push
+triggers, which is what gives the Phase 3 grade a compile check without
+opening a pull request for it.
 
 ### Test/verification strategy
 - Owner tests via the GitHub Actions "Build Windows (MSVC x86_64)"
