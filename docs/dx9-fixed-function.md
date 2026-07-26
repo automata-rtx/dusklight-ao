@@ -39,6 +39,30 @@ Create/edit `rtx.conf` next to the executable:
 # keep working. The old method routes input through a window-proc hook that
 # always forwards messages to the game. This option is read at startup only.
 rtx.useNewGuiInputMethod = False
+
+# --- Kankyo-driven look (see kankyo-remix.md) ---
+
+# Render the game's bloom/mono state pushed by the kankyo bridge.
+rtx.bloom.dusklight = True
+
+# FOG: pick ONE mode. With Remix defaults the game's fog is captured but
+# consumed by neither path (composite fog is skipped while volumetrics are
+# enabled, and fog remap is off) - i.e. fog silently does nothing.
+
+# Faithful mode: exact linear ramp, vanilla look.
+rtx.volumetrics.enable = False
+rtx.maxFogDistance = 10000000
+# Captured fog colour -> pre-tonemap radiance. Calibrate once (start ~1.0
+# with auto exposure disabled; the Remix default 0.25 is very dim).
+rtx.fogColorScale = 1.0
+
+# Volumetric mode (alternative): comment out the three lines above and use
+# kankyo's fog colour as a real participating medium instead:
+#rtx.volumetrics.enableFogRemap = True
+#rtx.volumetrics.enableFogColorRemap = True
+
+# Recommended for calibration: fix exposure so thresholds/fog read stably.
+#rtx.autoExposure.enabled = False
 ```
 
 Notes:

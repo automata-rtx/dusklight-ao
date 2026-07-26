@@ -452,6 +452,37 @@ colour/amount, base weight. One calibration knob is needed:
   values never reach user.conf), mono prepass shader, composite base
   weight, `rtx.bloom.dusklightFollowGame` + `dusklightThresholdScale` +
   manual mono/base-weight knobs).
+- **Phase 2: implemented** (aurora checkpoint 3.17: `apply_fog_state()` in
+  `lib/dx9/dx9_draw.cpp` forwards GX fog to `D3DRS_FOG*` per draw; ortho/UI
+  draws stay fog-off). **Fog fidelity evaluation — read before testing:**
+  - Remix has *two* consumers for captured D3D9 fog, and with Remix's
+    **default settings neither fires**: composite's depth fog early-outs
+    whenever volumetrics are enabled (`rtx.volumetrics.enable` defaults to
+    True), and the volumetric fog remap defaults to off. Fog silently does
+    nothing until a mode is chosen:
+  - **Faithful mode** — `rtx.volumetrics.enable = False` (composite depth
+    fog, on via `rtx.enableFog` by default). Reproduces the exact
+    `D3DFOG_LINEAR` ramp `(end−d)/(end−start)` — identical maths to
+    `GX_FOG_PERSP_LIN` — and it fogs by **radial distance**, which matches
+    vanilla better than plain view-Z because TP keeps `GXSetFogRangeAdj`
+    (the radial correction) enabled. Two knobs: `rtx.fogColorScale`
+    (default 0.25; the captured gamma colour is used as linear pre-tonemap
+    radiance, so with auto exposure off start near 1.0 and calibrate once)
+    and `rtx.maxFogDistance` (default 65504 — raise it; TP fog ends exceed
+    it and geometry past the cutoff gets no fog at all).
+  - **Volumetric mode** — keep volumetrics on and set
+    `rtx.volumetrics.enableFogRemap = True` +
+    `rtx.volumetrics.enableFogColorRemap = True`. Kankyo's fog colour
+    becomes the participating medium's transmittance colour (light shafts,
+    real scattering); the distance mapping is *not* the linear ramp
+    (fog end remapped through `rtx.volumetrics.fogRemap*Meters`, which
+    interact with `rtx.sceneScale`). Prettier, physically consistent,
+    less literal.
+  - Expected weak points to watch on first test: fog colour shifting with
+    exposure/tonemap (calibrate `fogColorScale`, or disable auto
+    exposure), the first-fog-wins capture picking a stray draw (watch the
+    Remix dev menu fog panel), and underwater palettes (very dense fog)
+    tripping `rtx.volumetrics.waterFogDensityThreshold` and flipping modes.
 - **Owner tuning note:** auto exposure may simply be disabled for reference
   (`rtx.autoExposure.enabled = False`) instead of clamping it — with AE off
   the pre-tonemap range is fixed, which makes `dusklightThresholdScale`
