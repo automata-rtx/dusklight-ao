@@ -8,7 +8,6 @@
 #include "dusk/logging.h"
 #include "dusk/main.h"
 #include "dusk/settings.h"
-#include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
 #include "m_Do/m_Do_graphic.h"
 
@@ -210,6 +209,57 @@ float windowFade(float daytime, float begin, float end, float width) {
     return std::min(edge / width, 1.0f);
 }
 
+// setSunpos's piecewise remap of time of day (0..360) onto the orbit angle.
+// The two branches make the body cross the sky faster around noon/midnight
+// than it does near the horizon.
+float celestialOrbitAngle(float time) {
+    if (time >= 90.0f && time <= 270.0f) {
+        // get_parcent(270, 90, time)
+        return ((time - 90.0f) / 180.0f) * 150.0f + 105.0f;
+    }
+
+    float angle = time;
+    if (angle < 90.0f) {
+        angle += 360.0f;
+    }
+
+    // get_parcent(450, 270, angle)
+    angle = ((angle - 270.0f) / 180.0f) * 210.0f + 255.0f;
+    if (angle > 360.0f) {
+        angle -= 360.0f;
+    }
+    return angle;
+}
+
+// Unit vector from the scene toward the sun/moon, straight from time of day.
+//
+// setSunpos writes the body's world position by placing it on an ellipse
+// around the camera eye:
+//     offset = (sin(a) * 80000, -cos(a) * 80000, -cos(a) * 48000)
+//     sun_pos = eye + offset          (moon_pos stores the offset directly)
+// The eye term cancels in offset, and the radii cancel under normalization,
+// leaving 48000/80000 = 0.6 as the only surviving term. Deriving the vector
+// here rather than differencing sun_pos against the camera keeps this a pure
+// direction: no position, no arc, no camera, nothing for a distant light to
+// misinterpret - and it stays correct in the stages where setSunpos declines
+// to update sun_pos at all.
+void celestialDirectionTo(float time, float outDir[3]) {
+    const float radians = celestialOrbitAngle(time) * (3.14159265358979323846f / 180.0f);
+    const float sinA = std::sin(radians);
+    const float cosA = std::cos(radians);
+
+    // Ellipse aspect: z radius (48000) over xy radius (80000).
+    constexpr float kOrbitZRatio = 0.6f;
+
+    float dir[3] = {sinA, -cosA, -cosA * kOrbitZRatio};
+    const float invLength =
+        1.0f / std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+
+    outDir[0] = dir[0] * invLength;
+    outDir[1] = dir[1] * invLength;
+    outDir[2] = dir[2] * invLength;
+}
+
 void updateCelestialLight() {
     s_celestial.active = false;
 
@@ -228,45 +278,39 @@ void updateCelestialLight() {
         return;
     }
 
-    camera_process_class* camera = dComIfGp_getCamera(0);
-    if (camera == nullptr) {
-        return;
-    }
-
     if (!ensureDeviceRegistered()) {
         return;
     }
 
-    dScnKy_env_light_c* env = dKy_getEnvlight();
-    const float daytime = env->getDaytime();
+    const float daytime = dKy_getEnvlight()->getDaytime();
 
     // SetBaseLight's sun window, with a crossfade over 7.5 daytime units
     // (about 30 in-game minutes) at each boundary.
     const bool isDay = daytime > 67.5f && daytime < 292.5f;
     float fade;
-    cXyz offset;
+    float orbitTime;
 
     if (isDay) {
         fade = windowFade(daytime, 67.5f, 292.5f, 7.5f);
-        offset = env->sun_pos - camera->view.lookat.eye;
+        orbitTime = daytime;
     } else {
         // Night window wraps midnight: 292.5 -> 360/0 -> 67.5.
         const float sinceDusk = daytime >= 292.5f ? daytime - 292.5f : daytime + 67.5f;
         fade = windowFade(sinceDusk, 0.0f, 135.0f, 7.5f);
-        // moon_pos is already the eye-relative offset (SetBaseLight adds eye).
-        offset = env->moon_pos;
+        // The moon rides the same orbit half a day out of phase.
+        orbitTime = daytime >= 180.0f ? daytime - 180.0f : daytime + 180.0f;
     }
 
-    const float lengthSq = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
-    if (!(lengthSq > 1.0f) || fade <= 0.0f) {
+    if (fade <= 0.0f) {
         return;
     }
 
-    const float invLength = 1.0f / std::sqrt(lengthSq);
+    float toBody[3];
+    celestialDirectionTo(orbitTime, toBody);
 
-    // Distant light direction is the direction the light travels: from the
-    // celestial body toward the scene.
-    float dir[3] = {-offset.x * invLength, -offset.y * invLength, -offset.z * invLength};
+    // A distant light is defined purely by the direction its light travels,
+    // which is the reverse of the direction to the body.
+    float dir[3] = {-toBody[0], -toBody[1], -toBody[2]};
     if (s_celestialFlip) {
         dir[0] = -dir[0];
         dir[1] = -dir[1];

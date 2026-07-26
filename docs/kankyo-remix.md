@@ -487,10 +487,26 @@ colour/amount, base weight. One calibration knob is needed:
   drives one Remix distant light through the light API
   (`CreateLight`/`DrawLightInstance` each frame; device registered via a new
   `aurora_dx9_get_device()` accessor, re-registered after resize-recreation).
-  Direction comes from `setSunpos`'s astronomical orbit (sun while
-  67.5 < daytime < 292.5, moon otherwise, crossfaded over ±7.5 daytime
-  units) — deliberately **not** from the game's shadow-light selection,
-  which snaps to nearby lanterns. Gated on `dKy_SunMoon_Light_Check()`
+  It is a true `remixapi_LightInfoDistantEXT` (Remix's dedicated sun/moon
+  light type, mapping to `RtDistantLight`) — that struct carries only a
+  direction, angular diameter and radiance, with no position, so the light
+  is infinitely far by construction rather than "very far away".
+
+  The direction is derived **analytically from time of day**, not from any
+  world position. `setSunpos` places the body on an ellipse around the
+  camera eye (`offset = (sin a · 80000, −cos a · 80000, −cos a · 48000)`,
+  `sun_pos = eye + offset`); the eye cancels in the offset and the radii
+  cancel under normalization, leaving `normalize(sin a, −cos a, −0.6 cos a)`
+  — verified identical to differencing `sun_pos` against the camera to
+  4.4e-16 across the full day at several camera positions. So no arc, no
+  position and no camera enter the code path, and it keeps working in the
+  stages where `setSunpos` declines to update `sun_pos`.
+
+  Sun while 67.5 < daytime < 292.5, moon otherwise (same orbit, half a day
+  out of phase), crossfaded over ±7.5 daytime units — the window edges
+  coincide with the body dipping below the horizon, so the fade completes
+  as it sets. Deliberately **not** driven by the game's shadow-light
+  selection, which snaps to nearby lanterns. Gated on `dKy_SunMoon_Light_Check()`
   (outdoor stages only; false in twilight/interiors). Tuning:
   `game.remixSunMoonLight` (on), `game.remixSunIntensity` (5),
   `game.remixMoonIntensity` (0.3), `game.remixCelestialAngle` (2°), all
