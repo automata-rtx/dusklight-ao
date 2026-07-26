@@ -57,6 +57,7 @@
 #include "helpers/gx_helper.h"
 #include "dusk/imgui/ImGuiConsole.hpp"
 #include "dusk/logging.h"
+#include "dusk/remix_bridge.hpp"
 #include "dusk/settings.h"
 #endif
 
@@ -1710,6 +1711,14 @@ void mDoGph_gInf_c::bloom_c::draw2() {
 
 void mDoGph_gInf_c::bloom_c::draw() {
     ZoneScoped;
+#if TARGET_PC
+    // Under RTX Remix with the kankyo bridge active, Remix renders the bloom (and the mono
+    // overlay) from the state the bridge pushes; the EFB filter chain here would only smear
+    // raster-derived blur over the path-traced image.
+    if (dusk::remix::isActive()) {
+        return;
+    }
+#endif
     if (dusk::getSettings().game.bloomMode.getValue() == dusk::BloomMode::Dusk) {
         draw2();
         return;

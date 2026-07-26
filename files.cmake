@@ -1450,6 +1450,8 @@ set(DUSK_FILES
         src/dusk/imgui/ImGuiActorSpawner.cpp
         src/dusk/imgui/ImGuiBloomWindow.cpp
         src/dusk/imgui/ImGuiBloomWindow.hpp
+        src/dusk/imgui/ImGuiRemixBridgeWindow.cpp
+        src/dusk/imgui/ImGuiRemixBridgeWindow.hpp
         src/dusk/imgui/ImGuiCameraOverlay.cpp
         src/dusk/imgui/ImGuiConfig.hpp
         src/dusk/imgui/ImGuiConsole.cpp
@@ -1501,6 +1503,8 @@ set(DUSK_FILES
         src/dusk/mods/svc/ui.cpp
         src/dusk/mods/svc/ui.hpp
         src/dusk/mouse.cpp
+        src/dusk/remix_bridge.cpp
+        src/dusk/remix_bridge.hpp
         src/dusk/scope_guard.hpp
         src/dusk/settings.cpp
         src/dusk/speedrun.cpp

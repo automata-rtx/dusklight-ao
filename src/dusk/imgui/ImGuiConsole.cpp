@@ -364,6 +364,7 @@ namespace dusk {
             m_menuTools.ShowHeapOverlay();
             m_menuTools.ShowStubLog();
             m_menuTools.ShowBloomWindow();
+            m_menuTools.ShowRemixBridgeWindow();
             m_menuTools.ShowPlayerInfo();
             m_menuTools.ShowAudioDebug();
             m_menuTools.ShowSaveEditor();

@@ -75,9 +75,13 @@ Notes:
   `terrainTextures`, …) persist across runs and silently hide or reclassify
   textures in later sessions. Clear them before judging a new build.
 
-> Planned successor: the bloom table below will eventually be pushed by the
-> game automatically via the kankyo→Remix bridge — see
-> [`kankyo-remix.md`](kankyo-remix.md) for the design.
+> **The table below is now automatic.** With the kankyo bridge active
+> (`game.remixKankyoBridge`, on by default under Remix) the game pushes its
+> live bloom/mono state into `rtx.dusklight.env.*` every frame and the
+> Dusklight bloom follows it (`rtx.bloom.dusklightFollowGame`). The manual
+> values below still apply when the bridge is off or the game isn't
+> running. Design: [`kankyo-remix.md`](kankyo-remix.md); debug via
+> Tools → Remix Bridge in the ImGui console.
 
 ## Dusklight bloom in Remix
 

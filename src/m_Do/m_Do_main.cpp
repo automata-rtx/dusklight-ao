@@ -65,6 +65,7 @@
 #include "dusk/logging.h"
 #include "dusk/main.h"
 #include "dusk/os.h"
+#include "dusk/remix_bridge.hpp"
 #include "dusk/ui/menu_bar.hpp"
 #include "dusk/ui/overlay.hpp"
 #include "dusk/ui/prelaunch.hpp"
@@ -320,6 +321,10 @@ void main01(void) {
 
             mDoAud_Execute();
         }
+
+        // Push this frame's kankyo state to RTX Remix (no-op outside Remix). Runs after
+        // fapGm_Execute so setLight() has refreshed the environment for this frame.
+        dusk::remix::tick();
 
         aurora_end_frame();
 

@@ -282,29 +282,34 @@ pinned to the fork's version):
 - A small ImGui debug window (pattern: `ImGuiBloomWindow`) showing every
   value currently pushed, with override checkboxes.
 
-Values pushed per frame (diffed), all from `g_env_light` after `setLight`:
+Values pushed per frame (diffed), all from `g_env_light` after `setLight`.
+Everything lands in the raw namespace — the bridge never writes user-facing
+knobs, so a hand-tuned `rtx.bloom.dusklight*` value survives the bridge and
+`rtx.bloom.dusklightFollowGame` decides which set the bloom pass consumes:
 
-| Key | Source |
-| :-- | :-- |
-| `rtx.dusklight.env.enable` | bridge heartbeat (true while game drives) |
-| `rtx.dusklight.env.actorAmbient` | `actor_amb_col` /255 |
-| `rtx.dusklight.env.bgAmbient` | `bg_amb_col[0]` /255 |
-| `rtx.dusklight.env.fogColor` | `fog_col` /255 (backup to fog capture; see IV.4) |
-| `rtx.dusklight.env.skyColor` | `vrbox_sky_col` /255 |
-| `rtx.dusklight.env.hazeColor` | `vrbox_kasumi_outer_col` /255 |
-| `rtx.dusklight.env.darkworld` | `dKy_darkworld_check()` |
-| `rtx.dusklight.env.sensesStrength` | `senses_effect_strength` |
-| `rtx.bloom.dusklightThreshold` | `getPoint()/255 × rtx.dusklight.bloomThresholdScale` (game reads the scale? no — see IV.5) |
-| `rtx.bloom.dusklightBlurSize` | `getBlureSize()` (same 0–255 units by design) |
-| `rtx.bloom.dusklightBlurRatio` | `getBlureRatio()` (same 0–255 units) |
-| `rtx.bloom.dusklightTint` | `getBlendColor().rgb` /255 |
-| `rtx.bloom.dusklightScreenBlend` | `mMode == 1` |
-| `rtx.bloom.dusklightBaseWeight` | `getBlendColor().a` /255 (OrigDensity — new option, IV.5) |
-| `rtx.bloom.dusklightMonoColor` | `getMonoColor().rgb` /255 (new option, IV.5) |
-| `rtx.bloom.dusklightMonoAmount` | `getMonoColor().a` /255 (new option, IV.5) |
+| Key | Source | Phase |
+| :-- | :-- | :-- |
+| `rtx.dusklight.env.enable` | bridge heartbeat (true while game drives) | 0 ✅ |
+| `rtx.dusklight.env.bloomEnable` | `getEnable()` (palette can disable bloom) | 1 ✅ |
+| `rtx.dusklight.env.bloomThreshold` | `getPoint()` /255 | 1 ✅ |
+| `rtx.dusklight.env.bloomBlurSize` | `getBlureSize()` (native 0–255 units) | 1 ✅ |
+| `rtx.dusklight.env.bloomBlurRatio` | `getBlureRatio()` (native 0–255 units) | 1 ✅ |
+| `rtx.dusklight.env.bloomTint` | `getBlendColor().rgb` /255 | 1 ✅ |
+| `rtx.dusklight.env.bloomBaseWeight` | `getBlendColor().a` /255 (OrigDensity) | 1 ✅ |
+| `rtx.dusklight.env.bloomScreenBlend` | `mMode == 1` | 1 ✅ |
+| `rtx.dusklight.env.monoColor` | `getMonoColor().rgb` /255 | 1 ✅ |
+| `rtx.dusklight.env.monoAmount` | `getMonoColor().a` /255 | 1 ✅ |
+| `rtx.dusklight.env.actorAmbient` | `actor_amb_col` /255 | 3 |
+| `rtx.dusklight.env.bgAmbient` | `bg_amb_col[0]` /255 | 3 |
+| `rtx.dusklight.env.fogColor` | `fog_col` /255 (backup to fog capture; see IV.4) | 2/3 |
+| `rtx.dusklight.env.skyColor` | `vrbox_sky_col` /255 | 4 |
+| `rtx.dusklight.env.hazeColor` | `vrbox_kasumi_outer_col` /255 | 4 |
+| `rtx.dusklight.env.darkworld` | `dKy_darkworld_check()` | 4 |
+| `rtx.dusklight.env.sensesStrength` | `senses_effect_strength` | 4 |
 
-That's ≤ 17 strings, and outside palette transitions almost all are stable
-frame-to-frame, so the steady-state push count is ~0–3.
+Outside palette transitions almost all values are stable frame-to-frame (and
+quantized to the game's 8-bit parameters), so the steady-state push count is
+~0–3 strings.
 
 Game-side gating: when the bridge is active, force `game.bloomMode = Off`
 behaviour for the EFB bloom (skip `bloom_c::draw()` under Remix) so the
@@ -313,19 +318,17 @@ the "please set Bloom to Off" advice in `docs/dx9-fixed-function.md`.
 
 ### IV.3 Remix fork: the grade stage (mono + ambient tint + base weight)
 
-One new compute stage, running **inside the Dusklight bloom pass, before
-the pyramid** (faithful to the GC order mono → gather → composite), on
-`m_finalOutput` in linear HDR:
+Faithful placement, refined during implementation to match the GC order
+exactly (mono → gather → composite, with the base weight applied at
+composite so the bloom gathers from the *undimmed* image):
 
 ```
-c   = color[ipos]
-// 1. mono (twilight/senses desaturation): red-replicate luma, like the TEV
-mono = lerp(c, lumaProxy(c) * monoColor, monoAmount)
-// 2. ambient mood tint (new; emulates the lost kankyo relight)
-tint = normalize–or–raw(actorAmbient, bgAmbient)   // see IV.6
-g    = mono * lerp(1, tint, gradeStrength)
-// 3. base weight (OrigDensity — twilight dims base image to 0.82)
-out  = g * baseWeight
+// prepass (before the pyramid, in-place on the HDR final output)   [Phase 1 ✅]
+c    = lerp(c, lumaProxy(c) * monoColor, monoAmount)
+// ambient mood tint (emulates the lost kankyo relight)             [Phase 3]
+c    = c * lerp(1, tint(actorAmbient, bgAmbient), gradeStrength)    // see IV.6
+// composite (existing bloom composite shader)                      [Phase 1 ✅]
+out  = c_orig_or_prepassed * baseWeight + bloom * tintCol * (screen ? 1-dst : 1)
 ```
 
 New options (all in the fork, all live-tunable):
@@ -438,6 +441,24 @@ colour/amount, base weight. One calibration knob is needed:
 ---
 
 ## Part V — Implementation plan
+
+### Status log
+
+- **Phase 0 + Phase 1: implemented** (game: `src/dusk/remix_bridge.{cpp,hpp}`,
+  vendored `include/remix/remix_c.h` @ 0.6.4, `game.remixKankyoBridge`
+  config var, Remix Bridge debug window, `bloom_c::draw()` skipped while the
+  bridge is active; fork: `rtx.dusklight.env.*` group (NoSave — verified the
+  save path filters NoSave at `RtxOptionImpl::writeOption`, so game-fed
+  values never reach user.conf), mono prepass shader, composite base
+  weight, `rtx.bloom.dusklightFollowGame` + `dusklightThresholdScale` +
+  manual mono/base-weight knobs).
+- **Owner tuning note:** auto exposure may simply be disabled for reference
+  (`rtx.autoExposure.enabled = False`) instead of clamping it — with AE off
+  the pre-tonemap range is fixed, which makes `dusklightThresholdScale`
+  calibration straightforward and makes the base-weight dimming read
+  exactly as authored. The chroma-only default for the Phase 3 grade
+  matters less in that configuration but remains the right default for
+  AE-on setups.
 
 ### Phase 0 — plumbing (dusklight)
 1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;

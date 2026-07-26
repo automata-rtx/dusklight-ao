@@ -22,6 +22,7 @@ namespace dusk {
 		void ShowHeapOverlay();
 		void ShowStubLog();
         void ShowBloomWindow();
+        void ShowRemixBridgeWindow();
         void ShowPlayerInfo();
         void ShowAudioDebug();
         void ShowSaveEditor();
@@ -43,6 +44,8 @@ namespace dusk {
 		bool m_showStubLog = false;
 
         bool m_showBloomWindow = false;
+
+        bool m_showRemixBridgeWindow = false;
 
         bool m_showAudioDebug = false;
 
