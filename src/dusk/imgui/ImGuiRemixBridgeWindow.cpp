@@ -84,7 +84,9 @@ void DrawRemixBridgeWindow(bool& open) {
         }
 
         float localIntensity = settings.remixLocalLightIntensity.getValue();
-        if (ImGui::SliderFloat("Local Intensity", &localIntensity, 0.0f, 8.0f, "%.2f")) {
+        // Range reaches 19, which is where the game's own GX attenuation curve
+        // puts these lights - see localLightRadiance() in remix_bridge.cpp.
+        if (ImGui::SliderFloat("Local Intensity", &localIntensity, 0.0f, 32.0f, "%.2f")) {
             settings.remixLocalLightIntensity.setValue(localIntensity);
         }
 

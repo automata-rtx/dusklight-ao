@@ -657,6 +657,26 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   default 4-unit radius — which is also Remix's own default radius for
   converted point lights.
 
+  **The one real judgement call, and it is worth ~19×.** `mPow` is not
+  where the light ends, it is where it reaches 1/11 of peak. The game loads
+  these as `dKy_GXInitLightDistAttn(info, mPow·0.001, 0.99999, GX_DA_STEEP)`
+  → `k0 = 1, k1 = 0, k2 = (1−b)/(d²b)` → `attenuation(D) = 1/(1 + 10D²/mPow²)`.
+  Applying Remix's own end threshold (1/255 of the light's brightness) to
+  that curve instead gives `reach = mPow·√((maxColorByte − 1)/10)`, which is
+  4.3× further for a torch and therefore ~19× the radiance.
+
+  That second reading is arguably *more* faithful, and it is the one Remix's
+  philosophy points at: it deliberately ignores a legacy light's `Range` in
+  favour of its attenuation curve, because `Range` was usually an
+  optimization rather than the light's real extent — and `mPow` is exactly
+  that kind of optimization. It is not the default for two reasons: the game
+  never applied a point light beyond its influence radius anyway (each
+  tevstr gets *one* light, chosen by proximity, so the long tail was rarely
+  realized), and a scene that comes up too dim is far easier to diagnose
+  than one that comes up blown out. **If the lights read as weak, set
+  `game.remixLocalLightIntensity` to about 19** — that is a derived number,
+  not a guess, and the slider reaches it.
+
   Identity is the `LIGHT_INFLUENCE`'s address, mixed into a 64-bit hash: it
   lives inside its actor, so it holds still exactly as long as the light
   does. Re-creates are epsilon-gated on position and radiance (0.5 world

@@ -478,6 +478,27 @@ uint64_t localLightHash(const LIGHT_INFLUENCE* influence) {
 // than mPow" as "inside this light" - which is exactly what Remix derives from
 // a D3D9 attenuation curve. So these lights land in the same intensity range as
 // the lights of every other Remix title, without a fudge factor.
+//
+// There is a second, defensible reading of "reach", and it is about 19x
+// brighter, so it is worth writing down rather than discovering by fiddling.
+// The game loads these into GX with
+//   dKy_GXInitLightDistAttn(info, mPow * 0.001f, 0.99999f, GX_DA_STEEP)
+// which is k0 = 1, k1 = 0, k2 = (1 - b) / (d^2 * b), so
+//   attenuation(D) = 1 / (1 + 10 * D^2 / mPow^2)
+// - i.e. mPow is exactly where the light falls to 1/11 of its peak, not where
+// it ends. Applying Remix's own end threshold (1/255 of the light's brightness)
+// to that curve gives
+//   reach = mPow * sqrt((maxColorByte - 1) / 10)
+// which is 4.3x mPow for a torch (colour AF5D00), hence ~19x the radiance.
+//
+// That reading is arguably the more faithful one - Remix explicitly ignores a
+// legacy light's Range in favour of its attenuation curve, on the grounds that
+// Range was an optimization rather than the light's real extent, and mPow is
+// exactly that kind of optimization. It is not the default only because the
+// game never actually applied a point light beyond its influence radius (the
+// tevstr gets one light, chosen by proximity), and because a scene that comes
+// up too dim is far easier to diagnose than one that comes up blown out.
+// game.remixLocalLightIntensity around 19 is the number to try.
 bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float scale,
                         float outRadiance[3]) {
     const float channel[3] = {static_cast<float>(influence.mColor.r),
