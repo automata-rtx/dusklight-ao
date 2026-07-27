@@ -801,6 +801,33 @@ Direction of travel:
 The game-side Remix Bridge window is kept: it still works on the WebGPU
 backends, where it is the only way to edit the fallback values.
 
+### Two protocol bugs found on first contact (2026-07-26)
+
+Both surfaced the moment the owner ran the new Remix build against an older
+game build, and both were mine.
+
+1. **The diff cache assumed exclusive ownership.** `push()` only calls
+   `SetConfigVariable` when a value changes, which is right for cost and
+   wrong for correctness: `rtx.dusklight.env.*` are **NoSave**, so anything
+   that rebuilds Remix's user layer — saving settings from its UI, a config
+   reload — drops them back to their defaults. The cache then never pushes
+   them again, and Remix reports the bridge as disconnected *forever* while
+   the game is convinced it is connected. Fixed by verifying instead of
+   assuming: the bridge reads its own heartbeat back each frame and clears
+   the cache if it is missing (one getter call, recovers next frame), with a
+   blind full re-push every 120 frames as the fallback for a Remix build
+   without the getter.
+2. **Build skew was indistinguishable from breakage.** The tab's only state
+   was "is the game reporting anything", which is false in every failure
+   mode. A game that connects but predates `rtx.dusklight.game.*` looks
+   identical to one that never connected — except its controls silently do
+   nothing. The game now stamps `rtx.dusklight.env.protocol`, and the tab
+   distinguishes connected-and-current, connected-but-too-old, and absent.
+
+Standing rule this leaves behind: **the game and the Remix DLL are one
+protocol and have to be updated together.** The tab says so when they are
+not.
+
 ### Phase 0 — plumbing (dusklight)
 1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;
    comment the exact-minor rule).

@@ -788,6 +788,41 @@ void updateLocalLights() {
     s_localDebug.tracked = static_cast<int>(s_localLights.size());
 }
 
+// The bridge's diff cache assumed nothing else ever touched rtx.dusklight.env.*.
+// That is wrong: those options are NoSave, so anything that rebuilds Remix's user
+// layer - saving settings from its UI, a config reload - drops them back to their
+// defaults, and the cache then happily never pushes them again. The symptom is
+// brutal and silent: Remix says the bridge is not connected while the game is
+// convinced it is, forever.
+//
+// So verify rather than assume. Reading the heartbeat back costs one call a frame
+// and recovers on the next one. Where the getter is missing (an older Remix), fall
+// back to re-pushing everything periodically, which is slower to notice but needs
+// nothing from the other side.
+uint32_t s_framesSinceFullPush = 0;
+
+void resyncIfDropped() {
+    constexpr uint32_t kBlindResyncFrames = 120;
+
+    bool dropped = false;
+
+    std::string heartbeat;
+    if (readOption("rtx.dusklight.env.enable", heartbeat)) {
+        dropped = heartbeat != "True";
+    } else if (++s_framesSinceFullPush >= kBlindResyncFrames) {
+        dropped = true;
+    }
+
+    if (!dropped) {
+        return;
+    }
+
+    // Dropping the cache is what forces every value through again; they are all
+    // re-pushed by the callers below in the same frame.
+    s_vars.clear();
+    s_framesSinceFullPush = 0;
+}
+
 void pushKankyoState() {
     mDoGph_gInf_c::bloom_c* bloom = mDoGph_gInf_c::getBloom();
 
@@ -799,6 +834,10 @@ void pushKankyoState() {
     const GXColor mono = *bloom->getMonoColor();
 
     push("rtx.dusklight.env.enable", "True");
+    // Bumped whenever the game gains something the Remix tab depends on, so the tab
+    // can say "your game build is older than this Remix build" instead of leaving
+    // controls that quietly do nothing.
+    push("rtx.dusklight.env.protocol", "1");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -918,6 +957,7 @@ void tick() {
         return;
     }
 
+    resyncIfDropped();
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();
