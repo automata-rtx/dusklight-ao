@@ -206,6 +206,7 @@ struct UserSettings {
         ConfigVar<bool> remixLocalLights;
         ConfigVar<float> remixLocalLightIntensity;
         ConfigVar<float> remixLocalLightRadius;
+        ConfigVar<bool> disableFrustumCulling;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;

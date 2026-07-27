@@ -77,6 +77,17 @@ rtx.fogColorScale = 1.0
 rtx.fallbackLightMode = 1
 ```
 
+**Frustum culling (off by default).** The game drops geometry outside the
+camera's view, which is right for a rasterizer and wrong for a path tracer:
+a wall culled because you turned away stops occluding, and light leaks
+through where it used to be. `rtx.dusklight.game.disableFrustumCulling` (or
+`game.disableFrustumCulling`) makes every frustum test report "visible",
+which covers actors, room geometry and grass in one switch — they all go
+through `mDoLib_clipper::clip`. It costs exactly what the culling was
+saving, so it is off by default. Remix's own
+`rtx.antiCulling.object.enable` is the cheaper half measure: it retains
+objects it has already seen rather than stopping them being dropped.
+
 **Local lights (game-side, off by default).** Aurora does not forward GX
 lights to D3D9, so Remix sees no light from the game itself; outdoors the
 sun/moon light covers that, but interiors and night fall through to Remix's

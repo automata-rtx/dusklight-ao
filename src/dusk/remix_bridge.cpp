@@ -979,6 +979,19 @@ void tick() {
         return;
     }
 
+    // Settings that are not part of a light but still have to be reachable from Remix's tab,
+    // because the game cannot draw its own UI in this mode. Mirrored into the game's own config
+    // var rather than read at the use site, so the code that consumes it stays free of any
+    // knowledge of Remix - and so it keeps working on the backends where the bridge is inert.
+    {
+        auto& culling = getSettings().game.disableFrustumCulling;
+        const bool wanted =
+            readOptionBool("rtx.dusklight.game.disableFrustumCulling", culling.getValue());
+        if (wanted != culling.getValue()) {
+            culling.setValue(wanted);
+        }
+    }
+
     resyncIfDropped();
     pushKankyoState();
     updateCelestialLight();

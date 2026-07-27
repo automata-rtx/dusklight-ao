@@ -8,6 +8,7 @@
 #include "JSystem/J3DGraphBase/J3DMatBlock.h"
 #include "SSystem/SComponent/c_math.h"
 #include "d/d_com_inf_game.h"
+#include "dusk/settings.h"
 #include <types.h>
 
 u32 mDoLib_setResTimgObj(ResTIMG const* i_img, TGXTexObj* o_texObj, u32 tlut_name,
@@ -44,7 +45,13 @@ DUSK_GAME_DATA f32 mDoLib_clipper::mSystemFar;
 
 DUSK_GAME_DATA f32 mDoLib_clipper::mFovyRate;
 
+DUSK_GAME_DATA bool mDoLib_clipper::mDisableCulling = false;
+
 void mDoLib_clipper::setup(f32 fovy, f32 aspect, f32 near_, f32 far_) {
+    // Refreshed here rather than watched, because setup runs once per frame from the camera and
+    // this is the cheapest place that is guaranteed to see a settings change promptly.
+    mDisableCulling = dusk::getSettings().game.disableFrustumCulling.getValue();
+
     mClipper.setFovy(fovy);
     mClipper.setAspect(aspect);
     mClipper.setNear(near_);
