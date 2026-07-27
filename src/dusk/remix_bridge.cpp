@@ -221,6 +221,19 @@ const char* formatBool(bool value) {
     return value ? "True" : "False";
 }
 
+// Everything below hands world positions and radiances straight to Remix, which
+// puts them in its acceleration structures. Remix validates radius and radiance
+// for sign and range but does not check any of it for NaN, and a NaN that gets
+// that far takes the renderer down on one of its own worker threads, where the
+// crash says nothing about where it came from.
+//
+// The values come from live actor state read once a frame, so a torn read during
+// a scene teardown is exactly the sort of thing that produces one. Cheap to rule
+// out here; miserable to diagnose later.
+bool isFinite3(const float v[3]) {
+    return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
+}
+
 // --- Sun/moon distant light -------------------------------------------------
 //
 // Drives one Remix distant light from the vanilla game's astronomical sun/moon
@@ -456,6 +469,11 @@ void updateCelestialLight() {
                          std::fabs(radiance[1] - s_lastRadiance[1]) > kRadEps ||
                          std::fabs(radiance[2] - s_lastRadiance[2]) > kRadEps ||
                          std::fabs(angle - s_lastAngle) > 0.01f;
+
+    if (!isFinite3(dir) || !isFinite3(radiance) || !std::isfinite(angle)) {
+        BridgeLog.warn("sun/moon light had non-finite values this frame; skipping it");
+        return;
+    }
 
     if (changed) {
         remixapi_LightInfoDistantEXT distant = {};
@@ -695,6 +713,10 @@ void updateLocalLights() {
 
         const float position[3] = {influence->mPosition.x, influence->mPosition.y,
                                    influence->mPosition.z};
+        if (!isFinite3(position) || !isFinite3(radiance)) {
+            continue;
+        }
+
         const uint64_t hash = localLightHash(influence);
 
         TrackedLocalLight* tracked = nullptr;

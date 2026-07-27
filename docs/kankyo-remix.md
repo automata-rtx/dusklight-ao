@@ -828,6 +828,54 @@ Standing rule this leaves behind: **the game and the Remix DLL are one
 protocol and have to be updated together.** The tab says so when they are
 not.
 
+### Crash on entering some levels (2026-07-26) — evidence, not yet a cause
+
+Owner logs (`dusklight20260726214829`, `remixdxvk`). What the logs establish:
+
+- **The bridge is connected**: `RTX Remix detected; kankyo bridge active
+  (remixapi 0.6.4)` and `registered D3D9 device with the Remix API`. The
+  `getRtxOptionValue` export resolved — there is no warning about it, which
+  also proves the export mechanism works.
+- **Build skew, reversed**: game `8b89e4f` against Remix
+  `remix-main+4779899c`. `SetConfigVariable(rtx.dusklight.env.protocol)
+  failed (1)` — error 1 is `GENERAL_FAILURE`, which
+  `remixapi_SetConfigVariable` returns when the option does not exist, and
+  `protocol` landed one Remix commit later. Harmless in itself.
+- **Local lights were off** (`rtx.dusklight.game.localLights` defaults false
+  and is not in the owner's rtx.conf), so that subsystem is not implicated.
+  The sun/moon distant light *was* running.
+- **The crash is entirely inside `d3d9.dll` on a Remix-owned worker thread**:
+  all frames are in `d3d9.dll` and the outermost two are KERNEL32
+  `BaseThreadInitThunk` / ntdll `RtlUserThreadStart`, i.e. a thread whose
+  entry point is in Remix, not the game. `EXCEPTION_ACCESS_VIOLATION`
+  reading address `0x10` — a null pointer plus a small member offset. No
+  game frames at all.
+- **Context**: a cutscene transition (`ZEV event [BSPTRANS]`,
+  `entering_event=true`, Midna's `s_md` models loading), immediately after a
+  Remix camera cut, which re-initializes the Neural Radiance Cache
+  (`NRC SDK: Loading the default network config data`) — on a worker thread.
+
+Ruled out along the way: aurora's view inverse is guarded by a determinant
+check and would have logged `camera view matrix not invertible`, which it
+did not. Remix's own `Attempted invert a non-invertible matrix` fired 19
+seconds earlier and is not adjacent to the crash.
+
+Hardened regardless, because both were real defects:
+
+- `getRtxOptionValue` took no lock while Remix resolves options on its own
+  thread at frame end. Now takes the same update mutex those writes do.
+- The bridge fed positions and radiances to Remix without checking them for
+  NaN. Remix validates radius and radiance for sign and range but **not**
+  for NaN, and a NaN reaching its acceleration structures takes the renderer
+  down on a worker thread with a backtrace that says nothing about where it
+  came from — which is the shape of crash we are looking at. Both light
+  paths now skip a light whose values are not finite.
+
+*Next step is a bisect, not more analysis*: `rtx.dusklight.game.bridgeEnable
+= False` turns off every push and both lights. If it still crashes, nothing
+of ours is involved and the NRC-on-camera-cut path is the next suspect
+(`rtx.neuralRadianceCache.enable = False`).
+
 ### Phase 0 — plumbing (dusklight)
 1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;
    comment the exact-minor rule).
