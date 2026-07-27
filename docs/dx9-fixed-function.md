@@ -198,8 +198,11 @@ auto exposure will spend the next second undoing it.
 
 ## Dusklight bloom options
 
-`rtx.bloom.steps` (labelled Radius in the UI) sets how deep the pyramid goes;
-the game uses five levels, which is also Remix's default. `rtx.bloom.burnIntensity`
+`rtx.bloom.steps` (labelled Radius in the UI) sets how deep the pyramid goes.
+The game runs **five blur passes** over six pyramid levels (its `divStart` 2
+through `divNum` 6), so **`rtx.bloom.steps = 6`** reproduces it — Remix's
+default of 5 is one short, which both narrows the halo by a level and
+changes how the total gain is distributed across the passes. `rtx.bloom.burnIntensity`
 still scales the final composite. `rtx.bloom.luminanceThreshold` is *not* used
 in this mode — Dusklight thresholds by subtracting from each channel rather
 than by weighting with luminance, which is what keeps coloured highlights
@@ -208,9 +211,17 @@ saturated, so it gets its own threshold option.
 What makes it look different from Remix's default bloom, in `draw2()` order
 (`src/m_Do/m_Do_graphic.cpp`):
 
-1. **Subtractive threshold.** `-mPoint` is added to every channel and the
-   result clamps at zero — a hard cut with a linear ramp above it, rather
-   than Remix's smooth luminance rolloff.
+1. **A luminance-keyed mask, not a threshold on each channel.** Three TEV
+   stages build a greyscale key out of the framebuffer through the swap
+   tables and then multiply the *original* colour by it:
+   `source = colour × saturate(0.25R + 0.25G + 0.5B − mPoint)`. Two
+   consequences: the bloom carries the source's own hue instead of drifting
+   towards whichever channel was brightest, and a saturated but dim colour
+   does not bloom at all — pure red at full intensity has a key of 0.25 and
+   never clears the default 0.5 threshold. The weights are not a standard
+   luma either: blue counts double red or green, which is why blue
+   highlights in this game bloom far more readily than their brightness
+   alone would suggest.
 2. **A ring blur at every pyramid level.** Eight taps evenly spaced around a
    circle, no center tap, at a fixed screen-space radius. Remix's default
    pyramid gets all of its blur from the downsample kernel alone.
@@ -227,10 +238,21 @@ downsample kernel rather than the game's plain copy. The input there is
 raytraced HDR colour, and a single bright pixel with a box filter makes the
 whole bloom flicker frame to frame.
 
-Note that `dusklightThreshold` and `dusklightSaturationPoint` are in the
-linear HDR range the image sits in *before* tonemapping, not 0..1 display
-values. If bloom looks flat and dim, the saturation point is clipping the
-whole image — raise it, or set it to 0 to disable clamping entirely.
+**`dusklightThreshold` and `dusklightSaturationPoint` are display values.**
+With `rtx.bloom.dusklightDisplaySpace` on (the default) the whole pyramid
+runs after tone mapping on gamma-encoded 0..1 colour, exactly as the
+original ran on its finished 8-bit framebuffer. So the threshold is a
+fraction of display white and maps straight from the game's `mPoint/255`,
+and the saturation point of 1.0 clips at white the way the 8-bit
+intermediates did — which is what gives bright cores their washed out look.
+`rtx.bloom.dusklightThresholdScale` should stay at 1.0 in this mode; it
+exists for the pre-tonemap path, where the scene's range is open-ended and
+the threshold has no fixed meaning.
+
+Turning `dusklightDisplaySpace` off moves the pass back before tone mapping,
+which is useful only for comparison. In that mode the threshold, the
+clipping, the screen blend and the base weight are all being applied to
+open-ended linear radiance, and none of them mean what they meant.
 
 ## Game-side behavior & limitations in D3D9 mode
 

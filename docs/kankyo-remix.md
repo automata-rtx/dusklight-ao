@@ -876,6 +876,59 @@ Hardened regardless, because both were real defects:
 of ours is involved and the NRC-on-camera-cut path is the next suspect
 (`rtx.neuralRadianceCache.enable = False`).
 
+### Bloom fidelity: four errors in the port (2026-07-26)
+
+The owner compared against vanilla Dusklight and reported the bloom simply
+does not look like it. Re-derived the effect from the TEV setup in
+`bloom_c::draw2()` (`m_Do_graphic.cpp:1456`) rather than from the earlier
+reading, and found four things wrong, one of them fundamental.
+
+**1. Wrong colour space — the fundamental one.** The effect was authored
+against the EFB: an 8-bit framebuffer holding *finished display colours*.
+Every part of it is defined against that. The threshold is a fraction of
+display white. The intermediate buffers clip at white, and that clipping is
+what gives bright cores their washed-out look. The screen blend asks "how
+close to white is this pixel already", and the composite's base weight is a
+blend alpha against a 0..1 image. We were running the whole thing on
+open-ended **linear pre-tonemap radiance**, where none of those four mean
+what they meant — and where blurring concentrates halos far more tightly,
+because blurring linear radiance weights bright pixels enormously more than
+blurring display values does. Fixed by moving the Dusklight pyramid to run
+**after tone mapping**, in gamma space (`rtx.bloom.dusklightDisplaySpace`,
+default on). This also makes the whole effect exposure-independent, which
+is why `dusklightThresholdScale` existed at all.
+
+**2. The threshold was the wrong operation entirely.** Decoding the three
+TEV stages, with swap tables `R,R,R,G` and `B,B,B,A` mixed by `HALF`:
+
+```
+key    = 0.25*R + 0.25*G + 0.5*B
+source = colour * saturate(key - mPoint)
+```
+
+It is a **luminance-keyed mask multiplied by the original colour**, not a
+per-channel subtraction. The port did the latter, which is close to the
+opposite in character: it shifts every bloomed highlight towards its
+dominant channel, where the original preserves hue exactly. It also blooms
+things the original refuses to — saturated red at full intensity has a key
+of 0.25 and never clears the default 0.5 threshold, but the port bloomed it
+at half strength. Note the weights: **blue counts double**, which is a real
+and distinctive part of the look.
+
+**3. `rtx.bloom.steps` should be 6, not 5.** The game runs five blur passes
+over six levels (`divStart` 2 → `divNum` 6). Our default of 5 gives four,
+which narrows the halo a level *and* changes the per-pass gain, since the
+total is distributed as its N-th root.
+
+**4. The upsample exponent was off by one.** The original is
+`falloff^(1/(i - divStart + 1))` with `divStart = 2`, i.e. `1/(i-1)`; we
+used `1/i`, leaving every level slightly too faint.
+
+Deliberately kept: the 13-tap downsample on the threshold step, instead of
+the original's point sample. A single bright pixel with a box filter makes
+the bloom crawl frame to frame, and that trade is worth more than the
+exactness.
+
 ### Phase 0 — plumbing (dusklight)
 1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;
    comment the exact-minor rule).
