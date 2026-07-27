@@ -77,6 +77,30 @@ rtx.fogColorScale = 1.0
 rtx.fallbackLightMode = 1
 ```
 
+**Sun/moon elevation.** The game's orbit is a great circle tilted 31 degrees
+off vertical (`setSunpos`: 48000 z-radius against 80000 xy), so the sun peaks
+at **59 degrees** and never higher. Against baked lighting that is fine;
+under a path tracer it means midday never gets an overhead sun and noon
+shadows stretch about as far as mid-afternoon ones.
+`game.celestialNoonElevation` (`rtx.dusklight.game.celestialNoonElevation`)
+sets that peak directly — 90 puts the sun straight up at noon. It moves the
+visible body as well as the light, so the two cannot disagree, and it
+touches **nothing** about time of day: `daytime`, the palette schedule and
+every dawn/dusk/night transition run off `dComIfGs_getTime()` and
+`l_time_attribute`, which never look at the orbit. Sunrise and sunset
+elevations barely move either (14.8° → 15.0° at the extreme), so those
+transitions look the same.
+
+**Sky billboards (diagnostic).** The sun, moon and stars are drawn at a
+fixed offset from the camera eye (`dKyr_drawStar`:
+`moon_pos = camera->view.lookat.eye + envlight->moon_pos`), so as world
+geometry they travel with the player. Anything Remix captures from them as
+ordinary geometry becomes an occluder that follows the camera — which would
+only show at night, since stars and the moon are the only sky billboards
+drawn then. Tag those textures as **Sky** to fix it properly;
+`game.remixHideSkyBillboards` skips drawing them entirely, which is a
+one-click way to test whether that is what you are looking at.
+
 **Frustum culling (off by default).** The game drops geometry outside the
 camera's view, which is right for a rasterizer and wrong for a path tracer:
 a wall culled because you turned away stops occluding, and light leaks

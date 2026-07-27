@@ -17,6 +17,7 @@
 
 #if TARGET_PC
 #include <aurora/aurora.h>
+#include "dusk/settings.h"
 #endif
 
 static void dKyw_pntlight_set(WIND_INFLUENCE* pntwind);
@@ -91,6 +92,23 @@ STAR_EFF::~STAR_EFF() {}
 STAR_EFF::STAR_EFF() {}
 
 void dKankyo_star_Packet::draw() {
+#if TARGET_PC
+    // Stars and the moon billboard are placed at a fixed offset from the camera eye
+    // (dKyr_drawStar: moon_pos = camera->view.lookat.eye + envlight->moon_pos), so as world
+    // geometry they translate with the player. Under a rasterizer that is invisible and correct.
+    // Under a path tracer, any of it that Remix captures as ordinary geometry becomes an occluder
+    // that follows the camera around - which is a candidate for shadowed areas appearing to
+    // wander as you move, and it only happens at night because stars and the moon are the only
+    // sky billboards drawn then.
+    //
+    // The real fix is to tag these textures as Sky so they land in the sky probe instead of the
+    // world. This exists to test that theory in one click, and as a workaround if tagging proves
+    // awkward - it does remove the visible stars and moon, so it is off by default.
+    if (aurora_get_backend() == BACKEND_D3D9 &&
+        dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
+        return;
+    }
+#endif
     dKyr_drawStar(j3dSys.getViewMtx(), &mpTex);
 }
 
@@ -151,6 +169,14 @@ void dKankyo_evil_Packet::draw() {
 }
 
 static void dKyw_drawSun(int i_type) {
+#if TARGET_PC
+    // Same reasoning as the star packet: setSunpos places the body at eye + offset, so the
+    // billboard rides the camera.
+    if (aurora_get_backend() == BACKEND_D3D9 &&
+        dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
+        return;
+    }
+#endif
     dKyw_setDrawPacketListSky(g_env_light.mpSunPacket, i_type);
 }
 

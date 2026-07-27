@@ -75,6 +75,8 @@ UserSettings g_userSettings = {
         .remixLocalLightIntensity {"game.remixLocalLightIntensity", 1.0f},
         .remixLocalLightRadius {"game.remixLocalLightRadius", 4.0f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
+        .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
+        .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
@@ -292,6 +294,8 @@ void registerSettings() {
     Register(g_userSettings.game.remixLocalLightIntensity);
     Register(g_userSettings.game.remixLocalLightRadius);
     Register(g_userSettings.game.disableFrustumCulling);
+    Register(g_userSettings.game.celestialNoonElevation);
+    Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);

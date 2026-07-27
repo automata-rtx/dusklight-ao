@@ -35,6 +35,9 @@
 #if TARGET_PC
 #include "dusk/imgui/ImGuiBloomWindow.hpp"
 #include "dusk/settings.h"
+
+#include <algorithm>
+#include <cmath>
 #include "dusk/frame_interpolation.h"
 #include "dusk/game_clock.h"
 static f32 timeScale = 1.0f;
@@ -1663,6 +1666,22 @@ void dScnKy_env_light_c::setDaytime() {
     g_env_light.using_time_control_tag = 0;
 }
 
+f32 dKy_celestial_orbit_z_ratio() {
+    // ratio = cot(elevation): peak elevation is atan(1/ratio), so inverting gives the tilt that
+    // lands the arc at the requested height. 59.036 degrees reproduces vanilla's 48000/80000
+    // exactly, which is why that is the default rather than a round number.
+    const f32 elevation = std::clamp(
+        dusk::getSettings().game.celestialNoonElevation.getValue(), 1.0f, 90.0f);
+    const f32 radians = elevation * (M_PI / 180.0f);
+    const f32 sinE = std::sin(radians);
+
+    if (sinE <= 0.0f) {
+        return 0.0f;
+    }
+
+    return std::cos(radians) / sinE;
+}
+
 void dScnKy_env_light_c::setSunpos() {
     camera_process_class* camera_p = dComIfGp_getCamera(0);
     cXyz pos;
@@ -1709,9 +1728,11 @@ void dScnKy_env_light_c::setSunpos() {
             }
         }
 
+        const f32 orbitZ = 80000.0f * dKy_celestial_orbit_z_ratio();
+
         pos.x = sinf(DEG_TO_RAD(sun_angle)) * 80000.0f;
         pos.y = cosf(DEG_TO_RAD(sun_angle)) * 80000.0f;
-        pos.z = cosf(DEG_TO_RAD(sun_angle)) * -48000.0f;
+        pos.z = cosf(DEG_TO_RAD(sun_angle)) * -orbitZ;
 
         sun_pos.x = camera_p->view.lookat.eye.x + pos.x;
         sun_pos.y = camera_p->view.lookat.eye.y - pos.y;
@@ -1719,7 +1740,7 @@ void dScnKy_env_light_c::setSunpos() {
 
         pos.x = sinf(DEG_TO_RAD(moon_angle)) * 80000.0f;
         pos.y = cosf(DEG_TO_RAD(moon_angle)) * 80000.0f;
-        pos.z = cosf(DEG_TO_RAD(moon_angle)) * -48000.0f;
+        pos.z = cosf(DEG_TO_RAD(moon_angle)) * -orbitZ;
 
         moon_pos.x = pos.x;
         moon_pos.y = -pos.y;

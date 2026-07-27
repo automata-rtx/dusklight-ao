@@ -345,10 +345,13 @@ void celestialDirectionTo(float time, float outDir[3]) {
     const float sinA = std::sin(radians);
     const float cosA = std::cos(radians);
 
-    // Ellipse aspect: z radius (48000) over xy radius (80000).
-    constexpr float kOrbitZRatio = 0.6f;
+    // The same tilt setSunpos places the visible body on, so the light and the thing you can see
+    // in the sky cannot disagree. Vanilla's 0.6 caps the arc at 59 degrees; raising
+    // game.celestialNoonElevation flattens the tilt towards a vertical arc and a genuinely
+    // overhead noon.
+    const float orbitZRatio = dKy_celestial_orbit_z_ratio();
 
-    float dir[3] = {sinA, -cosA, -cosA * kOrbitZRatio};
+    float dir[3] = {sinA, -cosA, -cosA * orbitZRatio};
     const float invLength =
         1.0f / std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
 
@@ -984,11 +987,27 @@ void tick() {
     // var rather than read at the use site, so the code that consumes it stays free of any
     // knowledge of Remix - and so it keeps working on the backends where the bridge is inert.
     {
-        auto& culling = getSettings().game.disableFrustumCulling;
-        const bool wanted =
-            readOptionBool("rtx.dusklight.game.disableFrustumCulling", culling.getValue());
-        if (wanted != culling.getValue()) {
-            culling.setValue(wanted);
+        auto& game = getSettings().game;
+
+        const bool culling =
+            readOptionBool("rtx.dusklight.game.disableFrustumCulling",
+                           game.disableFrustumCulling.getValue());
+        if (culling != game.disableFrustumCulling.getValue()) {
+            game.disableFrustumCulling.setValue(culling);
+        }
+
+        const bool hideSky =
+            readOptionBool("rtx.dusklight.game.hideSkyBillboards",
+                           game.remixHideSkyBillboards.getValue());
+        if (hideSky != game.remixHideSkyBillboards.getValue()) {
+            game.remixHideSkyBillboards.setValue(hideSky);
+        }
+
+        const float noonElevation =
+            readOptionFloat("rtx.dusklight.game.celestialNoonElevation",
+                            game.celestialNoonElevation.getValue());
+        if (noonElevation != game.celestialNoonElevation.getValue()) {
+            game.celestialNoonElevation.setValue(noonElevation);
         }
     }
 
