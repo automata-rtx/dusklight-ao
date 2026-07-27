@@ -429,6 +429,12 @@ refinement of the composite fog term.
 
 ### IV.5 Bloom: close the last gaps in the port
 
+> **Superseded.** This section was written from the first reading of
+> `bloom_c::draw2()` and is wrong in two places — the threshold and the
+> colour space. The corrected account, derived from the TEV stages, is in
+> "Bloom fidelity: four errors in the port" below. Kept for the history of
+> how the port got here.
+
 Already 1:1 (deliberately, same 0–255 units): threshold, blur size, blur
 ratio, tint, screen-blend. Missing pieces this plan adds (IV.3): mono
 colour/amount, base weight. One calibration knob is needed:
@@ -490,102 +496,111 @@ colour/amount, base weight. One calibration knob is needed:
 
 ### Verification state (read this first)
 
-What has actually been observed running, as of 2026-07-26. Everything below
-compiles: dusklight/aurora are CI-green on all 8 targets (Windows MSVC
-x86_64 + arm64, macOS x3, Linux x2, Android) at dusklight `f5defc6` /
-aurora `a7b47ac`, and the Remix fork is green on all three Windows configs
-at `896bffe` (merged to `main` via PR #1).
+As of 2026-07-27. CI baselines: dusklight/aurora green on all 8 targets
+(Windows MSVC x86_64 + arm64, macOS x3, Linux x2, Android); the Remix fork
+green on its 3 Windows configs. Aurora is unchanged since `a7b47ac` and the
+submodule pin still points there.
 
-**Confirmed working in-game** (owner test session, build `cea9f2f`-era):
-- The kankyo bridge feed is live: Dusklight bloom renders and its colour
-  tracks time of day. Not yet calibrated — it does not look like the
-  game's bloom, and the owner's rtx.conf values (`burnIntensity = 5`,
-  `dusklightBlurRatio = 255`, `dusklightThreshold = 0`) were chosen to
-  make it *visible*, not accurate. Re-baseline these.
-- GX→D3D9 fog forwarding reaches Remix. Faithful mode (composite depth
-  fog) looks consistent; volumetric mode reacts more strongly to kankyo's
-  fog near/far than expected.
-- Vanilla Remix post FX (vignette, chromatic aberration, motion blur) work
-  once their strength values are raised well above Remix's defaults — the
-  defaults are near-invisible at 3440x1440. No Remix bug; nothing to fix.
+**One standing rule:** the game and the Remix DLL are a single protocol and
+must be built from the same point. Both directions of skew have already cost
+an evening — see "Two protocol bugs" below. The Dusklight tab reports which
+is which.
 
-**Built and CI-green but NEVER RUN** — treat as unverified:
-- **The local point lights** (`updateLocalLights`). Ships **off**
-  (`game.remixLocalLights`). Unproven at runtime: whether the intensity
-  derived from Remix's own conversion actually reads right in TP's scale,
-  whether the 4-unit sphere radius puts emitters inside wall sconces (the
-  failure mode Remix's own docs warn about for converted lights), and
-  whether the create/destroy churn is acceptable in a busy room. The
-  create/destroy lifecycle itself is exercised by a stub harness, so the
-  bookkeeping is not the risk; the look is.
-- **The whole Phase 3 ambient grade** (`DxvkDusklightGrade` in the fork,
-  the two `rtx.dusklight.env.*ambient` pushes in the bridge). It ships
-  **off** (`rtx.dusklight.grade.enable = False`), so it cannot affect a
-  test run until it is switched on deliberately. Unproven at runtime: that
-  the ambients arrive at sane values (watch them in Remix's Dusklight tab
-  and in the grade UI's "Resolved tint" line), and whether 0.65 strength
-  reads as mood or as a colour cast.
-- **The whole sun/moon distant light** (`updateCelestialLight`, Phase 4).
-  Written after the last test session. Specifically unproven at runtime:
-  `dxvk_RegisterD3D9Device` succeeding against aurora's device; the
-  handedness of the direction handed to Remix (hence the Flip Direction
-  debug checkbox in Remix's Dusklight tab); whether the intensity defaults
-  (sun 5.0 / moon 0.3) are anywhere near right; and whether the light
-  survives aurora's device recreation on resize.
-- `aurora_dx9_get_device()` (aurora checkpoint 3.18).
-- The mono overlay (twilight desaturation) and composite base weight —
-  these only engage in twilight/wolf-senses palettes, which the test
-  session did not reach.
-- Sky tagging has not been done at all; it is a manual one-time step in
-  the Remix texture-categories UI (see dx9-fixed-function.md).
+#### Confirmed working in-game
 
-**"The sun seems tied to Link" — investigated 2026-07-26, no tie found.**
-Reported after the first session with the light: running in a circle in
-Hyrule Field dramatically changed what was shadowed. Four things were
-checked, and none of them can carry a dependency on the player:
+- **The bridge connects.** Owner log: `RTX Remix detected; kankyo bridge
+  active (remixapi 0.6.4)` and `registered D3D9 device with the Remix API`,
+  with no missing-export warning, which also proves the `getRtxOptionValue`
+  export mechanism works.
+- **Dusklight bloom — "massively improved"** after the four fidelity fixes
+  and the 100× composite fix. This is the one part of the look that is now
+  confirmed close to the real thing.
+- The kankyo feed is live and its colour tracks time of day.
+- GX→D3D9 fog reaches Remix. Faithful mode consistent; volumetric mode
+  over-reactive to kankyo's near/far.
+- Vanilla Remix post FX work once their strengths are raised well above the
+  near-invisible defaults. No Remix bug.
+- The sun/moon distant light runs and produces "interesting results". No
+  report of inverted shadows, so the handedness is *probably* right — Flip
+  Direction remains in the tab if that turns out wrong.
 
-1. `setSunpos` (`d_kankyo.cpp:1666`) has **no rotation term at all**:
-   `sun_pos = eye + (sin a·80000, −cos a·80000, −cos a·48000)`, with `a` a
-   function of `daytime` only. The eye is a translation and cancels in the
-   direction. (The earlier numerical check varied camera *position* over 720
-   times — it would not have caught an orientation dependency, so this was
+#### Open issues
+
+1. **Crash entering some levels.** `EXCEPTION_ACCESS_VIOLATION` reading
+   `0x10`, entirely inside `d3d9.dll` on a Remix-owned worker thread (the
+   outermost frames are `BaseThreadInitThunk` / `RtlUserThreadStart`), during
+   a cutscene transition right after a camera cut. Local lights were off in
+   that run. **Bisect not yet run**: `rtx.dusklight.game.bridgeEnable = False`
+   settles whether any of this is ours; if it still crashes, the
+   NRC-on-camera-cut path is next (`rtx.neuralRadianceCache.enable = False`).
+   NaN guards were added to both light paths regardless — plausible as the
+   fix, not demonstrated.
+2. **Shadow coverage wanders as the camera moves — at night only.**
+   Eliminated: the light direction (locking it changes nothing), NRC
+   (persists under ReSTIR), and brightness (persists with moon intensity
+   raised). Current hypothesis, with code evidence and untested: the sun,
+   moon and star billboards are drawn at a fixed offset from the camera eye
+   (`dKyr_drawStar`: `moon_pos = camera->view.lookat.eye + envlight->moon_pos`),
+   so anything Remix captures from them as world geometry is an occluder that
+   travels with the player — and stars and the moon are the only sky
+   billboards drawn at night, which is exactly the asymmetry.
+   `rtx.dusklight.game.hideSkyBillboards` tests it in one click; tagging those
+   textures as Sky is the real fix.
+
+#### Built and CI-green but NEVER RUN
+
+- **`game.celestialNoonElevation`** (2026-07-27) — the sun/moon elevation
+  cap lift. Defaults to vanilla (59.036 reproduces 48000/80000 to six
+  decimals), so it is inert until moved. Verified numerically only: the
+  default ratio, the peak elevation at several settings, and that sunrise
+  and sunset move ≤0.2°. Unproven in game: whether an overhead noon actually
+  reads better, and whether anything downstream dislikes a near-vertical
+  light. Standalone write-up in `docs/sun-elevation.md`. **Start at 80–85,
+  not 90** — at exactly 90 the azimuth flips instantaneously at noon.
+- **`game.disableFrustumCulling`** — untested, off by default. Also unknown
+  what it costs in frame time.
+- **`game.remixHideSkyBillboards`** — untested, off by default (see open
+  issue 2).
+- **The Dusklight tab driving the game.** The export resolves, but no value
+  set in the tab has been confirmed to change game behaviour yet. First
+  thing to check: toggle something obvious like the sun light off.
+- **Local point lights** — off by default. Unproven: whether the intensity
+  from Remix's own conversion reads right at TP's scale, whether the 4-unit
+  radius puts emitters inside wall sconces, and the churn cost in a busy
+  room. The create/destroy lifecycle is exercised by a stub harness, so the
+  bookkeeping is not the risk; the look is. If torches read weak, the
+  derived alternative is intensity ≈ 19 (see the reach note below).
+- **The ambient grade** — off by default. Unproven that the ambients arrive
+  sane (watch the tab's readout and the grade's "Resolved tint" line) and
+  whether 0.65 strength reads as mood or as a cast.
+- **Mono overlay and composite base weight** — only engage in
+  twilight/wolf-senses palettes, never reached.
+- **Sky tagging — still not done.** This remains the single highest-value
+  outstanding item: it is the missing fill light, and it is also the proper
+  fix for open issue 2.
+
+**"The sun seems tied to Link" — investigated 2026-07-26, no tie found, and
+since narrowed.** Four things were checked and none can carry a dependency on
+the player:
+
+1. `setSunpos` (`d_kankyo.cpp:1666`) has **no rotation term at all** — the
+   orbit is a function of `daytime` and an eye translation that cancels in
+   the direction. (An earlier numerical check varied camera *position* over
+   720 times and would not have caught an orientation dependency, so this was
    re-read rather than re-run.)
-2. `dKy_SunMoon_Light_Check()` (`d_kankyo.cpp:10974`) keys on the stage name
-   and darkworld state only — it cannot toggle as the player moves inside
-   Hyrule Field.
-3. Remix's `direction` convention is the one we push: `distant_light.slangh:78`
-   samples at `position - direction·100000`, i.e. `direction` is the
-   direction light *travels*. Our `-toBody` is correct.
+2. `dKy_SunMoon_Light_Check()` (`d_kankyo.cpp:10974`) keys on stage name and
+   darkworld state only.
+3. Remix's `direction` convention is the one we push:
+   `distant_light.slangh:78` samples at `position - direction·100000`, so it
+   is the direction light *travels*, and our `-toBody` is correct.
 4. Aurora hands Remix true world space (`world = modelView · viewInv`,
-   `dx9_draw.cpp:354/361/505`), so Remix's world is the game's world.
+   `dx9_draw.cpp:354/361/505`).
 
-Also ruled out: the clock (`time_change_rate` 0.012/frame ⇒ ~0.6°/s of sun
-motion — visible over a minute, not over a lap), and baked lighting
-(`D3DRS_LIGHTING = FALSE` in `dx9_backend.cpp:83`; aurora never evaluates
-the GX light model, so vanilla's Link-following light reaches neither the
-vertex colours nor the albedo).
-
-The likeliest explanation is that this is a **correct** world-fixed sun,
-and it feels wrong for two compounding reasons: vanilla's shadow-casting
-light was local and followed Link, so turning around never changed the
-shading much — a real distant sun changes it completely — and the sky is
-not tagged yet, so there is no fill light at all and every surface is
-either lit by one hard 2°-diameter source or in black shadow.
-
-*Decisive test*: Remix's **Dusklight tab** prints the sun's **azimuth and
-elevation** in degrees, both computed from time of day alone. Run a lap
-and watch them. If they hold still, the direction is not tied to anything —
-then tick **Lock Direction** and circle a tree: if its shadow stays
-anchored to the tree, the light is behaving, and the fix is fill light
-(sky tagging, `rtx.skyBrightness`) rather than the sun. If the numbers
-move, or the shadow swings while locked, that is a real bug and the lock
-narrows it to everything downstream of the bridge.
-
-Sun azimuth/elevation over a day, for reference (azimuth 0 = +Z, 90 = +X):
-06:00 +81°/15°, 08:00 +63°/37°, 12:00 0°/59°, 16:00 −63°/37°, 18:00
-−81°/15°. The moon runs the same arc half a day out of phase, so the
-handover at dusk swings the direction ~150° — which is why the crossfade
-takes the intensity to zero across it.
+Also ruled out: the clock (~0.6°/s of sun motion — visible over a minute, not
+over a lap) and baked lighting (`D3DRS_LIGHTING = FALSE`; aurora never
+evaluates the GX light model, so vanilla's Link-following light reaches
+neither the vertex colours nor the albedo). The day case is now believed
+correct; what remains is night-only and is open issue 2.
 
 **First-run checklist for the sun/moon light:** Remix's Dusklight tab should
 report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
@@ -595,6 +610,25 @@ rather than the game's shadow-light selection). Watch a dawn (daytime
 tick Flip Direction; if that fixes it, the sign belongs in the code.
 
 ### Status log
+
+- **2026-07-27 — bloom fidelity pass (confirmed good in-game).** Four errors
+  in the port plus a fifth in the composite; owner reports the result
+  "massively improved". Details in "Bloom fidelity" below. The composite one
+  is worth repeating here because it explains everything that came before it:
+  the Dusklight path inherited Remix's fixed `0.01` attenuation, which is
+  calibrated for Remix's own broadly-gathering pyramid. Ours was 100× too
+  faint, so every brightness knob had to be pinned to compensate and it still
+  read as a weak wash — which is why turning it *off* looked closer to the
+  original.
+- **2026-07-27 — sun/moon elevation cap lifted** (`game.celestialNoonElevation`,
+  default = vanilla). **Untested.** Write-up in `docs/sun-elevation.md`.
+- **2026-07-27 — geometry switches added** (`game.disableFrustumCulling`,
+  `game.remixHideSkyBillboards`). Both **untested**, both off by default. The
+  first is for occlusion the path tracer needs and the game throws away; the
+  second is the one-click test for open issue 2.
+- **2026-07-26/27 — controls moved into Remix's Dusklight tab.** The game's
+  ImGui is never drawn in D3D9 mode, so every setting built for this work was
+  behind a window that cannot appear. See "Where the controls live" below.
 
 - **Phase 0 + Phase 1: implemented** (game: `src/dusk/remix_bridge.{cpp,hpp}`,
   vendored `include/remix/remix_c.h` @ 0.6.4, `game.remixKankyoBridge`
@@ -743,7 +777,12 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   100) is ignored for now — applying it would mean a re-create every frame
   for every flickering light. Worth revisiting once the base look is
   calibrated.
-- **Sky (Phase 4 remainder): manual tagging is the right mechanism.** The
+- **Sky (Phase 4 remainder): manual tagging is the right mechanism, and it
+  now fixes two things.** Besides being the missing fill light, it is the
+  proper fix for the night-only wandering shadows: the sun, moon and star
+  billboards sit at a fixed offset from the camera eye, so any of them Remix
+  captures as world geometry is an occluder that travels with the player.
+  Tagging them as Sky moves them into the sky probe, where they belong. The
   vrbox is drawn by the game with the *main* camera, so
   `rtx.skyAutoDetect` (which keys on a separate sky camera) is unlikely to
   catch it; Remix's texture tagging is. One-time setup in the Remix dev
@@ -1040,10 +1079,16 @@ stretch goal.
   carries both fog modes, the bloom table, the ambient grade table and the
   local light notes; this doc's status log and verification section are
   current.
-- ⬜ **HDR threshold calibration table per area** — needs the game running.
-- ⬜ **Re-baseline the owner's test values** (`burnIntensity = 5`,
-  `dusklightBlurRatio = 255`, `dusklightThreshold = 0`) once the lights
-  are verified; they were picked to make the bloom visible, not accurate.
+- ✅ **Re-baseline the owner's bloom values** — superseded by the fidelity
+  pass. With the composite fix in, `burnIntensity` belongs at **1.0** (it is
+  no longer attenuated 100×), `steps` at **6**, and threshold/blur/ratio come
+  from the game feed. `dusklightThresholdScale` should stay at 1.0 now that
+  the pass runs in display space.
+- ⬜ **HDR threshold calibration table per area** — largely obviated by the
+  move to display space, since the threshold now has a fixed meaning. Revisit
+  only if areas still disagree.
+- ⬜ **Sky tagging** — the outstanding item that matters most. It is the
+  missing fill light and the proper fix for the night occluder issue.
 
 ### CI coverage note
 The fork's workflow only built `main` and `release/**`, so a `claude/**`
