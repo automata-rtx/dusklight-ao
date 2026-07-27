@@ -62,19 +62,26 @@ rtx.maxFogDistance = 10000000
 # with auto exposure disabled; the Remix default 0.25 is very dim).
 rtx.fogColorScale = 1.0
 
-# Volumetric mode (alternative, currently WORSE - see the note above). This
-# is also the "Phase 0" calibration experiment from DusklightAtmosphere.md:
-# it costs nothing at runtime (raising froxelMaxDistance redistributes the
-# fixed 64 depth slices, it does not allocate), and it answers whether the
-# mismatch is range or curve shape before any code is written.
-# If distant terrain still refuses to close up, that is the linear-ramp vs
-# exponential-extinction difference, and only the planned range split fixes it.
+# Atmosphere mode (Phase A/B, UNTESTED as of 2026-07-27). One medium derived
+# from the game's own palette drives the volumetrics, the fog and the sky
+# together, with the froxel grid sized from the game's fog range and the
+# game's own ramp taking over past where that grid stops.
+#rtx.dusklight.atmosphere.enable = True
 #rtx.volumetrics.enable = True
-#rtx.volumetrics.enableAtmosphere = True
-#rtx.volumetrics.froxelMaxDistanceMeters = 200
-#rtx.volumetrics.enableFogRemap = True
-#rtx.volumetrics.enableFogColorRemap = True
-#rtx.volumetrics.fogRemapMaxDistanceMaxMeters = 300
+#
+# Generated sky. All three together, or you get more than one sky at once:
+# the generated dome, the game's own dome, and Remix's auto-detected probe.
+#rtx.dusklight.atmosphere.skyEnable = True
+#rtx.dusklight.game.hideVrbox = True
+#rtx.skyAutoDetect = None
+#
+# The three constants below were never calibrated against a running build.
+# See dxvk-remix documentation/DusklightAtmosphere.md section 13 before
+# concluding something is wrong - and reach for densityScale first, since it
+# is one number over the whole scene.
+#rtx.dusklight.atmosphere.densityScale = 1.0
+#rtx.dusklight.atmosphere.zHalfMin = 100
+#rtx.dusklight.atmosphere.skyIntensity = 1.0
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False

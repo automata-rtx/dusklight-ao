@@ -14,6 +14,8 @@
 #include "SSystem/SComponent/c_math.h"
 #include <cstring>
 
+#include "dusk/settings.h"
+
 static int daVrbox2_color_set(vrbox2_class* param_0);
 
 static void texScrollCheck(f32& param_0) {
@@ -99,6 +101,17 @@ static int daVrbox2_Draw(vrbox2_class* i_this) {
     {
         return 1;
     }
+
+#if TARGET_PC
+    // The rest of the sky dome - the haze band, the cloud layer and the two sun models. The
+    // generated sky replaces all of it, so they go together with the main dome.
+    //
+    // Placed here rather than at the top of the function so that it lands on the same side of the
+    // early-out above as mSunBtk.entry below, keeping that paired with its matching remove.
+    if (dusk::getSettings().game.remixHideVrbox.getValue()) {
+        return 1;
+    }
+#endif
 
     i_this->mSunBtk.entry(i_this->model2->getModelData());
     daVrbox2_color_set(i_this);

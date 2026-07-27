@@ -630,6 +630,34 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
 
 ### Status log
 
+- **2026-07-27 — atmosphere Phase A + B landed. Untested, and the calibration
+  pass that should have preceded them was skipped.** One participating medium
+  derived from the game's palette now drives the volumetrics, the fog and a
+  generated sky together, instead of three systems deriving their own and
+  disagreeing. Bridge protocol **1 → 2**. Design and the full compromise ledger:
+  `dxvk-remix/documentation/DusklightAtmosphere.md`; the game-side data in
+  `docs/kankyo-fog.md`. Everything defaults off.
+
+  Three things found on the way in that are worth not rediscovering:
+  - **Remix keeps only the first fog state it sees each frame**
+    (`rtx_scene_manager.cpp:609`), and this game sets fog *per object* — so
+    which of a room's states won was decided by submission order. That was
+    listed here as a hypothetical risk under IV.4; it is real, and the pushed
+    override is now the mechanism rather than the fallback.
+  - **`g_env_light.hide_vrbox` is not a usable "no sky" signal.** Only the
+    vrbox actor writes it, so in stages without one — every interior, which is
+    where the question matters — it holds whatever the last outdoor area left.
+    The bridge recomputes the test instead.
+  - **The moya haze billboards were already disabled on this backend**
+    (`dKankyo_cloud_Packet::draw`, `d_kankyo_wether.cpp:119`), so the
+    double-count they were expected to cause cannot happen. A switch for it was
+    written and then removed rather than ship a control that does nothing.
+
+  **Phase 0 was never run**, so `zHalfMin`, `froxelRangeScale` and
+  `skyIntensity` are analytic first guesses. Before concluding a result is
+  wrong, read `DusklightAtmosphere.md` §13 — it explains how to run that
+  calibration on a build that already has this change, and how to tell a
+  mis-set constant (wrong everywhere) from a bad mapping (wrong per area).
 - **2026-07-27 — bloom fidelity pass (confirmed good in-game).** Four errors
   in the port plus a fifth in the composite; owner reports the result
   "massively improved". Details in "Bloom fidelity" below. The composite one

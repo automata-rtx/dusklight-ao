@@ -217,8 +217,44 @@ std::string formatColorS10(const GXColorS10& color) {
     return buffer;
 }
 
+// Quantized push, for values that drift continuously. The fog distances move every frame while a
+// palette blend is in flight, and pushing full precision would re-cross the Remix API lock every
+// one of those frames for a change nothing can see.
+std::string formatFloatQ(f32 value, f32 quantum) {
+    if (quantum > 0.0f) {
+        value = std::round(value / quantum) * quantum;
+    }
+    return formatFloat(value);
+}
+
 const char* formatBool(bool value) {
     return value ? "True" : "False";
+}
+
+// Whether this area has a sky at all.
+//
+// The game answers this itself in g_env_light.hide_vrbox, but that flag is written by the sky
+// dome actor, so in any stage that has no such actor - which is every interior, the ones the
+// question matters most for - it is never updated and holds whatever the last outdoor area left
+// there. Recomputing the test it performs is both correct everywhere and one frame fresher.
+bool skyIsHidden(const dScnKy_env_light_c* env) {
+    const auto sum = [](const GXColorS10& c) {
+        return static_cast<int>(c.r) + static_cast<int>(c.g) + static_cast<int>(c.b);
+    };
+
+    return (sum(env->vrbox_kasumi_outer_col) + sum(env->vrbox_sky_col) +
+            sum(env->vrbox_kumo_top_col)) == 0;
+}
+
+// The game leaves its fog distances completely unclamped and its debug menu can drive them into
+// the millions, so nothing about the feed is trusted. A ramp needs a positive span to mean
+// anything; note that a negative start is normal rather than broken - scripted fog banks set it
+// that way deliberately so the ramp is already underway at the camera.
+bool fogIsActive(const dScnKy_env_light_c* env) {
+    const f32 start = env->mFogNear;
+    const f32 end = env->mFogFar;
+
+    return std::isfinite(start) && std::isfinite(end) && end > start && end > 0.0f;
 }
 
 // Everything below hands world positions and radiances straight to Remix, which
@@ -862,7 +898,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "1");
+    push("rtx.dusklight.env.protocol", "2");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -887,6 +923,43 @@ void pushKankyoState() {
 
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
     push("rtx.dusklight.env.bgAmbient", formatColorS10(env->bg_amb_col[0]));
+
+    // Fog and sky, pushed together because the game authors them together: fog_col, the fog
+    // distances and every vrbox colour come out of the same palette entry, are picked by the same
+    // time-of-day and weather indices, and are blended by the same call. The fog colour is
+    // approximately the sky colour at any given moment, which is why distant terrain dissolves
+    // into the sky in the original, and any consumer that sources the two separately loses that.
+    //
+    // As with the ambients these are the settled per-frame values, so the additive event colours,
+    // the ratio that lightning pulses, the start/end override the fog bank tags drive and the
+    // second "gather" palette blend are all already folded in. Reading the outputs rather than the
+    // palette tables is what keeps this correct without reimplementing any of them.
+    //
+    // Fog is D3D9-captured as well, per draw, but the game sets it per object and Remix keeps only
+    // the first state it sees in a frame - so the captured value is decided by submission order.
+    // These are the room's actual answer.
+    push("rtx.dusklight.env.fogActive", formatBool(fogIsActive(env)));
+    push("rtx.dusklight.env.fogColor", formatColorS10(env->fog_col));
+    push("rtx.dusklight.env.fogStartZ", formatFloatQ(env->mFogNear, 1.0f));
+    push("rtx.dusklight.env.fogEndZ", formatFloatQ(env->mFogFar, 1.0f));
+
+    push("rtx.dusklight.env.skyHidden", formatBool(skyIsHidden(env)));
+    push("rtx.dusklight.env.skyColor", formatColorS10(env->vrbox_sky_col));
+    push("rtx.dusklight.env.kasumiInner", formatColorS10(env->vrbox_kasumi_inner_col));
+    push("rtx.dusklight.env.kasumiOuter", formatColorS10(env->vrbox_kasumi_outer_col));
+    push("rtx.dusklight.env.kumoTop", formatColorS10(env->vrbox_kumo_top_col));
+    push("rtx.dusklight.env.kumoBottom", formatColorS10(env->vrbox_kumo_bottom_col));
+    push("rtx.dusklight.env.kumoShadow", formatColorS10(env->vrbox_kumo_shadow_col));
+
+    char sceneBuffer[16];
+    std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->wether_pat1));
+    push("rtx.dusklight.env.colpat", sceneBuffer);
+    std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->mMoyaMode));
+    push("rtx.dusklight.env.moyaMode", sceneBuffer);
+    // The haze counter is decremented past zero as it winds down, which would read as a negative
+    // strength on the other side.
+    push("rtx.dusklight.env.moyaCount",
+         formatFloat(static_cast<f32>(std::max(env->mMoyaCount, 0))));
 }
 
 // Reports what the lights are actually doing, so Remix's Dusklight tab can show
@@ -1002,6 +1075,13 @@ void tick() {
         if (hideSky != game.remixHideSkyBillboards.getValue()) {
             game.remixHideSkyBillboards.setValue(hideSky);
         }
+
+        const bool hideVrbox = readOptionBool("rtx.dusklight.game.hideVrbox",
+                                              game.remixHideVrbox.getValue());
+        if (hideVrbox != game.remixHideVrbox.getValue()) {
+            game.remixHideVrbox.setValue(hideVrbox);
+        }
+
 
         const float noonElevation =
             readOptionFloat("rtx.dusklight.game.celestialNoonElevation",

@@ -174,16 +174,34 @@ per-object variation is flattened — recorded as compromise C7 in the Remix doc
 Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
+All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. Protocol **2**.
+
 | Key | Source |
 | :-- | :-- |
+| `fogActive` | `fogIsActive()` — see below |
 | `fogColor` | `g_env_light.fog_col`, normalized 0..1 |
-| `fogStartZ` | `g_env_light.mFogNear` |
-| `fogEndZ` | `g_env_light.mFogFar` |
-| `skyHidden` | `g_env_light.hide_vrbox` |
-| `colpat` | current colour pattern index |
-| `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount` |
-| `vrboxSkyColor`, `vrboxKasumiInner`, `vrboxKasumiOuter` | sky colours for the dome |
-| `vrboxKumoTop`, `vrboxKumoBottom`, `vrboxKumoShadow` | cloud colours (Phase D) |
+| `fogStartZ` | `g_env_light.mFogNear`, quantized to 1 unit |
+| `fogEndZ` | `g_env_light.mFogFar`, quantized to 1 unit |
+| `skyHidden` | `skyIsHidden()` — **recomputed, not `hide_vrbox`**, see below |
+| `skyColor` | `vrbox_sky_col` |
+| `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col` |
+| `kumoTop`, `kumoBottom`, `kumoShadow` | cloud colours; pushed but not consumed yet (Phase D) |
+| `colpat` | `g_env_light.wether_pat1` |
+| `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount`, clamped at 0 |
+
+Two of these are not the obvious field, and both matter:
+
+**`skyHidden` recomputes the colour-sum test rather than reading `g_env_light.hide_vrbox`.** That flag is written by
+`daVrbox_color_set` in the sky dome *actor* (`d_a_vrbox.cpp:69-79`), so in any stage with no such actor — which is every
+interior, exactly where the question matters — it is never updated and still holds whatever the last outdoor area left
+there. Recomputing the same test is correct everywhere and one frame fresher.
+
+**`colpat` is `wether_pat1`.** There is no `mColpatPrev`/`mColpatCurr`; the only similarly named fields are the `*Gather`
+pair, which hold a sentinel most of the time because they belong to the secondary blend the fog bank tags drive.
+
+**`fogActive`** is computed, because the game has no fog-enable flag at all and leaves the distances entirely unclamped:
+`isfinite(near) && isfinite(far) && far > near && far > 0`. Note a *negative* `mFogNear` is normal rather than broken —
+scripted fog banks set it that way deliberately (§3.3), and the predicate accepts it.
 
 **These are also displayed live in Remix's Dusklight tab.** That readout is the
 only practical way to learn the real per-area values: the numbers live in stage
@@ -210,9 +228,16 @@ Separate from GX fog — billboard particles driven by
 | 4 | `d_a_kytag02.cpp` | area haze |
 | 10 / 11 | `d_a_kytag06.cpp` | weather |
 
-Under a path tracer these are camera-facing quads. Keeping them alongside a
-dense medium double-counts the haze; the plan is to suppress them and fold the
-density into the medium's heterogeneous noise (Remix doc §8.1, compromise C5).
+**They are already not drawn on the D3D9 backend.** `mMoyaCount` feeds
+`mpCloudPacket->mCount` in `cloud_shadow_move` (`d_kankyo_rain.cpp:1616`), and
+that packet's `draw()` returns early under D3D9 (`d_kankyo_wether.cpp:119-126`,
+disabled because its projected fake shadows fought Remix's path-traced ones).
+
+So the double-count this section was written to warn about does not arise here,
+and no suppression switch was needed — one was written and then removed rather
+than ship a control that does nothing. `moyaMode`/`moyaCount` are still pushed:
+they say how much haze an area wants, which is the right input for folding that
+density into the medium instead.
 
 ---
 
@@ -222,5 +247,11 @@ density into the medium's heterogeneous noise (Remix doc §8.1, compromise C5).
 | :-- | :-- |
 | Mechanisms in §1–§4, §6 | verified in code, 2026-07-27 |
 | Per-area values in §3 | **not measured** — needs the §5 readout pass |
-| Bridge keys in §5 | designed, not implemented |
-| Renderer design | `dxvk-remix/documentation/DusklightAtmosphere.md` |
+| Bridge keys in §5 | implemented 2026-07-27, protocol 2, **untested** |
+| Sky dome suppression (`game.remixHideVrbox`) | implemented, **untested** — covers both `d_a_vrbox` and `d_a_vrbox2` |
+| Renderer side | `dxvk-remix/documentation/DusklightAtmosphere.md` |
+
+**The calibration pass was skipped.** Phase 0 in the renderer doc was never run, so the constants the fog derivation uses
+are analytic guesses. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
+pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
+live in stage data rather than in source.

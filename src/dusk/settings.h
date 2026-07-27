@@ -209,6 +209,7 @@ struct UserSettings {
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
+        ConfigVar<bool> remixHideVrbox;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;
