@@ -48,6 +48,12 @@ rtx.bloom.dusklight = True
 # FOG: pick ONE mode. With Remix defaults the game's fog is captured but
 # consumed by neither path (composite fog is skipped while volumetrics are
 # enabled, and fog remap is off) - i.e. fog silently does nothing.
+#
+# Faithful mode below is the RECOMMENDED setting today. Volumetric mode
+# cannot currently reproduce the game's fog: the froxel grid only reaches
+# rtx.volumetrics.froxelMaxDistanceMeters (default 20 m = 2000 game units)
+# and the fog remap's endpoints are calibrated for another game. See
+# docs/kankyo-fog.md and the fork's documentation/DusklightAtmosphere.md.
 
 # Faithful mode: exact linear ramp, vanilla look.
 rtx.volumetrics.enable = False
@@ -56,10 +62,19 @@ rtx.maxFogDistance = 10000000
 # with auto exposure disabled; the Remix default 0.25 is very dim).
 rtx.fogColorScale = 1.0
 
-# Volumetric mode (alternative): comment out the three lines above and use
-# kankyo's fog colour as a real participating medium instead:
+# Volumetric mode (alternative, currently WORSE - see the note above). This
+# is also the "Phase 0" calibration experiment from DusklightAtmosphere.md:
+# it costs nothing at runtime (raising froxelMaxDistance redistributes the
+# fixed 64 depth slices, it does not allocate), and it answers whether the
+# mismatch is range or curve shape before any code is written.
+# If distant terrain still refuses to close up, that is the linear-ramp vs
+# exponential-extinction difference, and only the planned range split fixes it.
+#rtx.volumetrics.enable = True
+#rtx.volumetrics.enableAtmosphere = True
+#rtx.volumetrics.froxelMaxDistanceMeters = 200
 #rtx.volumetrics.enableFogRemap = True
 #rtx.volumetrics.enableFogColorRemap = True
+#rtx.volumetrics.fogRemapMaxDistanceMaxMeters = 300
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False

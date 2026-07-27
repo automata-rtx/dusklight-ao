@@ -399,6 +399,25 @@ if exposure is pinned.
 
 ### IV.4 Fog: implement the designed GX→D3D9 mapping in aurora
 
+> **Superseded (2026-07-27).** The aurora mapping described here *was*
+> implemented and works — see `apply_fog_state()` in
+> `extern/aurora/lib/dx9/dx9_draw.cpp`. What this section got wrong is what
+> happens on the Remix side afterwards. Two findings:
+>
+> 1. **"First-fog-wins" is not a hypothetical.** `rtx_scene_manager.cpp:609`
+>    keeps the first non-`NONE` fog state of the frame and discards the rest,
+>    and TP sets fog *per tevstr*. Plan B (a pushed fog override) is now the
+>    plan, not the fallback.
+> 2. **Volumetrics is not a drop-in "user preference".** With stock options it
+>    cannot express the game's fog at all: the froxel grid is 20 m, fog remap
+>    is off by default, and the remap's endpoints are unclamped and calibrated
+>    for a different game.
+>
+> The fog design now lives in `docs/kankyo-fog.md` (game side) and
+> `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer side), where fog
+> is treated as one system with the sky rather than as an independent effect.
+> The rest of this section is kept for the aurora mapping rationale.
+
 The best fog path needs **zero Remix changes**: aurora already decodes GX
 fog (`g_gxState.fog`) and the mapping spec
 (`extern/aurora/docs/dx9/gx-to-d3d9-mapping.md` §fog) already defines the
