@@ -707,16 +707,15 @@ void updateLocalLights() {
         return;
     }
 
-    if (!readOptionBool("rtx.dusklight.game.localLights",
-                        getSettings().game.remixLocalLights.getValue()) ||
-        !dusk::IsGameLaunched) {
+    if (!dusk::IsGameLaunched) {
         releaseLocalLights();
         return;
     }
 
-    // Counted before the device gate below, so that a failure there can be told apart from an area
-    // that simply has no lights in it. Those two look identical from a drawn count of zero, which
-    // is exactly the ambiguity that made this hard to diagnose the first time.
+    // Counted ahead of every gate below, so it stays truthful whichever one turns us back. A count
+    // of lights the game has registered, next to a count of lights we submitted, is what separates
+    // "there is nothing here" from "we are dropping them" - and those two are indistinguishable
+    // from a drawn count alone, which is what made the first report of this impossible to narrow.
     const dScnKy_env_light_c* envForCount = dKy_getEnvlight();
 
     for (int i = 0; i < 100; i++) {
@@ -729,6 +728,12 @@ void updateLocalLights() {
         if (envForCount->efplight[i] != nullptr) {
             s_localDebug.found++;
         }
+    }
+
+    if (!readOptionBool("rtx.dusklight.game.localLights",
+                        getSettings().game.remixLocalLights.getValue())) {
+        releaseLocalLights();
+        return;
     }
 
     if (!ensureDeviceRegistered()) {
@@ -1021,6 +1026,9 @@ void pushLightStatus() {
     char buffer[16];
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.found);
     push("rtx.dusklight.env.localLightsFound", buffer);
+    // Whether we got past every gate and actually ran the submit loop. Without this, an option
+    // that reads false and an area with no lights look identical from the other side.
+    push("rtx.dusklight.env.localLightsRunning", formatBool(s_localDebug.enabled));
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.drawn);
     push("rtx.dusklight.env.localLightsDrawn", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
