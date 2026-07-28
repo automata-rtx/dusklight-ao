@@ -12,6 +12,47 @@ paths.
 
 ---
 
+## Picking this up cold
+
+*Updated 2026-07-28. Read this, then "Verification state", then stop — the rest
+is reference.*
+
+**The three repos and what each holds:**
+
+| Repo | Role | Dusklight-relevant docs |
+| :-- | :-- | :-- |
+| `dusklight-ao` | the game | this file, `kankyo-fog.md`, `dx9-fixed-function.md`, `sun-elevation.md` |
+| `aurora-ao` | GX→D3D9 backend, at `extern/aurora` | `docs/dx9/` |
+| `dxvk-remix` | the Remix fork | `documentation/DusklightAtmosphere.md` (rendering), `documentation/DusklightOverlay.md` (control plane) |
+
+**Where the work stands.** The atmosphere (one medium derived from the game's
+palette driving fog, sky and sky-light together) is **built and tested good**
+through phases A and B; phase C, the physical Hillaire sky blended against the
+palette, is built and CI-green but has never been run. The control plane — a
+separate F1 overlay hosted by Remix, with warp — is built and CI-green;
+warp has not been run either.
+
+**The one thing that is broken:** local point lights. Open issue 0 below.
+Diagnostics are in place that name which of three failure modes it is; reading
+them from a build while stood at a lit torch is the next action, and everything
+after that depends on the answer.
+
+**Also open, in rough order of value:** sky tagging (still the highest-value
+outstanding item — it is the missing fill light *and* the proper fix for the
+night shadow wandering), the night shadow wandering itself, the level-entry
+crash bisect, and the Controls tab, which is a placeholder with nothing in it.
+
+**Two standing constraints that are easy to lose:**
+
+1. **The game and the Remix DLL are one protocol.** Build both from the same
+   commit point. Protocol is at **3**; skew in either direction has cost an
+   evening twice.
+2. **Interactive approval prompts do not work in the owner's environment** —
+   they always resolve as "no approval given". Never route anything through
+   one. See `CLAUDE.md` at the repo root for the workarounds.
+
+---
+
 ## Part I — How kankyo actually works
 
 ### I.1 The data model
@@ -515,7 +556,7 @@ colour/amount, base weight. One calibration knob is needed:
 
 ### Verification state (read this first)
 
-As of 2026-07-27. CI baselines: dusklight/aurora green on all 8 targets
+As of **2026-07-28**. CI baselines: dusklight/aurora green on all 8 targets
 (Windows MSVC x86_64 + arm64, macOS x3, Linux x2, Android); the Remix fork
 green on its 3 Windows configs. Aurora is unchanged since `a7b47ac` and the
 submodule pin still points there.
@@ -523,7 +564,12 @@ submodule pin still points there.
 **One standing rule:** the game and the Remix DLL are a single protocol and
 must be built from the same point. Both directions of skew have already cost
 an evening — see "Two protocol bugs" below. The Dusklight tab reports which
-is which.
+is which. **Protocol is now 3**; when you bump it, bump `kRequiredProtocol` in
+the fork's `showDusklightRemixTab` in the same commit.
+
+**The one thing still broken:** local point lights. See "Open issues" below —
+it now has diagnostics that name the failure mode, and reading them is the next
+action.
 
 #### Confirmed working in-game
 
@@ -544,6 +590,38 @@ is which.
   Direction remains in the tab if that turns out wrong.
 
 #### Open issues
+
+0. **Local point lights do not work.** Reported 2026-07-28: toggling
+   `rtx.dusklight.game.localLights` changes nothing at all, in either state,
+   and the tab reads `drawn this frame: 0, tracked: 0`. Standing at a totem
+   with a fire on it shows a bright white circle behaving as an emissive on the
+   fire texture, but no actual light source.
+
+   **Ruled out:** the device registers with the Remix API (the tab reports yes)
+   and the sun/moon distant light works — so the API, the device registration
+   and `CreateLight`-class plumbing are all live. Static analysis says a torch
+   (`d_a_ep`, `mColor = (175,93,0)`, `mPow = 500 × strength`) should pass the
+   brightness and reach test.
+
+   **A bare zero cannot distinguish three quite different failures**, which is
+   what made the first report impossible to narrow — rejection happens *before*
+   the vector push, so `tracked: 0` is equally consistent with "the loop never
+   ran" and "every light was rejected". Diagnostics were added so the build
+   names its own state:
+
+   | Readout | Meaning |
+   | :-- | :-- |
+   | `localLightsRunning = false` | never reached the submit loop — the switch is not reaching the game, or the device did not register |
+   | `localLightsFound = 0` | the game has no lights registered here at all |
+   | `localLightsDrawn = 0`, `found > 0` | lights exist and are being **rejected on the way through** |
+
+   `found` is counted **ahead of every gate**, over both arrays —
+   `env->pointlight[100]` and `env->efplight[5]` (the second was missing at
+   first, which is its own lesson: the game keeps local lights in two places).
+
+   **Next action: read those three values from a build with the diagnostics,
+   stood at a lit torch.** Everything after that depends on which of the three
+   it is.
 
 1. **Crash entering some levels.** `EXCEPTION_ACCESS_VIOLATION` reading
    `0x10`, entirely inside `d3d9.dll` on a Remix-owned worker thread (the
@@ -568,27 +646,30 @@ is which.
 
 #### Built and CI-green but NEVER RUN
 
-- **`game.celestialNoonElevation`** (2026-07-27) — the sun/moon elevation
-  cap lift. Defaults to vanilla (59.036 reproduces 48000/80000 to six
-  decimals), so it is inert until moved. Verified numerically only: the
-  default ratio, the peak elevation at several settings, and that sunrise
-  and sunset move ≤0.2°. Unproven in game: whether an overhead noon actually
-  reads better, and whether anything downstream dislikes a near-vertical
-  light. Standalone write-up in `docs/sun-elevation.md`. **Start at 80–85,
-  not 90** — at exactly 90 the azimuth flips instantaneously at noon.
-- **`game.disableFrustumCulling`** — untested, off by default. Also unknown
-  what it costs in frame time.
 - **`game.remixHideSkyBillboards`** — untested, off by default (see open
   issue 2).
-- **The Dusklight tab driving the game.** The export resolves, but no value
-  set in the tab has been confirmed to change game behaviour yet. First
-  thing to check: toggle something obvious like the sun light off.
-- **Local point lights** — off by default. Unproven: whether the intensity
-  from Remix's own conversion reads right at TP's scale, whether the 4-unit
-  radius puts emitters inside wall sconces, and the churn cost in a busy
-  room. The create/destroy lifecycle is exercised by a stub harness, so the
-  bookkeeping is not the risk; the look is. If torches read weak, the
-  derived alternative is intensity ≈ 19 (see the reach note below).
+- **Warp** — landed 2026-07-28, CI green, never run. Two things to check
+  first: that the layer default (-1) lands you in the current story version of
+  a stage that has several, and that the Level list repopulates after a region
+  change (it is rebuilt by the game and crosses back over the bridge, so a
+  frame or two of lag is expected and is not a bug).
+- **Phase C, the physical sky** — implemented, CI green, never seen running.
+- **The Controls tab** — a placeholder with no functionality at all. Needs live
+  key capture, binds crossing the bridge in both directions (the game owns the
+  current binds, so the overlay has to read them before it can show them), and
+  a decision on who owns conflict resolution — doing it in both places means
+  two different answers.
+
+- **`game.celestialNoonElevation`** — **tested. Settled at 80.** Deliberately
+  short of 90: at exactly 90 the azimuth flips instantaneously at noon. Defaults
+  to vanilla (59.036 reproduces 48000/80000 to six decimals). Standalone
+  write-up in `docs/sun-elevation.md`.
+- **`game.disableFrustumCulling`** — **tested. Works, and visibly helps with
+  light leakage.** Frame-time cost still unmeasured.
+- **The Dusklight tab driving the game** — **confirmed**, by
+  `disableFrustumCulling` taking effect from the tab. The
+  `getRtxOptionValue` export mechanism works end to end.
+
 - **The ambient grade** — off by default. Unproven that the ambients arrive
   sane (watch the tab's readout and the grade's "Resolved tint" line) and
   whether 0.65 strength reads as mood or as a cast.
@@ -597,6 +678,27 @@ is which.
 - **Sky tagging — still not done.** This remains the single highest-value
   outstanding item: it is the missing fill light, and it is also the proper
   fix for open issue 2.
+
+**Promoted out of this list on 2026-07-28:**
+
+- **`game.celestialNoonElevation`** — **tested. Settled at 80.** Deliberately
+  short of 90: at exactly 90 the azimuth flips instantaneously at noon. Defaults
+  to vanilla (59.036 reproduces 48000/80000 to six decimals). Standalone
+  write-up in `docs/sun-elevation.md`.
+- **`game.disableFrustumCulling`** — **tested. Works, and visibly helps with
+  light leakage.** Frame-time cost still unmeasured.
+- **The Dusklight tab driving the game** — **confirmed**, by
+  `disableFrustumCulling` taking effect from the tab. The `getRtxOptionValue`
+  export mechanism works end to end.
+- **Phase A and B of the atmosphere** — tested and reported as *"a massive,
+  frankly monumental success"*.
+
+Local point lights were also in this list and have been **promoted to a bug** —
+see open issue 0. If they turn out to work after all, the remaining unknowns
+are the ones originally listed: whether the intensity from Remix's own
+conversion reads right at TP's scale (if torches read weak, the derived
+alternative is intensity ≈ 19), whether the 4-unit radius puts emitters inside
+wall sconces, and the churn cost in a busy room.
 
 **"The sun seems tied to Link" — investigated 2026-07-26, no tie found, and
 since narrowed.** Four things were checked and none can carry a dependency on
@@ -629,6 +731,64 @@ rather than the game's shadow-light selection). Watch a dawn (daytime
 tick Flip Direction; if that fixes it, the sign belongs in the code.
 
 ### Status log
+
+- **2026-07-28 — the control plane: a separate F1 overlay, and warp.** Bridge
+  protocol **2 → 3**. Full write-up in
+  `dxvk-remix/documentation/DusklightOverlay.md`; only the game-side facts are
+  repeated here.
+
+  The game never draws its own UI in fixed-function D3D9 mode, so everything the
+  game owns had to be reachable from somewhere that *is* drawn. Remix now hosts
+  a **separate overlay on F1**, independent of Remix's own menu — either can be
+  open without the other, both can be open at once.
+
+  - **Input blocking finally works.** `rtx.blockInputToGameInUI` never could
+    have worked here: it sends a window message across the **32-bit bridge**,
+    and a 64-bit game loading `d3d9.dll` directly never receives it. That is
+    why input has always fallen through to the game with a menu open. Remix now
+    publishes `rtx.dusklight.uiActive` and the game calls
+    `PADBlockInput(...)`, which suppresses the held state on release so nothing
+    sticks down. Gated by `rtx.dusklight.blockGameInput` (default on).
+  - **Warp** (`updateWarp()` in `remix_bridge.cpp`). The overlay sends indices;
+    the game resolves them against `src/dusk/map_loader_definitions.h` and
+    pushes back plain-English names pipe-delimited. The table stays in one
+    place, so the list the overlay shows is by construction the list the warp
+    travels on. Fires `dComIfGp_setNextStage` when
+    `rtx.dusklight.warp.commit` **changes**, and latches the first value seen
+    without acting, so a game restarting under a still-running Remix does not
+    teleport on connect.
+  - **Layer `-1`, not `0`.** `dComIfGp_setNextStage` folds `>= 15` to `-1` but
+    **nothing folds 0 to -1** — 0 is a real layer. The game's own warp menu
+    (`src/dusk/ui/warp.cpp`) defaults to `kMinLayer = -1`; ours initially
+    defaulted to 0, which would have landed in the wrong version of any stage
+    whose default layer is not 0. Fixed; bounds `[-1, 14]` on both sides.
+  - **Recording mode** is now a live toggle. It is a game setting whose only
+    other route was editing `config.json` and restarting — and only in one
+    direction, since a value set there could not be turned back off while
+    running.
+
+  Also landed: the Dusklight settings moved out of Remix's post-processing
+  section into their own tab with collapsible sections; a **Requirements**
+  section naming every Remix option these features depend on but do not own
+  (with buttons); and a **What this overrides** section naming the Remix
+  options that will appear to do nothing while the atmosphere is on. Both exist
+  because "I changed it and nothing happened" has cost this project real time
+  more than once.
+
+  Removed from CI: the **Remix x86 bridge** component. Dusklight is 64-bit and
+  never used it.
+
+- **2026-07-28 — Phase 0 run, Phase C landed.** Phase A and B tested in game
+  and reported as *"a massive, frankly monumental success"*: fog range, shape
+  and per-area scaling all confirmed. One fix came out of it — `skyIntensity`
+  1.0 → **6.0**, because the anchor arithmetic forgot the palette is
+  sRGB-decoded before scaling, which takes a mid blue from 0.5 to about 0.2.
+  Phase C (physical Hillaire sky blended against the palette) is implemented
+  and CI-green but **has never been seen running**.
+
+  Settled by testing: `celestialNoonElevation` = **80** (short of 90 on
+  purpose — at exactly 90 the azimuth flips instantaneously at noon), and
+  `disableFrustumCulling` **works and visibly helps light leakage**.
 
 - **2026-07-27 — atmosphere Phase A + B landed. Untested, and the calibration
   pass that should have preceded them was skipped.** One participating medium
@@ -1142,6 +1302,12 @@ The fork's workflow only built `main` and `release/**`, so a `claude/**`
 branch got no build until its PR opened. `claude/**` is now in the push
 triggers, which is what gives the Phase 3 grade a compile check without
 opening a pull request for it.
+
+**The x86 bridge steps were removed from the fork's workflow on 2026-07-28.**
+Dusklight is 64-bit and loads `d3d9.dll` directly, so it never used the bridge.
+Nothing in this project needs it, and building it was pure CI time. (This is
+also the reason `rtx.blockInputToGameInUI` never worked here — see the input
+note in `docs/dx9-fixed-function.md`.)
 
 ### Test/verification strategy
 - Owner tests via the GitHub Actions "Build Windows (MSVC x86_64)"

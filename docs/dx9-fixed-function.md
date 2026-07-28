@@ -62,26 +62,37 @@ rtx.maxFogDistance = 10000000
 # with auto exposure disabled; the Remix default 0.25 is very dim).
 rtx.fogColorScale = 1.0
 
-# Atmosphere mode (Phase A/B, UNTESTED as of 2026-07-27). One medium derived
-# from the game's own palette drives the volumetrics, the fog and the sky
-# together, with the froxel grid sized from the game's fog range and the
-# game's own ramp taking over past where that grid stops.
-#rtx.dusklight.atmosphere.enable = True
-#rtx.volumetrics.enable = True
-#
+# ATMOSPHERE. One medium derived from the game's own palette drives the
+# volumetrics, the fog and the sky together, with the froxel grid sized from
+# the game's fog range and the game's own ramp taking over past where that
+# grid stops. Phases A and B are TESTED GOOD (2026-07-28); phase C, the
+# physical sky blend, is implemented and CI-green but has never been run.
+rtx.dusklight.atmosphere.enable = True
+rtx.volumetrics.enable = True
+
 # Generated sky. All three together, or you get more than one sky at once:
 # the generated dome, the game's own dome, and Remix's auto-detected probe.
-#rtx.dusklight.atmosphere.skyEnable = True
-#rtx.dusklight.game.hideVrbox = True
-#rtx.skyAutoDetect = None
-#
-# The three constants below were never calibrated against a running build.
-# See dxvk-remix documentation/DusklightAtmosphere.md section 13 before
-# concluding something is wrong - and reach for densityScale first, since it
-# is one number over the whole scene.
+rtx.dusklight.atmosphere.skyEnable = True
+rtx.dusklight.game.hideVrbox = True
+rtx.skyAutoDetect = None
+
+# Calibrated 2026-07-28. densityScale is the first thing to reach for if the
+# fog reads wrong everywhere at once - it is one number over the whole scene.
+# skyIntensity was raised 1.0 -> 6.0 because the palette is sRGB-decoded
+# before it is scaled, which the original anchor arithmetic had missed.
 #rtx.dusklight.atmosphere.densityScale = 1.0
 #rtx.dusklight.atmosphere.zHalfMin = 100
-#rtx.dusklight.atmosphere.skyIntensity = 1.0
+#rtx.dusklight.atmosphere.skyIntensity = 6.0
+
+# Sun/moon elevation. The game's own arc peaks at 59 degrees, which leaves a
+# path tracer without a usable overhead sun. 80 is the settled value - short
+# of 90 on purpose, since at exactly 90 the azimuth flips instantly at noon.
+rtx.dusklight.game.celestialNoonElevation = 80
+
+# Stops the game dropping geometry the camera cannot see. A path tracer still
+# needs it: a wall culled because you turned away stops occluding and light
+# leaks through the gap. Tested - it works and visibly helps.
+rtx.dusklight.game.disableFrustumCulling = True
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
@@ -338,12 +349,36 @@ open-ended linear radiance, and none of them mean what they meant.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
-  but nothing is rendered. This is why the Remix-facing settings live in
-  Remix's own **Dusklight tab** rather than in the game's debug windows: in
-  this mode the game cannot draw a UI at all, so anything that needs tuning
-  against the path-traced image has to be reachable from Remix's overlay.
-  The game hosts them as `rtx.dusklight.game.*` options and polls them every
-  frame.
+  but nothing is rendered. Together with the RmlUi note above, this means the
+  game **cannot draw any UI at all** in this mode.
+
+  The recovery is a **separate Dusklight overlay hosted by Remix, opened with
+  F1** — the same key the game's own overlay used. It is independent of Remix's
+  own menu: either can be open without the other, and both can be open at once.
+  Three tabs:
+
+  | Tab | Contents |
+  | :-- | :-- |
+  | Dusklight Remix | everything that changes the image, in collapsible sections, plus a Requirements list naming the Remix options these depend on and an overrides list naming the ones they take over |
+  | Warp | region + level dropdowns by plain-English name, a Warp button, and room/point/layer under a collapsed header |
+  | Controls | placeholder, nothing built |
+
+  The game hosts its settings as `rtx.dusklight.game.*` options and polls them
+  every frame; readouts come back as `rtx.dusklight.env.*`. Full write-up:
+  `dxvk-remix/documentation/DusklightOverlay.md`.
+
+  Two game features that were otherwise unreachable in this mode are back:
+  **warp** (plain-English level names, driven from the game's own destination
+  table) and **recording mode** (hides the HUD, silences the music) — the
+  latter previously required editing `config.json` and restarting, and could
+  only be turned *on* that way, never back off while running.
+- **Input no longer falls through an open overlay.** Remix's own
+  `rtx.blockInputToGameInUI` cannot work on this setup: it sends a window
+  message across the **32-bit bridge**, which a 64-bit game loading `d3d9.dll`
+  directly never receives. The bridge now carries the intent instead
+  (`rtx.dusklight.uiActive` → `PADBlockInput`), which also suppresses the held
+  state on release so no key is left stuck down. Turn it off with
+  `rtx.dusklight.blockGameInput = False`.
 - EFB color copies and offscreen passes are real (StretchRect /
   render-target textures); depth-format copies still use a neutral
   white/alpha-0 placeholder, and post-processing (bloom etc.) is skipped by
