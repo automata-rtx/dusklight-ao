@@ -12,6 +12,8 @@
 #include "d/d_kankyo.h"
 #include "m_Do/m_Do_graphic.h"
 #include "dolphin/pad.h"
+#include "d/d_com_inf_game.h"
+#include "dusk/map_loader_definitions.h"
 
 #include <cmath>
 
@@ -98,6 +100,21 @@ float readOptionFloat(const char* key, float fallback) {
     }
 
     return parsed;
+}
+
+int readOptionInt(const char* key, int fallback) {
+    std::string value;
+    if (!readOption(key, value)) {
+        return fallback;
+    }
+
+    char* end = nullptr;
+    const long parsed = std::strtol(value.c_str(), &end, 10);
+    if (end == value.c_str()) {
+        return fallback;
+    }
+
+    return static_cast<int>(parsed);
 }
 
 void initialize() {
@@ -698,6 +715,122 @@ void releaseLocalLights() {
     s_localDebug.drawn = 0;
 }
 
+// Warp, driven from the Remix overlay.
+//
+// The destination table lives here, not there, and duplicating it would guarantee the two drift.
+// So the overlay sends indices and this pushes back the names for whatever those indices select -
+// which means the picker over there can list "Hyrule Field" rather than F_SP121 without either
+// side owning a copy of the other's data.
+void updateWarp() {
+    // Remembered so a commit counter that is already non-zero when the game connects - a game
+    // restart under a Remix that kept running - latches instead of firing a warp nobody asked for.
+    static int s_lastCommit = 0;
+    static bool s_commitPrimed = false;
+
+    const int regionCount = static_cast<int>(gameRegions.size());
+    if (regionCount == 0) {
+        return;
+    }
+
+    const int regionIdx = std::clamp(readOptionInt("rtx.dusklight.warp.regionIndex", 0), 0, regionCount - 1);
+    const RegionEntry& region = gameRegions[regionIdx];
+
+    const int mapCount = static_cast<int>(region.maps.size());
+    const int mapIdx = mapCount > 0
+        ? std::clamp(readOptionInt("rtx.dusklight.warp.mapIndex", 0), 0, mapCount - 1)
+        : 0;
+
+    std::string regionNames;
+    for (int i = 0; i < regionCount; i++) {
+        if (i > 0) {
+            regionNames += '|';
+        }
+        regionNames += gameRegions[i].regionName != nullptr ? gameRegions[i].regionName : "?";
+    }
+    push("rtx.dusklight.env.warpRegions", regionNames);
+
+    std::string mapNames;
+    for (int i = 0; i < mapCount; i++) {
+        if (i > 0) {
+            mapNames += '|';
+        }
+        mapNames += region.maps[i].mapName != nullptr ? region.maps[i].mapName : "?";
+    }
+    push("rtx.dusklight.env.warpMaps", mapNames);
+
+    if (mapCount == 0) {
+        push("rtx.dusklight.env.warpRooms", "");
+        push("rtx.dusklight.env.warpPoints", "");
+        return;
+    }
+
+    const MapEntry& map = region.maps[mapIdx];
+    const int roomCount = static_cast<int>(map.mapRooms.size());
+    const int roomIdx = roomCount > 0
+        ? std::clamp(readOptionInt("rtx.dusklight.warp.roomIndex", 0), 0, roomCount - 1)
+        : 0;
+
+    std::string roomNames;
+    for (int i = 0; i < roomCount; i++) {
+        if (i > 0) {
+            roomNames += '|';
+        }
+        char buffer[16];
+        std::snprintf(buffer, sizeof(buffer), "%d", static_cast<int>(map.mapRooms[i].roomNo));
+        roomNames += buffer;
+    }
+    push("rtx.dusklight.env.warpRooms", roomNames);
+
+    std::string pointNames;
+    int pointCount = 0;
+    if (roomCount > 0) {
+        const RoomEntry& room = map.mapRooms[roomIdx];
+        pointCount = static_cast<int>(room.roomPoints.size());
+        for (int i = 0; i < pointCount; i++) {
+            if (i > 0) {
+                pointNames += '|';
+            }
+            char buffer[16];
+            std::snprintf(buffer, sizeof(buffer), "%d", static_cast<int>(room.roomPoints[i]));
+            pointNames += buffer;
+        }
+    }
+    push("rtx.dusklight.env.warpPoints", pointNames);
+
+    // The stage name is what the warp actually travels on, so it is reported too - the overlay
+    // shows it next to the plain English one as confirmation of where a press will land.
+    push("rtx.dusklight.env.warpStage", map.mapFile != nullptr ? map.mapFile : "");
+
+    const int commit = readOptionInt("rtx.dusklight.warp.commit", 0);
+
+    if (!s_commitPrimed) {
+        s_lastCommit = commit;
+        s_commitPrimed = true;
+        return;
+    }
+
+    if (commit == s_lastCommit) {
+        return;
+    }
+
+    s_lastCommit = commit;
+
+    if (roomCount == 0 || pointCount == 0 || map.mapFile == nullptr) {
+        BridgeLog.warn("warp requested to an incomplete destination; ignoring");
+        return;
+    }
+
+    const RoomEntry& room = map.mapRooms[roomIdx];
+    const int pointIdx = std::clamp(readOptionInt("rtx.dusklight.warp.pointIndex", 0), 0, pointCount - 1);
+    const int layer = std::clamp(readOptionInt("rtx.dusklight.warp.layer", 0), -1, 15);
+
+    BridgeLog.info("warping to {} (room {}, point {}, layer {})", map.mapFile,
+                   static_cast<int>(room.roomNo), static_cast<int>(room.roomPoints[pointIdx]), layer);
+
+    dComIfGp_setNextStage(map.mapFile, room.roomPoints[pointIdx],
+                          static_cast<s8>(room.roomNo), static_cast<s8>(layer));
+}
+
 void updateLocalLights() {
     s_localDebug.drawn = 0;
     s_localDebug.found = 0;
@@ -1155,6 +1288,7 @@ void tick() {
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();
+    updateWarp();
     pushLightStatus();
 #endif
 }
