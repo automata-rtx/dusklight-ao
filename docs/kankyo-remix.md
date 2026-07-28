@@ -37,10 +37,23 @@ Diagnostics are in place that name which of three failure modes it is; reading
 them from a build while stood at a lit torch is the next action, and everything
 after that depends on the answer.
 
-**Also open, in rough order of value:** sky tagging (still the highest-value
-outstanding item — it is the missing fill light *and* the proper fix for the
-night shadow wandering), the night shadow wandering itself, the level-entry
-crash bisect, and the Controls tab, which is a placeholder with nothing in it.
+**Also open, in rough order of value:** the night shadow wandering, the
+level-entry crash bisect, and the Controls tab, which is a placeholder with
+nothing in it.
+
+**Sky tagging is closed, and earlier revisions of this file were wrong about
+it.** It was carried for a while as the highest-value outstanding item, on the
+premise that tagging the game's sky as Sky would supply the missing fill light.
+It cannot: the vrbox is painted by handing the hardware a handful of vertex
+colours rather than by drawing a texture, so there is no distinctive texture
+content for Remix to hash and nothing to tag. That is precisely why
+`rtx.dusklight.atmosphere.skyEnable` generates a sky from those same palette
+colours and registers it as a dome light — **that is the fill light, and it is
+built and tested.** The only part of the old claim that survives concerns the
+sun/moon/star *billboards*, which do carry textures and so could in principle
+be tagged; `rtx.dusklight.game.hideSkyBillboards` removes them outright
+instead, and tagging them is worth revisiting only if you want to keep them
+visible. See open issue 2.
 
 **Two standing constraints that are easy to lose:**
 
@@ -641,8 +654,12 @@ action.
    so anything Remix captures from them as world geometry is an occluder that
    travels with the player — and stars and the moon are the only sky
    billboards drawn at night, which is exactly the asymmetry.
-   `rtx.dusklight.game.hideSkyBillboards` tests it in one click; tagging those
-   textures as Sky is the real fix.
+   `rtx.dusklight.game.hideSkyBillboards` both tests it and fixes it in one
+   click. Unlike the vrbox dome, these billboards do carry textures, so tagging
+   them as Sky is a real alternative that would keep them visible — but only
+   worth the trouble if you want the moon and stars back in shot. Hiding them
+   costs nothing else, because the generated sky already paints that part of
+   the image.
 
 #### Built and CI-green but NEVER RUN
 
@@ -675,10 +692,6 @@ action.
   whether 0.65 strength reads as mood or as a cast.
 - **Mono overlay and composite base weight** — only engage in
   twilight/wolf-senses palettes, never reached.
-- **Sky tagging — still not done.** This remains the single highest-value
-  outstanding item: it is the missing fill light, and it is also the proper
-  fix for open issue 2.
-
 **Promoted out of this list on 2026-07-28:**
 
 - **`game.celestialNoonElevation`** — **tested. Settled at 80.** Deliberately
@@ -991,22 +1004,37 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   100) is ignored for now — applying it would mean a re-create every frame
   for every flickering light. Worth revisiting once the base look is
   calibrated.
-- **Sky (Phase 4 remainder): manual tagging is the right mechanism, and it
-  now fixes two things.** Besides being the missing fill light, it is the
-  proper fix for the night-only wandering shadows: the sun, moon and star
-  billboards sit at a fixed offset from the camera eye, so any of them Remix
-  captures as world geometry is an occluder that travels with the player.
-  Tagging them as Sky moves them into the sky probe, where they belong. The
-  vrbox is drawn by the game with the *main* camera, so
-  `rtx.skyAutoDetect` (which keys on a separate sky camera) is unlikely to
-  catch it; Remix's texture tagging is. One-time setup in the Remix dev
-  menu (texture categories → Sky): tag the vrbox sky dome, both cloud
-  layers (kumo), the horizon haze (kasumi) and sun/moon billboard
-  textures. Once tagged, the sky raster draws land in Remix's sky probe
-  *with their TEV tints* — i.e. kankyo's per-palette sky colours reach
-  reflections and GI automatically; scale with `rtx.skyBrightness`.
-  Programmatic tagging was evaluated and rejected for now: it would
-  require reproducing Remix's exact texture-content hash game-side.
+- **Sky (Phase 4 remainder): SUPERSEDED — this paragraph described tagging,
+  which turned out to be impossible.** Left in place, struck through, because
+  it was the plan of record for a while and its failure is the reason the
+  generated sky exists.
+
+  > ~~Manual tagging is the right mechanism, and it now fixes two things.
+  > Besides being the missing fill light, it is the proper fix for the
+  > night-only wandering shadows… One-time setup in the Remix dev menu
+  > (texture categories → Sky): tag the vrbox sky dome, both cloud layers
+  > (kumo), the horizon haze (kasumi) and sun/moon billboard textures. Once
+  > tagged, the sky raster draws land in Remix's sky probe *with their TEV
+  > tints*… scale with `rtx.skyBrightness`.~~
+
+  **Why it cannot work.** Remix categorises by hashing *texture content*. The
+  vrbox, the cloud layers and the horizon haze are not textured draws at all —
+  the game paints them by handing the hardware a handful of vertex colours,
+  which is the whole point of kankyo's per-palette sky sets. There is no
+  texture, so there is no hash, so there is no category to put it in. No amount
+  of dev-menu work reaches it, and neither would programmatic tagging.
+
+  **What replaced it:** Phase B1. The same palette colours cross the bridge as
+  numbers, Remix builds a lat-long dome from them and registers it as a dome
+  light (`rtx.dusklight.atmosphere.skyEnable`), and the game's own dome is
+  switched off (`rtx.dusklight.game.hideVrbox`). That is the fill light, it is
+  tested, and it gets kankyo's colours into reflections and GI by a route that
+  never depended on hashing anything. `rtx.skyBrightness` is irrelevant under
+  it — use `atmosphere.skyIntensity`.
+
+  The one live remnant is the sun/moon/star billboards, which *are* textured
+  and so could be tagged. `hideSkyBillboards` removes them instead; see open
+  issue 2.
 - **Owner test feedback (first bloom/fog session), to address:**
   - Dusklight bloom renders and tracks time of day, but doesn't yet look
     like the game's — calibration pass pending (threshold scale vs. the
@@ -1301,8 +1329,11 @@ stretch goal.
 - ⬜ **HDR threshold calibration table per area** — largely obviated by the
   move to display space, since the threshold now has a fixed meaning. Revisit
   only if areas still disagree.
-- ⬜ **Sky tagging** — the outstanding item that matters most. It is the
-  missing fill light and the proper fix for the night occluder issue.
+- ✅ **Sky tagging** — closed as impossible, and replaced. The game's sky dome
+  carries no texture for Remix to hash, so it can never be categorised; the
+  generated dome light (Phase B1) supplies the fill light instead, and it is
+  tested. See the superseded Phase 4 bullet above for why this was carried as
+  the top item for as long as it was.
 
 ### CI coverage note
 The fork's workflow only built `main` and `release/**`, so a `claude/**`

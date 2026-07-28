@@ -156,13 +156,23 @@ derived the same way Remix derives it for a legacy D3D9 light. Tune with
 Dusklight tab. Keep `rtx.fallbackLightMode = 1` so the fallback light
 yields to them.
 
-**Sky setup (one-time):** tag the vrbox textures as Sky in the Remix dev
-menu (texture categories): sky dome, both cloud layers, horizon haze, and
-the sun/moon billboards. The vrbox uses the main camera, so
-`rtx.skyAutoDetect` won't reliably catch it — texture tagging will. Once
-tagged, the sky renders into Remix's sky probe with kankyo's palette tints
-(so time-of-day sky colour reaches reflections/GI); adjust with
-`rtx.skyBrightness`.
+**Sky setup — do not tag textures.** An earlier revision of this document
+told you to tag the vrbox as Sky in the Remix dev menu. That does not work
+and cannot be made to: the vrbox is painted from a handful of vertex colours
+with no texture bound, so Remix has no texture content to hash and there is
+nothing to put in a category. Use the generated sky instead — it reads the
+same kankyo palette colours over the bridge, builds a lat-long dome and
+registers it as a dome light, which is where the sky fill light comes from:
+
+```
+rtx.dusklight.atmosphere.skyEnable = True
+rtx.dusklight.game.hideVrbox      = True   # or you will see both skies
+rtx.skyAutoDetect                 = None   # or a second, dimmer sky rasterizes behind it
+```
+
+All three together, or not at all. `rtx.skyBrightness` stops mattering once
+this is on — it scales the LDR probe that the dome light replaces; use
+`rtx.dusklight.atmosphere.skyIntensity` (6.0) instead.
 
 Notes:
 
