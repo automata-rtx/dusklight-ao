@@ -1126,6 +1126,15 @@ void tick() {
             game.remixHideVrbox.setValue(hideVrbox);
         }
 
+        // The game's own recording mode. Its settings screen is never drawn in this rendering
+        // mode, so config.json was previously the only way to reach it - and a one way trip,
+        // since nothing in the running game could turn it back off.
+        const bool recording = readOptionBool("rtx.dusklight.game.recordingMode",
+                                              game.recordingMode.getValue());
+        if (recording != game.recordingMode.getValue()) {
+            game.recordingMode.setValue(recording);
+        }
+
 
         const float noonElevation =
             readOptionFloat("rtx.dusklight.game.celestialNoonElevation",
