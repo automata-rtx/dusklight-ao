@@ -822,7 +822,10 @@ void updateWarp() {
 
     const RoomEntry& room = map.mapRooms[roomIdx];
     const int pointIdx = std::clamp(readOptionInt("rtx.dusklight.warp.pointIndex", 0), 0, pointCount - 1);
-    const int layer = std::clamp(readOptionInt("rtx.dusklight.warp.layer", 0), -1, 15);
+    // Same bounds the game's own warp menu uses. -1 means "you pick", which is the default and
+    // nearly always right; the game folds anything at or above 15 into the same thing, so 14 is
+    // the last layer that means itself.
+    const int layer = std::clamp(readOptionInt("rtx.dusklight.warp.layer", -1), -1, 14);
 
     BridgeLog.info("warping to {} (room {}, point {}, layer {})", map.mapFile,
                    static_cast<int>(room.roomNo), static_cast<int>(room.roomPoints[pointIdx]), layer);
