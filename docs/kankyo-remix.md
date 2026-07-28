@@ -758,10 +758,17 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
     without acting, so a game restarting under a still-running Remix does not
     teleport on connect.
   - **Layer `-1`, not `0`.** `dComIfGp_setNextStage` folds `>= 15` to `-1` but
-    **nothing folds 0 to -1** — 0 is a real layer. The game's own warp menu
-    (`src/dusk/ui/warp.cpp`) defaults to `kMinLayer = -1`; ours initially
-    defaulted to 0, which would have landed in the wrong version of any stage
-    whose default layer is not 0. Fixed; bounds `[-1, 14]` on both sides.
+    **nothing folds 0 to -1** — 0 is a real layer. Ours initially defaulted to
+    0, which would have landed in the wrong version of any stage whose default
+    layer is not 0. Fixed; bounds `[-1, 14]` on both sides.
+
+    Re-checked 2026-07-28 after the default was questioned: the game's own warp
+    menu uses -1 in **all four** places it touches the layer — the
+    `WarpSelectionState` initializer (`src/dusk/ui/warp.cpp:20`),
+    `reset_selection` (`:109`), the picker list (`:292`) and every
+    `clamp_indices` path — with `kMinLayer = -1`, `kMaxLayer = 14` (`:12-13`).
+    There is no site where Dusklight defaults the warp layer to 0, so matching
+    the game means -1.
   - **Recording mode** is now a live toggle. It is a game setting whose only
     other route was editing `config.json` and restarting — and only in one
     direction, since a value set there could not be turned back off while
