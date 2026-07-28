@@ -11,6 +11,7 @@
 #include "dusk/settings.h"
 #include "d/d_kankyo.h"
 #include "m_Do/m_Do_graphic.h"
+#include "dolphin/pad.h"
 
 #include <cmath>
 
@@ -1143,6 +1144,12 @@ void tick() {
             game.celestialNoonElevation.setValue(noonElevation);
         }
     }
+
+    // Remix's own input blocking sends a message across the 32 bit bridge, which a 64 bit game
+    // loading its DLL directly never receives - so an open overlay has always let input straight
+    // through to the game. Aurora already has the switch for it, and it suppresses the held state
+    // on release so nothing is left stuck down; it just needed telling.
+    PADBlockInput(readOptionBool("rtx.dusklight.uiActive", false));
 
     resyncIfDropped();
     pushKankyoState();
