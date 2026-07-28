@@ -74,6 +74,7 @@ const CelestialLightDebug& celestialDebug();
 // this Remix sees no game light at all indoors or at night.
 struct LocalLightsDebug {
     bool enabled;
+    int found;           // lights the game had registered, before any filtering of ours
     int tracked;         // lights with a live Remix handle
     int drawn;           // drawn into the scene this frame
     uint64_t creates;    // cumulative CreateLight calls

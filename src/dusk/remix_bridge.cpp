@@ -699,6 +699,7 @@ void releaseLocalLights() {
 
 void updateLocalLights() {
     s_localDebug.drawn = 0;
+    s_localDebug.found = 0;
     s_localDebug.enabled = false;
 
     if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
@@ -711,6 +712,23 @@ void updateLocalLights() {
         !dusk::IsGameLaunched) {
         releaseLocalLights();
         return;
+    }
+
+    // Counted before the device gate below, so that a failure there can be told apart from an area
+    // that simply has no lights in it. Those two look identical from a drawn count of zero, which
+    // is exactly the ambiguity that made this hard to diagnose the first time.
+    const dScnKy_env_light_c* envForCount = dKy_getEnvlight();
+
+    for (int i = 0; i < 100; i++) {
+        if (envForCount->pointlight[i] != nullptr) {
+            s_localDebug.found++;
+        }
+    }
+
+    for (int i = 0; i < 5; i++) {
+        if (envForCount->efplight[i] != nullptr) {
+            s_localDebug.found++;
+        }
     }
 
     if (!ensureDeviceRegistered()) {
@@ -737,13 +755,29 @@ void updateLocalLights() {
         tracked.seen = false;
     }
 
-    const dScnKy_env_light_c* env = dKy_getEnvlight();
+    const dScnKy_env_light_c* env = envForCount;
+
+    // The game keeps its lights in two arrays, not one. pointlight is the big one that torches,
+    // braziers, candles and campfires register into; efplight is a separate five slot list used by
+    // chests, a couple of NPCs and the effect system. Only reading the first misses the second
+    // entirely, which is a quiet way to lose lights in exactly the rooms that have the fewest.
+    const LIGHT_INFLUENCE* candidates[105];
+    int candidateCount = 0;
 
     for (int i = 0; i < 100; i++) {
-        const LIGHT_INFLUENCE* influence = env->pointlight[i];
-        if (influence == nullptr) {
-            continue;
+        if (env->pointlight[i] != nullptr) {
+            candidates[candidateCount++] = env->pointlight[i];
         }
+    }
+
+    for (int i = 0; i < 5; i++) {
+        if (env->efplight[i] != nullptr) {
+            candidates[candidateCount++] = env->efplight[i];
+        }
+    }
+
+    for (int c = 0; c < candidateCount; c++) {
+        const LIGHT_INFLUENCE* influence = candidates[c];
 
         float radiance[3];
         if (!localLightRadiance(*influence, radius, scale, radiance)) {
@@ -898,7 +932,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "2");
+    push("rtx.dusklight.env.protocol", "3");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -985,6 +1019,8 @@ void pushLightStatus() {
     push("rtx.dusklight.env.sunElevation", formatFloat(roundTenth(s_celestial.elevation)));
 
     char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.found);
+    push("rtx.dusklight.env.localLightsFound", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.drawn);
     push("rtx.dusklight.env.localLightsDrawn", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
