@@ -1533,6 +1533,43 @@ void dScnKy_env_light_c::setDaytime() {
     mDate = dComIfGs_getDate();
     daytime = dComIfGs_getTime();
 
+    // dusk: the Remix overlay can scrub the clock and pin it, so the same shot can be taken
+    // twice with the sun in exactly the same place. Both go through the game's own machinery
+    // rather than beside it: a requested time is written into daytime like any other
+    // assignment, and the freeze reuses using_time_control_tag, which is what a stage sets
+    // when its sky must not move. That means the freeze takes a branch the game already
+    // tests every frame rather than a second one that would have to be kept in step with it.
+    {
+        const auto& game = dusk::getSettings().game;
+
+        // The requested time and the request to apply it are separate: acting on the value alone
+        // would pin the clock there every frame, and acting on the value *changing* would make
+        // asking twice for the same time silently do nothing the second time. So a counter says
+        // when, exactly as the warp does. The first count seen is latched without acting on it,
+        // so a value left in a config file - or one still sitting in a Remix that outlived a
+        // game restart - never moves the clock by itself.
+        static s32 s_lastTimeCommit = 0;
+        static bool s_timeCommitPrimed = false;
+        const s32 timeCommit = game.timeCommit.getValue();
+
+        if (!s_timeCommitPrimed) {
+            s_lastTimeCommit = timeCommit;
+            s_timeCommitPrimed = true;
+        } else if (timeCommit != s_lastTimeCommit) {
+            s_lastTimeCommit = timeCommit;
+            daytime = std::fmod(std::fmod(game.timeOfDay.getValue(), 360.0f) + 360.0f, 360.0f);
+        }
+
+        // Note this also holds the twilight clock (dark_daytime) and skips the daytime = 0 that
+        // the darkworld branch would otherwise apply, so a freeze carried into the Twilight
+        // Realm keeps the light-world time rather than snapping to midnight. That is what
+        // "frozen" should mean for a comparison shot, but it is not what the game does on its
+        // own, so it is worth knowing before reading anything into a twilight capture.
+        if (game.freezeTime.getValue()) {
+            using_time_control_tag = 1;
+        }
+    }
+
     #if DEBUG
     switch (g_kankyoHIO.time_change) {
     case 0:

@@ -1074,7 +1074,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "3");
+    push("rtx.dusklight.env.protocol", "4");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1099,6 +1099,12 @@ void pushKankyoState() {
 
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
     push("rtx.dusklight.env.bgAmbient", formatColorS10(env->bg_amb_col[0]));
+
+    // The clock, so the overlay's slider can follow the game while nobody is holding it and a
+    // frozen scene can say what it is frozen at. Quantized to a quarter of a degree - one
+    // in-game minute, since the whole day is 360 degrees - because this changes every frame and
+    // every push that gets through takes the Remix API's global lock.
+    push("rtx.dusklight.env.daytime", formatFloatQ(env->daytime, 0.25f));
 
     // Fog and sky, pushed together because the game authors them together: fog_col, the fog
     // distances and every vrbox colour come out of the same palette entry, are picked by the same
@@ -1278,6 +1284,31 @@ void tick() {
                             game.celestialNoonElevation.getValue());
         if (noonElevation != game.celestialNoonElevation.getValue()) {
             game.celestialNoonElevation.setValue(noonElevation);
+        }
+
+        // Clock control. Both are mirrored rather than read at the use site, so setDaytime()
+        // stays free of any knowledge of Remix and keeps working on the backends where this
+        // bridge is inert. The requested time is deliberately carried as a plain value rather
+        // than a commit counter: scrubbing a slider has to be continuous, and setDaytime()
+        // already acts on the change rather than the value.
+        const bool freeze = readOptionBool("rtx.dusklight.game.freezeTime",
+                                           game.freezeTime.getValue());
+        if (freeze != game.freezeTime.getValue()) {
+            game.freezeTime.setValue(freeze);
+        }
+
+        const float requestedTime = readOptionFloat("rtx.dusklight.game.timeOfDay",
+                                                    game.timeOfDay.getValue());
+        if (requestedTime != game.timeOfDay.getValue()) {
+            game.timeOfDay.setValue(requestedTime);
+        }
+
+        // Mirrored after the value it refers to, so the two can never be seen half applied: by
+        // the time a new count is visible the time it asks for already is.
+        const int timeCommit = readOptionInt("rtx.dusklight.game.timeCommit",
+                                             game.timeCommit.getValue());
+        if (timeCommit != game.timeCommit.getValue()) {
+            game.timeCommit.setValue(timeCommit);
         }
     }
 

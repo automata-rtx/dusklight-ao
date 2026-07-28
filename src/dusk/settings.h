@@ -210,6 +210,9 @@ struct UserSettings {
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
         ConfigVar<bool> remixHideVrbox;
+        ConfigVar<bool> freezeTime;
+        ConfigVar<float> timeOfDay;
+        ConfigVar<int> timeCommit;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;

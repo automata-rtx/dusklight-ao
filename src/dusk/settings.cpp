@@ -78,6 +78,12 @@ UserSettings g_userSettings = {
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .remixHideVrbox {"game.remixHideVrbox", false},
+        .freezeTime {"game.freezeTime", false},
+        // Where the clock would go if asked; timeCommit is what asks. Splitting the two means a
+        // value sitting in a config file is inert, and that requesting the same time twice works
+        // the second time.
+        .timeOfDay {"game.timeOfDay", 0.0f},
+        .timeCommit {"game.timeCommit", 0},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
@@ -298,6 +304,9 @@ void registerSettings() {
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideVrbox);
+    Register(g_userSettings.game.freezeTime);
+    Register(g_userSettings.game.timeOfDay);
+    Register(g_userSettings.game.timeCommit);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);
