@@ -58,7 +58,7 @@ visible. See open issue 2.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **3**; skew in either direction has cost an
+   commit point. Protocol is at **4**; skew in either direction has cost an
    evening twice.
 2. **Interactive approval prompts do not work in the owner's environment** —
    they always resolve as "no approval given". Never route anything through
@@ -577,7 +577,7 @@ submodule pin still points there.
 **One standing rule:** the game and the Remix DLL are a single protocol and
 must be built from the same point. Both directions of skew have already cost
 an evening — see "Two protocol bugs" below. The Dusklight tab reports which
-is which. **Protocol is now 3**; when you bump it, bump `kRequiredProtocol` in
+is which. **Protocol is now 4**; when you bump it, bump `kRequiredProtocol` in
 the fork's `showDusklightRemixTab` in the same commit.
 
 **The one thing still broken:** local point lights. See "Open issues" below —
@@ -648,18 +648,57 @@ action.
 2. **Shadow coverage wanders as the camera moves — at night only.**
    Eliminated: the light direction (locking it changes nothing), NRC
    (persists under ReSTIR), and brightness (persists with moon intensity
-   raised). Current hypothesis, with code evidence and untested: the sun,
-   moon and star billboards are drawn at a fixed offset from the camera eye
-   (`dKyr_drawStar`: `moon_pos = camera->view.lookat.eye + envlight->moon_pos`),
-   so anything Remix captures from them as world geometry is an occluder that
-   travels with the player — and stars and the moon are the only sky
-   billboards drawn at night, which is exactly the asymmetry.
-   `rtx.dusklight.game.hideSkyBillboards` both tests it and fixes it in one
-   click. Unlike the vrbox dome, these billboards do carry textures, so tagging
-   them as Sky is a real alternative that would keep them visible — but only
-   worth the trouble if you want the moon and stars back in shot. Hiding them
-   costs nothing else, because the generated sky already paints that part of
-   the image.
+   raised).
+
+   **The moon billboard is the prime suspect, and the numbers are specific
+   enough to be worth writing down.** Read out of `d_kankyo_rain.cpp` and
+   `d_kankyo.cpp` on 2026-07-28:
+
+   | Fact | Value | Source |
+   | :-- | :-- | :-- |
+   | Moon quad edge | **8000 units = 80 m** | `d_kankyo_rain.cpp:2614` (`f32 size = 8000.0f`) |
+   | Distance from the eye | **80000 units = 800 m** | `d_kankyo.cpp:1770-1784`, orbit radius |
+   | Anchored to | **the camera eye** | `d_kankyo_rain.cpp:2431`, `spB4 = camera->view.lookat.eye + envlight->moon_pos` |
+   | Direction it sits in | **the moon's orbital direction** | same, `moon_pos` from `setSunpos` |
+   | Blend | `GX_BM_BLEND`, SRCALPHA / INVSRCALPHA, alpha test `> 0` | `d_kankyo_rain.cpp:2567-2568` |
+   | Moon drawn when | `daytime > 285 || daytime < 67.5` | `dKyr_moon_arrival_check`, `:2284` |
+
+   The direction it sits in is the same direction the distant light comes
+   from — `distant_light.slangh:78` samples at `position - direction·100000`.
+   So every shadow ray cast toward the moon light sets off straight at an
+   80 m quad hanging 800 m away that travels with the player. The set of
+   world points whose moon-direction ray passes through it is a prism of the
+   quad's cross section, offset from the camera: an ~80 m band of "shadow"
+   that slides across the world as you walk. That is the reported symptom
+   almost exactly.
+
+   **Why it is night-only is geometric, not a matter of degree.** There is no
+   equivalent sun quad. `dKyr_drawSun` sets `draw_sun` but the visible sun is
+   the lens-flare system (`dKyr_sun_move`, `lenz_packet`), whose sprites are
+   **250–850 units** and sit near the camera — two orders of magnitude less
+   area, and not planted out along the light direction. So the mechanism
+   simply is not present by day.
+
+   `rtx.dusklight.game.hideSkyBillboards` both tests and fixes this in one
+   click, and costs only the visible moon and stars — the generated sky
+   already paints that part of the image, and the moonlight comes from our own
+   distant light, not from the billboard.
+
+   **Keeping the moon visible is possible.** Unlike the vrbox dome, these
+   billboards are textured, so `rtx.skyBoxTextures` can categorise them, and
+   `InstanceCategories::Sky` is explicitly excluded from visibility rays —
+   `instance_definitions.h:93`, *"Sky excluded as often it should not be traced
+   against when calculating visibility"*. Tagging by hash works independently
+   of `rtx.skyAutoDetect` (`rtx_types.cpp:409` is the explicit path,
+   `:594` the auto one), so `skyAutoDetect = None` does not block it.
+   **Untested caveat:** whether a Sky-tagged draw still renders visibly while
+   our generated dome light has replaced the sky probe is not established —
+   check before relying on it.
+
+   The third option, if the moon is wanted back: draw it into the generated
+   sky texture. It already knows the celestial direction, and a moon painted
+   into the dome is visible, correctly placed, contributes its own light, and
+   is structurally incapable of casting a shadow. Not built.
 
 #### Built and CI-green but NEVER RUN
 
@@ -671,6 +710,15 @@ action.
   change (it is rebuilt by the game and crosses back over the bridge, so a
   frame or two of lag is expected and is not a bug).
 - **Phase C, the physical sky** — implemented, CI green, never seen running.
+- **Time of day scrub and freeze** — landed 2026-07-28, protocol 4, never run.
+  Slider, four presets and Freeze Time in the Warp tab. Test it first: it is
+  the tool every other test on this list wants, since without a stopped clock
+  an A/B pair differs by the sun as well as by the setting under test. Check
+  the slider tracks the game when released, that a preset pressed **twice**
+  works the second time (that is the whole reason for the commit counter), and
+  that Freeze holds both the sun's position and the palette. Its one known
+  wrinkle is deliberate: freezing also holds the Twilight Realm clock and
+  skips the reset to midnight that entering twilight normally does.
 - **The Controls tab** — a placeholder with no functionality at all. Needs live
   key capture, binds crossing the bridge in both directions (the game owns the
   current binds, so the overlay has to read them before it can show them), and
@@ -744,6 +792,43 @@ rather than the game's shadow-light selection). Watch a dawn (daytime
 tick Flip Direction; if that fixes it, the sign belongs in the code.
 
 ### Status log
+
+- **2026-07-28 — the clock is reachable, and it can be stopped.** Bridge
+  protocol **3 → 4**. Warp tab gains a time-of-day slider, four presets
+  (Midnight 0, Sunrise 90, Noon 180, Sunset 270 — the day is 360 degrees, so
+  15 is an hour) and **Freeze Time**.
+
+  Freeze is the one that matters. Every comparison shot taken so far has had a
+  moving sun in it, so part of every measured difference has been the clock
+  rather than the setting under test. There was no way to reach the time of day
+  at all: `timeScale` (`d_kankyo.cpp:2370`) is a frame-delta normalizer, not a
+  speed control, and the game's settings screen is not drawn in this mode.
+
+  Three implementation notes worth keeping, because each replaced a version
+  that would have been subtly wrong:
+
+  1. **Freeze reuses the game's own mechanism.** `using_time_control_tag` is
+     what `d_a_kytag11` sets for a stage whose sky must not move, and
+     `setDaytime` already tests it (`d_kankyo.cpp:1577`). Setting it ourselves
+     means the freeze takes a branch the game exercises every frame rather than
+     a second one beside it that would have to be kept in step. **Consequence
+     to know:** it also holds `dark_daytime` and skips the `daytime = 0` the
+     darkworld branch applies, so a freeze carried into the Twilight Realm
+     keeps the light-world time instead of snapping to midnight. Right for a
+     comparison, not a description of the game.
+  2. **The request is a value plus a counter, not a bare value.** Acting on the
+     value alone pins the clock there every frame and it can never run on;
+     acting on the value *changing* makes asking twice for the same time do
+     nothing the second time — which is exactly what pressing a preset button
+     twice is. Same shape as the warp commit, including latching the first
+     count seen without acting on it.
+  3. **The counter is incremented in the UI, not read off the option.** The
+     warp button does read-modify-write, which is fine for something pressed at
+     most once a frame. A slider fires on many consecutive frames, and
+     read-modify-write only stays monotonic if every deferred set lands before
+     the next read. The slider also only syncs from the game while it is *not*
+     held, or the value coming back over the bridge a frame or two late fights
+     the hand holding it.
 
 - **2026-07-28 — the control plane: a separate F1 overlay, and warp.** Bridge
   protocol **2 → 3**. Full write-up in

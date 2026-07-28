@@ -370,18 +370,28 @@ open-ended linear radiance, and none of them mean what they meant.
   | Tab | Contents |
   | :-- | :-- |
   | Dusklight Remix | everything that changes the image, in collapsible sections, plus a Requirements list naming the Remix options these depend on and an overrides list naming the ones they take over |
-  | Warp | region + level dropdowns by plain-English name, a Warp button, and room/point/layer under a collapsed header |
+  | Warp | region + level dropdowns by plain-English name, a Warp button, room/point/layer under a collapsed header, and the time-of-day controls |
   | Controls | placeholder, nothing built |
 
   The game hosts its settings as `rtx.dusklight.game.*` options and polls them
   every frame; readouts come back as `rtx.dusklight.env.*`. Full write-up:
   `dxvk-remix/documentation/DusklightOverlay.md`.
 
-  Two game features that were otherwise unreachable in this mode are back:
+  Three game features that were otherwise unreachable in this mode are back:
   **warp** (plain-English level names, driven from the game's own destination
-  table) and **recording mode** (hides the HUD, silences the music) — the
-  latter previously required editing `config.json` and restarting, and could
-  only be turned *on* that way, never back off while running.
+  table), **recording mode** (hides the HUD, silences the music) — which
+  previously required editing `config.json` and restarting, and could only be
+  turned *on* that way, never back off while running — and the **clock**.
+
+  The clock is a slider plus Midnight / Sunrise / Noon / Sunset presets and a
+  **Freeze Time** switch. The day is 360 degrees, so 15 is an hour: 0 midnight,
+  90 sunrise, 180 noon, 270 sunset. Nothing else reaches the time of day —
+  `timeScale` in `d_kankyo.cpp` is a frame-delta normalizer, not a speed
+  control. Freeze before shooting any A/B pair, or the sun has moved between
+  the two shots and part of the difference is the clock rather than the setting
+  under test. It reuses `using_time_control_tag`, the same flag `d_a_kytag11`
+  sets for a stage whose sky must not move, so it also holds the Twilight Realm
+  clock and skips the reset to midnight that entering twilight normally does.
 - **Input no longer falls through an open overlay.** Remix's own
   `rtx.blockInputToGameInUI` cannot work on this setup: it sends a window
   message across the **32-bit bridge**, which a 64-bit game loading `d3d9.dll`
