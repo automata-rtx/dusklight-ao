@@ -14,6 +14,14 @@
 #include "dolphin/pad.h"
 #include "d/d_com_inf_game.h"
 #include "dusk/map_loader_definitions.h"
+#include "dusk/action_bindings.h"
+
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_mouse.h>
+
+#include <iterator>
+#include <string>
 
 #include <cmath>
 
@@ -721,6 +729,257 @@ void releaseLocalLights() {
 // So the overlay sends indices and this pushes back the names for whatever those indices select -
 // which means the picker over there can list "Hyrule Field" rather than F_SP121 without either
 // side owning a copy of the other's data.
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+//
+// The overlay shows and drives the game's action binds, and the game owns every part of the
+// decision: it captures the press, resolves the conflict, and pushes back the table that resulted.
+// The overlay only ever displays strings the game sent it.
+//
+// That split is deliberate rather than incidental. The overlay cannot see the whole input picture -
+// it only knows the binds it is handed - so a check made there would happily allow a conflict with
+// something outside the rebindable list. Validating in both places would be worse still: two rules
+// that can disagree today and will certainly drift the first time one of them is edited.
+//
+// Capture works while the overlay is open because PADGetNativeButtonPressed and SDL's keyboard
+// state read the device directly, without consulting the flag PADBlockInput sets. So the input the
+// overlay is busy blocking from the game is still visible to the one piece of the game that needs
+// it, and no carve-out in the blocking was required.
+constexpr ActionBinds kBindActions[] = {
+    ActionBinds::FIRST_PERSON_CAMERA,
+    ActionBinds::CALL_MIDNA,
+    ActionBinds::OPEN_MAP_SCREEN,
+    ActionBinds::TOGGLE_MINIMAP,
+    ActionBinds::OPEN_DUSKLIGHT_MENU,
+    ActionBinds::TURBO_SPEED_BUTTON,
+};
+constexpr int kBindActionCount = static_cast<int>(std::size(kBindActions));
+
+// The stored value means different things per port: an SDL scancode where the port is driven by a
+// keyboard, a native gamepad button otherwise. Both spell "unbound" as -1.
+bool portUsesKeyboard(u32 port) {
+    u32 count = 0;
+    return PADGetKeyButtonBindings(port, &count) != nullptr;
+}
+
+std::string bindDisplayName(int value, bool keyboard) {
+    if (value == PAD_KEY_INVALID) {
+        return "Not Bound";
+    }
+
+    if (keyboard) {
+        switch (value) {
+        case PAD_KEY_MOUSE_LEFT:   return "Mouse Left";
+        case PAD_KEY_MOUSE_MIDDLE: return "Mouse Middle";
+        case PAD_KEY_MOUSE_RIGHT:  return "Mouse Right";
+        case PAD_KEY_MOUSE_X1:     return "Mouse X1";
+        case PAD_KEY_MOUSE_X2:     return "Mouse X2";
+        default: break;
+        }
+        if (value < 0) {
+            return "Unknown";
+        }
+        const char* name = SDL_GetScancodeName(static_cast<SDL_Scancode>(value));
+        return (name != nullptr && name[0] != '\0') ? name : "Unknown";
+    }
+
+    if (value < 0) {
+        return "Unknown";
+    }
+    const char* name = SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(value));
+    return (name != nullptr && name[0] != '\0') ? name : "Unknown";
+}
+
+const char* bindActionName(int index) {
+    if (index < 0 || index >= kBindActionCount) {
+        return "?";
+    }
+    auto& binds = getActionBinds();
+    auto it = binds.find(kBindActions[index]);
+    return it != binds.end() ? it->second.actionName.c_str() : "?";
+}
+
+int bindGetButton(int index, u32 port) {
+    auto& binds = getActionBinds();
+    auto it = binds.find(kBindActions[index]);
+    if (it == binds.end() || it->second.configVars == nullptr) {
+        return PAD_KEY_INVALID;
+    }
+    return it->second.configVars->at(port).getValue();
+}
+
+void bindSetButton(int index, u32 port, int value) {
+    auto& binds = getActionBinds();
+    auto it = binds.find(kBindActions[index]);
+    if (it == binds.end() || it->second.configVars == nullptr) {
+        return;
+    }
+    it->second.configVars->at(port).setValue(value);
+}
+
+// Nothing held anywhere. Waited for after arming, so the click or keypress that armed the capture
+// is not itself captured as the new bind.
+bool bindInputNeutral(u32 port, bool keyboard) {
+    if (keyboard) {
+        int keyCount = 0;
+        const bool* keys = SDL_GetKeyboardState(&keyCount);
+        if (keys != nullptr) {
+            for (int i = 0; i < keyCount; ++i) {
+                if (keys[i]) {
+                    return false;
+                }
+            }
+        }
+        if (SDL_GetMouseState(nullptr, nullptr) != 0) {
+            return false;
+        }
+        return true;
+    }
+
+    return PADGetNativeButtonPressed(port) < 0;
+}
+
+// The first thing held, or PAD_KEY_INVALID for nothing yet.
+int bindPollPress(u32 port, bool keyboard) {
+    if (keyboard) {
+        int keyCount = 0;
+        const bool* keys = SDL_GetKeyboardState(&keyCount);
+        if (keys != nullptr) {
+            for (int i = 0; i < keyCount; ++i) {
+                if (keys[i]) {
+                    return i;
+                }
+            }
+        }
+
+        const u32 mouse = SDL_GetMouseState(nullptr, nullptr);
+        if ((mouse & SDL_BUTTON_LMASK) != 0) { return PAD_KEY_MOUSE_LEFT; }
+        if ((mouse & SDL_BUTTON_MMASK) != 0) { return PAD_KEY_MOUSE_MIDDLE; }
+        if ((mouse & SDL_BUTTON_RMASK) != 0) { return PAD_KEY_MOUSE_RIGHT; }
+        if ((mouse & SDL_BUTTON_X1MASK) != 0) { return PAD_KEY_MOUSE_X1; }
+        if ((mouse & SDL_BUTTON_X2MASK) != 0) { return PAD_KEY_MOUSE_X2; }
+        return PAD_KEY_INVALID;
+    }
+
+    return PADGetNativeButtonPressed(port);
+}
+
+// Displace rather than reject: the new bind is always applied, and whatever else held that button
+// on this port loses it. Rejecting would leave someone pressing a key and watching nothing happen,
+// with no indication of why; displacing is visible, and the action that lost its bind is named in
+// the status line and shows as Not Bound in the list immediately.
+std::string bindApply(int actionIndex, u32 port, int button, bool keyboard) {
+    std::string displaced;
+
+    for (int i = 0; i < kBindActionCount; ++i) {
+        if (i == actionIndex) {
+            continue;
+        }
+        if (bindGetButton(i, port) == button) {
+            bindSetButton(i, port, PAD_KEY_INVALID);
+            if (!displaced.empty()) {
+                displaced += ", ";
+            }
+            displaced += bindActionName(i);
+        }
+    }
+
+    bindSetButton(actionIndex, port, button);
+
+    std::string status = std::string("Bound ") + bindActionName(actionIndex) + " to " +
+                         bindDisplayName(button, keyboard);
+    if (!displaced.empty()) {
+        status += " (displaced " + displaced + ")";
+    }
+    return status;
+}
+
+void updateControls() {
+    // Same shape as the warp and clock commits: act on the counter changing, and latch the first
+    // value seen without acting, so a game restarting under a Remix that kept running does not
+    // arm a capture nobody asked for.
+    static int s_captureCommit = 0;
+    static bool s_capturePrimed = false;
+    static int s_clearCommit = 0;
+    static bool s_clearPrimed = false;
+
+    static bool s_capturing = false;
+    static bool s_sawNeutral = false;
+    static int s_captureAction = 0;
+    static u32 s_capturePort = 0;
+    static std::string s_status = "Idle";
+
+    const u32 port = static_cast<u32>(std::clamp(readOptionInt("rtx.dusklight.bind.port", 0), 0, PAD_CHANMAX - 1));
+    const int action = std::clamp(readOptionInt("rtx.dusklight.bind.actionIndex", 0), 0, kBindActionCount - 1);
+    const bool keyboard = portUsesKeyboard(port);
+
+    std::string actionNames;
+    std::string buttonNames;
+    for (int i = 0; i < kBindActionCount; ++i) {
+        if (i > 0) {
+            actionNames += '|';
+            buttonNames += '|';
+        }
+        actionNames += bindActionName(i);
+        buttonNames += bindDisplayName(bindGetButton(i, port), keyboard);
+    }
+    push("rtx.dusklight.env.bindActions", actionNames);
+    push("rtx.dusklight.env.bindButtons", buttonNames);
+    push("rtx.dusklight.env.bindKeyboard", formatBool(keyboard));
+
+    const int clearCommit = readOptionInt("rtx.dusklight.bind.clearCommit", 0);
+    if (!s_clearPrimed) {
+        s_clearCommit = clearCommit;
+        s_clearPrimed = true;
+    } else if (clearCommit != s_clearCommit) {
+        s_clearCommit = clearCommit;
+        s_capturing = false;
+        bindSetButton(action, port, PAD_KEY_INVALID);
+        s_status = std::string("Cleared ") + bindActionName(action);
+    }
+
+    const int captureCommit = readOptionInt("rtx.dusklight.bind.captureCommit", 0);
+    if (!s_capturePrimed) {
+        s_captureCommit = captureCommit;
+        s_capturePrimed = true;
+    } else if (captureCommit != s_captureCommit) {
+        s_captureCommit = captureCommit;
+        s_capturing = true;
+        s_sawNeutral = false;
+        s_captureAction = action;
+        s_capturePort = port;
+        s_status = std::string("Press a key or button for ") + bindActionName(action) +
+                   " - Escape to unbind";
+    }
+
+    if (s_capturing) {
+        const bool captureKeyboard = portUsesKeyboard(s_capturePort);
+
+        if (!s_sawNeutral) {
+            // The press that armed this is almost certainly still down.
+            if (bindInputNeutral(s_capturePort, captureKeyboard)) {
+                s_sawNeutral = true;
+            }
+        } else {
+            const int pressed = bindPollPress(s_capturePort, captureKeyboard);
+
+            if (captureKeyboard && pressed == SDL_SCANCODE_ESCAPE) {
+                s_capturing = false;
+                bindSetButton(s_captureAction, s_capturePort, PAD_KEY_INVALID);
+                s_status = std::string("Cleared ") + bindActionName(s_captureAction);
+            } else if (pressed != PAD_KEY_INVALID) {
+                s_capturing = false;
+                s_status = bindApply(s_captureAction, s_capturePort, pressed, captureKeyboard);
+                BridgeLog.info("bind: {}", s_status);
+            }
+        }
+    }
+
+    push("rtx.dusklight.env.bindCapturing", formatBool(s_capturing));
+    push("rtx.dusklight.env.bindStatus", s_status);
+}
+
 void updateWarp() {
     // Remembered so a commit counter that is already non-zero when the game connects - a game
     // restart under a Remix that kept running - latches instead of firing a warp nobody asked for.
@@ -1074,7 +1333,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "4");
+    push("rtx.dusklight.env.protocol", "6");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1269,6 +1528,14 @@ void tick() {
             game.remixHideVrbox.setValue(hideVrbox);
         }
 
+        // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys
+        // Remix a stable hash for each blade - see dGrass_packet_c::draw.
+        const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",
+                                                  game.remixPerBladeGrass.getValue());
+        if (perBladeGrass != game.remixPerBladeGrass.getValue()) {
+            game.remixPerBladeGrass.setValue(perBladeGrass);
+        }
+
         // The game's own recording mode. Its settings screen is never drawn in this rendering
         // mode, so config.json was previously the only way to reach it - and a one way trip,
         // since nothing in the running game could turn it back off.
@@ -1323,6 +1590,7 @@ void tick() {
     updateCelestialLight();
     updateLocalLights();
     updateWarp();
+    updateControls();
     pushLightStatus();
 #endif
 }

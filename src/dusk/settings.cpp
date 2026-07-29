@@ -72,12 +72,13 @@ UserSettings g_userSettings = {
         .remixMoonIntensity {"game.remixMoonIntensity", 0.3f},
         .remixCelestialAngle {"game.remixCelestialAngle", 2.0f},
         .remixLocalLights {"game.remixLocalLights", false},
-        .remixLocalLightIntensity {"game.remixLocalLightIntensity", 1.0f},
-        .remixLocalLightRadius {"game.remixLocalLightRadius", 4.0f},
+        .remixLocalLightIntensity {"game.remixLocalLightIntensity", 19.0f},
+        .remixLocalLightRadius {"game.remixLocalLightRadius", 10.0f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .remixHideVrbox {"game.remixHideVrbox", false},
+        .remixPerBladeGrass {"game.remixPerBladeGrass", false},
         .freezeTime {"game.freezeTime", false},
         // Where the clock would go if asked; timeCommit is what asks. Splitting the two means a
         // value sitting in a config file is inert, and that requesting the same time twice works
@@ -304,6 +305,7 @@ void registerSettings() {
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideVrbox);
+    Register(g_userSettings.game.remixPerBladeGrass);
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
     Register(g_userSettings.game.timeCommit);
