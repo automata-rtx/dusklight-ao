@@ -1727,12 +1727,24 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   > tagged, the sky raster draws land in Remix's sky probe *with their TEV
   > tints*… scale with `rtx.skyBrightness`.~~
 
-  **Why it cannot work.** Remix categorises by hashing *texture content*. The
-  vrbox, the cloud layers and the horizon haze are not textured draws at all —
-  the game paints them by handing the hardware a handful of vertex colours,
-  which is the whole point of kankyo's per-palette sky sets. There is no
-  texture, so there is no hash, so there is no category to put it in. No amount
-  of dev-menu work reaches it, and neither would programmatic tagging.
+  **Why it cannot work — CORRECTED 2026-07-29, this reasoning was wrong.** The
+  claim was: Remix categorises by hashing *texture content*; the vrbox is
+  painted with vertex colours and has no texture; therefore no hash, therefore
+  no category, therefore neither dev-menu nor programmatic tagging can reach it.
+
+  The premise is true and the conclusion does not follow. Texture hashing is one
+  of **three** routes to a category, and the other two need no texture:
+  `rtx.skyBoxGeometries` tags a captured draw by its **geometry** hash
+  (`rtx_types.cpp:416`), and `REMIXAPI_INSTANCE_CATEGORY_BIT_SKY` declares the
+  category outright on geometry submitted through the Remix API
+  (`remix_c.h:457`). Full write-up and the evidence in
+  `dxvk-remix/documentation/DusklightAtmosphere.md` §14.9.
+
+  **This does not undo Phase B1.** The generated dome light was the right answer
+  for a different reason than the one recorded — it gives HDR sky radiance that
+  feeds GI, which a rasterized sky probe does not — and it is tested and working.
+  What is retired is the *argument*, not the architecture. Anyone reaching for
+  "we cannot tag that, it has no texture" should check §14.9 first.
 
   **What replaced it:** Phase B1. The same palette colours cross the bridge as
   numbers, Remix builds a lat-long dome from them and registers it as a dome
