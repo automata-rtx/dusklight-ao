@@ -79,7 +79,7 @@ lineage without being asked.
 
 **The game and the Remix DLL are a single protocol.** The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol` in
-`showDusklightRemixTab`. **Protocol is at 5.** Build both sides from the same
+`showDusklightRemixTab`. **Protocol is at 6.** Build both sides from the same
 commit point, and when you bump one, bump the other in the same commit. Skew in
 either direction has already cost an evening twice — the Dusklight tab reports
 which side is old, so read it before debugging anything else.

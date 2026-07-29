@@ -122,7 +122,7 @@ land these, only the decision:
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **5**; skew in either direction has cost an
+   commit point. Protocol is at **6**; skew in either direction has cost an
    evening twice.
 2. **Interactive approval prompts do not work in the owner's environment** —
    they always resolve as "no approval given". Never route anything through
@@ -836,7 +836,7 @@ new observations (issues 5 and 6).
 **One standing rule:** the game and the Remix DLL are a single protocol and
 must be built from the same point. Both directions of skew have already cost
 an evening — see "Two protocol bugs" below. The Dusklight tab reports which
-is which. **Protocol is now 5**; when you bump it, bump `kRequiredProtocol` in
+is which. **Protocol is now 6**; when you bump it, bump `kRequiredProtocol` in
 the fork's `showDusklightRemixTab` in the same commit.
 
 **The one live rendering defect:** the fog medium dims the generated sky
