@@ -58,7 +58,16 @@ exempts the sky, the volumetric half does not) and it is the thing to fix next.
 
 **Also open:** the wolf-senses overlay rendering as an opaque white disc
 (issue 5), the world-space UI billboards appearing only intermittently
-(issue 6), the ambient grade, and the Controls tab.
+(issue 6 — the torch-flame half is **pinned**, awaiting a test window), grass
+shading under Remix (issue 7), greyscale rupees and hearts (issue 8), the
+ambient grade, and the Controls tab.
+
+**Issues 7 and 8 share a root with the white-ground defect** and are the ones
+with the clearest next step: aurora hands Remix a single reconstructed material
+stage, and anything the game expressed in a *later* stage — a konst tint, a
+blend weight — is either dropped to identity or misread as the finished albedo.
+Issue 8 has a verified cause and a named fix; issue 7 needs one switch built
+before its remaining symptoms can even be measured cleanly.
 
 **Sky tagging is closed, and earlier revisions of this file were wrong about
 it.** It was carried for a while as the highest-value outstanding item, on the
@@ -1122,6 +1131,118 @@ Added **2026-07-29**:
       boundary is confirmed and the question becomes which look is wanted.
    3. `rtx.drawCallRange` to bisect the frame and find the injection index
       directly from the dev menu, with no rebuild.
+
+   **PINNED 2026-07-29 — the flame half is parked, and it probably is not this
+   issue.** The owner corrected a load-bearing detail: the "bright white circle"
+   at a lit torch is **not** the animated fire, it is a separate circular
+   sprite. The torch emits three named resources at one position —
+   `ZI_J_O_fire_a.jpa` (`0x100`), `ZI_J_O_fire_b.jpa` (`0x101`) and
+   `ZI_J_O_kagerou.jpa` (`0x103`, heat haze), `d_a_ep.cpp:423-431`.
+
+   Since `fire_a` and `fire_b` are emitted back to back at the same position in
+   the same frame, an injection boundary cannot stably separate them — so the
+   flame's problem is a property of that draw rather than its frame position.
+   The competing explanation is that the white circle **is** a fire sprite
+   saturated to white by aurora's compare-mode TEV approximation, the same
+   defect already suspected for the white ground. Full write-up, including the
+   two experiments that decide ownership (read the aurora `warn_once` log at a
+   torch; A/B raw D3D9 against Remix), is in
+   `aurora-ao/docs/dx9/unsupported-effects.md` §"PINNED — the torch flame".
+
+   The targeting-arrow half of this issue is unaffected and still belongs here.
+
+7. **Grass patches shade wrongly under Remix; fine in raw D3D9.** Reported
+   2026-07-29: blades glow in the dark, or come out too dark, with a very
+   delayed lighting response, generally reading as a different material from the
+   rest of the scene. Replacing the billboard blades with real geometry is
+   blocked because their hashes are unstable.
+
+   **The hash instability has a specific cause and an existing fix path.**
+   `dGrass_packet_c::draw` (`src/d/actor/d_grass.inc`) has two paths. The
+   **batched** one — the default for standing grass — merges every blade into
+   four buckets and emits them as a single immediate-mode
+   `GXBegin(GX_TRIANGLES, GX_VTXFMT1, GX_AUTO)` stream under
+   `GXLoadPosMtxImm(identity)`, i.e. all blades pre-transformed into world space
+   in one dynamic vertex stream. Its positions change whenever *any* blade
+   moves, is cut, regrows or changes bucket, and Remix's
+   `rtx.geometryAssetHashRuleString` defaults to
+   `positions,indices,geometrydescriptor` — so the asset hash churns constantly
+   and the whole patch is one unidentifiable instance.
+
+   The **per-blade** path, currently used only for regrowing blades, calls
+   `GXCallDisplayList(mp_Mkusa_9q_DL, …)` with a per-blade
+   `GXLoadPosMtxImm(get_model_mtx(...))`: static geometry plus a transform,
+   which gives a **stable hash and one instance per blade**. The Remix-friendly
+   path already exists in the same function; the batching optimisation is what
+   takes it away.
+
+   **Proposed, not built:** a `rtx.dusklight.game.*` switch forcing the
+   per-blade path under Remix. It costs exactly what the batching saves, so it
+   belongs behind a switch — but it is the prerequisite for everything else
+   wanted here, since stable hashes are what make the blades taggable,
+   replaceable and temporally stable. That also addresses the delayed lighting
+   directly: an instance whose identity churns every frame cannot carry denoiser
+   or ReSTIR history.
+
+   **The other two symptoms are separate and worth testing independently:**
+
+   - **Glow in the dark.** First suspect is emissive blend translation.
+     `rtx.enableEmissiveBlendModeTranslation` defaults **true**, and
+     `rtx_instance_manager.cpp:718-760` promotes several blend factor pairs to
+     `kAlphaEmissive` — notably `SRC_ALPHA / ONE` and premultiplied
+     `ONE / ONE_MINUS_SRC_ALPHA`. Plain `SRC_ALPHA / ONE_MINUS_SRC_ALPHA` is
+     *not* promoted, so this hinges on the blend mode in grass's material
+     display list, which is a binary blob and has to be read at runtime rather
+     than from source. **One-click test:** toggle
+     `rtx.enableEmissiveBlendModeTranslation = False` and see whether the glow
+     stops; if it does, the fix is to tag grass rather than to disable the
+     feature globally, since real particles want it.
+   - **Too dark / distinct shading.** Aurora's Remix hint stage advertises
+     `colour = TEXTURE * DIFFUSE`, `alpha = TEXTURE` (`dx9_tev.cpp:928-960`), so
+     grass albedo becomes texture × raw vertex colour. Aurora never evaluates
+     the GX light model (`D3DRS_LIGHTING = FALSE`), while grass is drawn with
+     GX lighting *on* — `GXSetChanCtrl(GX_COLOR0, GX_TRUE, GX_SRC_VTX, …)` plus
+     a per-blade `GXSetChanAmbColor` from kankyo. So a vertex colour that was
+     authored as one input to a lighting equation is being consumed as finished
+     albedo. Worth checking whether grass ends up in Remix's alpha-blend
+     transparency path rather than as an opaque cutout — a blended surface is
+     lit quite differently from an opaque one, which would explain "distinct
+     from the rest of the scene" on its own.
+
+8. **Rupees and hearts render greyscale under Remix; correct in raw D3D9.**
+   Reported 2026-07-29. **Cause identified, verified by reading both sides.**
+
+   Remix rebuilds a material from one texture stage plus a small set of
+   decodable args. It understands `D3DTA_TFACTOR`; it **never reads
+   `D3DTSS_CONSTANT` / `D3DTA_CONSTANT` anywhere in its capture path**. Args it
+   cannot decode become `RtTextureArgSource::None`, which the shader resolves to
+   **identity — `vec3(1.0)` for colour**. So a dropped tint does not darken or
+   error; it turns white, leaving the luminance texture showing through. That is
+   precisely "greyscale rupee".
+
+   Two aurora behaviours feed it, both in `dx9_tev.cpp`:
+
+   - `materialize()` (`:296-322`) spends the per-draw `TFACTOR` first and then
+     routes further konsts to the per-stage `D3DTSS_CONSTANT` — the slot Remix
+     cannot see.
+   - The **Remix hint stage** (`:928-960`) advertises `TEXTURE * DIFFUSE` with
+     **no konst term at all**, so a colour that comes from a konst rather than
+     from vertex colour is discarded by the hint itself. This is the likelier of
+     the two for a rupee.
+
+   **Fix directions, neither built:** have the hint modulate by `TFACTOR` when
+   the colour is konst-driven and vertex colour is absent; or emit a following
+   `MODULATE(CURRENT|TEMP, TFACTOR)` stage, which Remix *does* decode —
+   `rtx.enableMultiStageTextureFactorBlending` defaults **true** and
+   `isTextureFactorBlendingEnabled` matches exactly that pattern against
+   `CURRENT` or `TEMP` (`d3d9_rtx.cpp:944-980`). More generally: when a material
+   tint can go to either constant slot, prefer TFACTOR, because only one of the
+   two survives into Remix.
+
+   This is the same root as the white-ground defect seen from the other side —
+   both are "Remix reads one stage and aurora's later stages carry meaning" —
+   and it is worth fixing before any texture-replacement work, since a greyscale
+   albedo would get baked into replacements.
 
 #### Built and CI-green but NEVER RUN
 
