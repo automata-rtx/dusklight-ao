@@ -112,3 +112,15 @@ instantaneously at noon and shadows can snap around. **80–85 is the safer
 ceiling** if anything derives a stable azimuth from the light — which a
 shadow map's view matrix does, since its up vector degenerates as the light
 direction approaches vertical.
+
+## Settled value
+
+**80.** Tested in game 2026-07-28 and chosen by the owner, deliberately short
+of 90 for the reason above. It is in the recommended `rtx.conf` in
+`dx9-fixed-function.md` as `rtx.dusklight.game.celestialNoonElevation = 80`.
+The code default stays at 59.036 so that a build with no configuration behaves
+exactly like vanilla.
+
+This is one of the few things in the Remix work that is **tested and settled**
+rather than built-and-unrun — see `kankyo-remix.md` §"Picking this up cold" for
+which side of that line everything else sits on.

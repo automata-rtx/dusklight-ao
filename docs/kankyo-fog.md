@@ -174,7 +174,9 @@ per-object variation is flattened — recorded as compromise C7 in the Remix doc
 Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
-All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. Protocol **2**.
+All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
+protocol **2**; the wire has since advanced to **4** (3 = overlay + warp, 4 = the clock) and gained more keys. The
+authoritative list is `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 
 | Key | Source |
 | :-- | :-- |
@@ -247,11 +249,14 @@ density into the medium instead.
 | :-- | :-- |
 | Mechanisms in §1–§4, §6 | verified in code, 2026-07-27 |
 | Per-area values in §3 | **not measured** — needs the §5 readout pass |
-| Bridge keys in §5 | implemented 2026-07-27, protocol 2, **untested** |
-| Sky dome suppression (`game.remixHideVrbox`) | implemented, **untested** — covers both `d_a_vrbox` and `d_a_vrbox2` |
+| Bridge keys in §5 | implemented 2026-07-27 at protocol 2, **tested good 2026-07-28** as part of atmosphere phase A |
+| Sky dome suppression (`game.remixHideVrbox`) | implemented, **tested good 2026-07-28** with the generated sky — covers both `d_a_vrbox` and `d_a_vrbox2` |
 | Renderer side | `dxvk-remix/documentation/DusklightAtmosphere.md` |
 
-**The calibration pass was skipped.** Phase 0 in the renderer doc was never run, so the constants the fog derivation uses
-are analytic guesses. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
+**The calibration pass was skipped, then run.** Phase 0 was finally run on 2026-07-28 and phases A/B were confirmed good
+in game (owner: *"a massive, frankly monumental success"*). One constant was wrong — `skyIntensity` needed 1.0 → 6.0,
+because the palette is sRGB-decoded before it is scaled. `zHalfMin` and `froxelRangeScale` were not reported wrong, but
+the dense-fog regime that would actually challenge them (Lake Hylia in the morning, Goron Mines) was never visited, so
+they remain unchallenged rather than confirmed. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
 pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
 live in stage data rather than in source.

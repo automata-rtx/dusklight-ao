@@ -411,10 +411,30 @@ open-ended linear radiance, and none of them mean what they meant.
 
 ## Branches
 
-This work lives on the `Fixed-Function` branch of `dusklight-ao` and
-`aurora-ao` — the integration branch, which only advances by merging the
-working branch `Fixed-Function-dev` at tested checkpoints. All development
-happens on `Fixed-Function-dev` (both repos; dusklight's `extern/aurora`
-pin tracks the matching aurora branch). The lineage includes the GPU
-skinning work and shares its fork-point ancestry with `ao`/`main`, so
-mainline updates can be backported by merge/cherry-pick.
+**All three repos — `dusklight-ao`, `aurora-ao` and `dxvk-remix` — develop on
+`Fixed-Function-dev`.** Dusklight's `extern/aurora` pin tracks the matching
+aurora branch. The dusklight/aurora lineage includes the GPU skinning work and
+shares its fork-point ancestry with `ao`/`main`, so mainline updates can be
+backported by merge/cherry-pick.
+
+`Fixed-Function` (dusklight and aurora only — the Remix fork has none and needs
+none) is the **integration** branch. It advances only by merging
+`Fixed-Function-dev` at checkpoints that are both CI-green *and* tested in game
+by the owner. It is deliberately well behind the dev branch — as of 2026-07-28,
+37 commits in dusklight and 4 in aurora — because most of what has landed since
+the last checkpoint is CI-green but not yet run. **That gap is the design, not
+drift to close.** When you do merge: aurora dev → aurora `Fixed-Function`
+first, then dusklight, so the pinned aurora SHA is reachable.
+
+Remote sessions are often configured to push to a generated `claude/*` branch.
+Those are disposable and get deleted; **mirror every such push to
+`Fixed-Function-dev` in the same turn.** Each repo's `CLAUDE.md` is the
+standing authorization. Before deleting any branch, check it is contained:
+`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
+This is not theoretical — dxvk-remix's `Fixed-Function-dev` was found 19
+commits behind its `claude/*` branch on 2026-07-28, right before that branch
+was to be deleted.
+
+`claude/thin-gbuffer-authored-normals-wgqupt` (dusklight + aurora) is
+**unrelated, unmerged work** in neither `main` nor `Fixed-Function-dev`. Leave
+it alone.

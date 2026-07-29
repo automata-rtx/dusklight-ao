@@ -1,9 +1,16 @@
 # Dusklight platform direction: Deferred renderer vs RTX Remix — notes & GPU-skinning findings
 
-Status notes captured on branch `claude/gpu-skinning-72pstj` (dusklight-ao +
-aurora-ao). This records the strategic discussion about evolving Dusklight's
-renderer and the concrete findings from the GPU-skinning investigation, so the
-context is not lost.
+Status notes originally captured on branch `claude/gpu-skinning-72pstj`
+(dusklight-ao + aurora-ao). This records the strategic discussion about
+evolving Dusklight's renderer and the concrete findings from the GPU-skinning
+investigation, so the context is not lost.
+
+> **That branch name is historical.** `claude/*` branches are disposable and
+> get deleted. The GPU-skinning work itself is **not** lost — the
+> `Fixed-Function` lineage is based on it, which is why Remix gets rest-pose
+> vertices plus GPU-side skinning and therefore stable mesh hashing (§4). All
+> current development is on `Fixed-Function-dev` in all three repos; see
+> `CLAUDE.md`.
 
 ---
 

@@ -14,8 +14,8 @@ paths.
 
 ## Picking this up cold
 
-*Updated 2026-07-28. Read this, then "Verification state", then stop — the rest
-is reference.*
+*Updated 2026-07-28. Read this and "Verification state", then stop — the rest
+is reference. §"Test session playbook" is what to do next.*
 
 **The three repos and what each holds:**
 
@@ -25,21 +25,35 @@ is reference.*
 | `aurora-ao` | GX→D3D9 backend, at `extern/aurora` | `docs/dx9/` |
 | `dxvk-remix` | the Remix fork | `documentation/DusklightAtmosphere.md` (rendering), `documentation/DusklightOverlay.md` (control plane) |
 
-**Where the work stands.** The atmosphere (one medium derived from the game's
-palette driving fog, sky and sky-light together) is **built and tested good**
-through phases A and B; phase C, the physical Hillaire sky blended against the
-palette, is built and CI-green but has never been run. The control plane — a
-separate F1 overlay hosted by Remix, with warp — is built and CI-green;
-warp has not been run either.
+**All three use `Fixed-Function-dev` as the working branch.** Each repo's
+`CLAUDE.md` carries the full rule, including the standing authorization to
+mirror a session's generated `claude/*` branch to `Fixed-Function-dev` on every
+push. Do that without being asked — `claude/*` branches get deleted.
 
-**The one thing that is broken:** local point lights. Open issue 0 below.
-Diagnostics are in place that name which of three failure modes it is; reading
-them from a build while stood at a lit torch is the next action, and everything
-after that depends on the answer.
+**Where the work stands.**
 
-**Also open, in rough order of value:** the night shadow wandering, the
-level-entry crash bisect, and the Controls tab, which is a placeholder with
-nothing in it.
+| Piece | State |
+| :-- | :-- |
+| Atmosphere phases A + B — one medium driving fog, sky and sky-light from the game's palette | **tested in game, owner's verdict "a massive, frankly monumental success"** |
+| Dusklight bloom (four fidelity fixes + the 100× composite fix) | **tested, "massively improved"** |
+| Sun/moon distant light | **tested**, produces "interesting results"; day case believed correct |
+| `disableFrustumCulling`, `celestialNoonElevation` (settled at 80) | **tested** |
+| Bridge, F1 overlay, tab-drives-game | **tested end to end** |
+| Phase C — physical Hillaire sky blended against the palette | built, CI-green, **never run** |
+| Warp | built, CI-green, **never run** |
+| Time-of-day scrub + freeze | built, CI-green, **never run** |
+| `hideSkyBillboards` | built, CI-green, **never run** |
+| Ambient grade, mono overlay | built, off by default, **never reached** |
+| Controls tab | **placeholder, nothing built** |
+| **Local point lights** | **BROKEN — open issue 0** |
+
+**The one broken thing:** local point lights. Diagnostics name which of three
+failure modes it is; reading them from a build while stood at a lit torch is
+the next action and everything after depends on the answer.
+
+**Also open:** the night shadow wandering (open issue 2 — now has a measured
+prime suspect, the 80 m camera-locked moon quad), the level-entry crash bisect,
+and the Controls tab.
 
 **Sky tagging is closed, and earlier revisions of this file were wrong about
 it.** It was carried for a while as the highest-value outstanding item, on the
@@ -63,6 +77,140 @@ visible. See open issue 2.
 2. **Interactive approval prompts do not work in the owner's environment** —
    they always resolve as "no approval given". Never route anything through
    one. See `CLAUDE.md` at the repo root for the workarounds.
+
+---
+
+## Test session playbook
+
+*The backlog is not "what to build" — it is "what to run". Six things are
+built and CI-green and have never been seen working. This section is the
+recipe, so a session does not have to be reconstructed from scratch.*
+
+### Baseline `rtx.conf`
+
+One file for the whole session; every test below is a delta done live in the
+overlay. (The block in `dx9-fixed-function.md` sets `rtx.volumetrics.enable`
+twice — faithful-fog mode then atmosphere mode. Last wins, so it works, but
+this is the unambiguous version.)
+
+```ini
+rtx.useNewGuiInputMethod = False
+
+rtx.dusklight.atmosphere.enable    = True
+rtx.volumetrics.enable             = True
+rtx.dusklight.atmosphere.skyEnable = True
+rtx.dusklight.game.hideVrbox       = True
+rtx.skyAutoDetect                  = None
+
+rtx.bloom.enable    = True
+rtx.bloom.dusklight = True
+rtx.bloom.steps     = 6
+
+rtx.dusklight.game.celestialNoonElevation = 80
+rtx.dusklight.game.disableFrustumCulling  = True
+
+rtx.autoExposure.enabled = False   # every judgement below is a brightness judgement
+rtx.fallbackLightMode    = 1
+```
+
+**Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
+→ *"Device registered with the Remix API: yes"*. If it says the game build is
+older than the Remix build, the two came from different commits — rebuild both
+before testing anything, or every result is noise.
+
+### 1. Clock — do this first, it is the tool the rest want
+
+Warp tab → **Time of day**. No config needed.
+
+The day is **360 degrees**: 15 = an hour, 0 midnight, 90 sunrise, 180 noon,
+270 sunset. Moon/sun handover ≈ 67–75 (`dKyr_moon_arrival_check`).
+
+- Slider should track the game when released, and not fight you while held.
+- **Press Noon twice in a row** — it must work the second time. That is the
+  entire reason for the commit counter; if it fails once, the counter is not
+  crossing.
+- Tick **Freeze Time**: the sun must stop *and* the palette must stop drifting.
+
+Freeze is what makes every A/B below worth anything. Without it the sun has
+moved between the two shots.
+
+### 2. Warp
+
+Warp tab. No config.
+
+- Region **Hyrule Field** → Level list shows **1** entry. Region **Ordon** →
+  **9**. That is the list-refresh test (a frame or two of lag is expected).
+- Level **Ordon Spring** → the text right of the button reads `-> F_SP104`.
+- Press **Warp**. Log should show
+  `warping to F_SP104 (room 1, point 0, layer -1)`.
+
+| Symptom | Meaning |
+| :-- | :-- |
+| Warp button greyed out | rooms or points list empty for that level — record which |
+| Nothing happens, no log line | commit counter not crossing |
+| Nothing happens, log line present | `dComIfGp_setNextStage` fired and the game ignored it — game-side |
+| Warps by itself on connect | commit priming failed — report immediately |
+
+### 3. Local point lights — the only real bug
+
+```ini
+rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working torch is unmistakable
+```
+
+Warp to **Forest Temple → Forest Temple** (`D_MN05`). `d_a_ep` registers its
+light on actor init regardless of whether the flame is lit
+(`d_a_ep.cpp:935`), so `found` should be non-zero if the array is read at all.
+Ordon Village at night and the Kakariko bonfire are backups.
+
+**Tick "Local Lights Enabled" and leave it ticked before reading.** `found` is
+counted before the enable gate but `running` is set after it, so reading with
+the box unticked always reports "not running its light submission" — expected,
+not the bug.
+
+Then read `Registered by the game: N   drawn this frame: N   tracked: N` and
+the paragraph under it. The three outcomes and what each means are in open
+issue 0. If `drawn > 0` but the room is still dark, that is intensity rather
+than plumbing — try **Local Intensity 19** (the alternative reading of the
+attenuation curve, `remix_bridge.cpp:640-670`).
+
+### 4. `hideSkyBillboards` — night shadow wandering
+
+Freeze the clock at **~330** (night), outdoors, somewhere the wandering has
+been seen. Stand still, rotate a full circle, shoot. Toggle Geometry → *Hide
+Sky Billboards*, repeat from the same spot.
+
+Success: shadow coverage stops moving with the camera. Cost: the moon and stars
+vanish, which is fine — the generated sky paints that region and the moonlight
+comes from the distant light, not the billboard.
+
+Failure (still wanders) is a **useful** result: it kills the measured
+hypothesis in open issue 2 and points at Remix's denoiser or probe rather than
+at captured geometry.
+
+### 5. Phase C — physical sky
+
+```ini
+rtx.dusklight.atmosphere.physicalSky = True
+```
+
+The blend is driven by **sun elevation**, not the clock: below 2° entirely the
+game's palette, above 28° entirely simulated. So freeze at **180 (noon)** and
+A/B `physicalMaxWeight` **0 ↔ 1** — 0 must be pixel-identical to Phase B.
+
+Look at **the shaded side of a wall**, not at the sky: the point of Phase C is
+shadow fill, and the sky itself barely changes at noon.
+
+| Symptom | Likely cause |
+| :-- | :-- |
+| **Inverted gradient** (bright overhead, dark at horizon) | coordinate convention — `cartesianDirectionToLatLongSphere` uses `acos(direction.z)` (+Z pole) against a Y-up world. `DusklightAtmosphere.md` §14.4 |
+| Black sky | LUT never populated, or transmittance collapsed |
+| Magenta / NaN / fireflies | type conversion in the LUT path (§14.5) |
+| Banding | LUT resolution or format |
+| Flickers frame to frame | frame-latching (§14.6) |
+| Fine, but no fill-light change | dome light not picking up the physical result |
+
+Then watch a sunset through the 28° → 2° band. A visible pop at either
+threshold means the ramp needs widening.
 
 ---
 
@@ -1025,7 +1173,15 @@ tick Flip Direction; if that fixes it, the sign belongs in the code.
   vanilla's constant actor sun diffuse (126,110,89 normalized); moon is a
   cool counterpart. With `rtx.fallbackLightMode = 1` (NoLightsPresent) the
   fallback light yields automatically once this light exists.
-- **Phase 4 (local lights): implemented, untested.** The bridge mirrors
+- **Phase 4 (local lights): implemented, untested.**
+  > **Superseded — this is now open issue 0, a known bug, not merely
+  > untested.** Two things also changed after this entry was written: the
+  > bridge reads `efplight[0..4]` as well (the game keeps local lights in
+  > **two** arrays, and reading only the first quietly loses lights in exactly
+  > the rooms that have fewest), and three diagnostics were added that name
+  > which failure mode is in play. Read open issue 0, not this paragraph.
+
+  The bridge mirrors
   `g_env_light.pointlight[0..99]` — everything registered through
   `dKy_plight_set`: torches, braziers, lanterns, campfires, Midna, bomb
   flashes, and the dungeon lights — into Remix sphere lights, created and
