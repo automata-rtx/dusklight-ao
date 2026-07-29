@@ -96,18 +96,51 @@ clear several of these if they are done in the right order.*
 | :-- | :-- | :-- |
 | Per-blade grass, `rtx.dusklight.game.perBladeGrass` | `d_grass.inc`, protocol 5 | Do blade hashes hold still (check the texture categorization screen); does the delayed lighting go away; what does it cost in open field |
 | Albedo tint into Remix, greyscale rupees/hearts | aurora `dx9_tev.cpp` | Do rupees and hearts get their colour back; nothing else regressed to a wrong colour |
+| **Fog on sky, `atmosphere.skyFogMode`** — two candidate fixes plus the untreated baseline | fork composite | **Which of Exempt and Weighted to keep. The other is meant to be deleted.** Lake Hylia morning is the scene that separates them |
+| Painted moon, `atmosphere.skyMoonEnable` | fork `dusklight_sky.comp.slang` | Does it read as the moon at 5.7°, does it fade cleanly across the dawn/dusk handover, does it fire only at night |
+| Controls tab, protocol 6 | fork + `remix_bridge.cpp` | Does capture work while the overlay blocks input; does displace name the right action; does the neutral-wait stop the Rebind click being captured |
+| Local light defaults now **19 / 10** | shipped both sides | Only that nothing else assumed the old 1.0 / 4.0 |
 
-**Settled by testing but not yet shipped as defaults** — no new test needed to
-land these, only the decision:
+**One decision still open, needing no test:** whether
+`rtx.dusklight.game.localLights` should default **on** now that it works. The
+values are shipped; the on/off default is not.
 
-- `localLightIntensity` **19**, `localLightRadius` **10** (open issue 3).
-- Whether `localLights` should default on now that it works.
+**Settled and shipped, listed so nobody re-litigates:** `localLightIntensity`
+19 and `localLightRadius` 10 are now the defaults on both sides.
 
 **Blocked on a fix rather than on a test window:**
 
 - **Phase C, the physical sky.** Cannot be judged until open issue 4 is fixed —
   part of what you would be looking at is the fog eating the sky.
 - **The ambient grade.** Should not be tuned against a wrongly-lit sky either.
+
+**Next up, and it needs no test window — start here.** Resubmitting the
+world-space UI elements through the Remix API tagged
+`REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI`. Decided 2026-07-29 as the route for
+open issue 6: it addresses the defect directly instead of restructuring the
+frame around the injection boundary, and the mechanism is now proven to exist
+(§14.9 in `DusklightAtmosphere.md`).
+
+What it needs, in order:
+
+1. **Survey what deserves the tag**, not just the targeting arrow. The fire
+   billboards are the obvious co-suspect — they appear and vanish with it — and
+   there are likely others. `REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI` is one of
+   a list (`remix_c.h:454`), so the survey should ask which category each
+   candidate wants, not only which ones are broken.
+2. **Confirm the submission shape**: `CreateMesh` once per distinct geometry,
+   `DrawInstance` per frame with the transform and category flags. The bridge
+   already does exactly this shape for lights, so the lifecycle questions —
+   when to create, when to destroy, what to key identity on — have answers to
+   copy rather than invent.
+3. **Decide what happens to the original draw.** Submitting a second copy
+   without suppressing the game's own draw would double it.
+
+Two things already known that constrain the design: the arrow is a real
+perspective-projected J3D model rather than UI (`d_attention.cpp:1619`), so
+"resubmit it as UI" is a genuine change of category and not a correction of a
+misclassification; and a captured draw cannot be tagged after RTX injection, so
+the API route is what sidesteps that entirely.
 
 **Pinned, needs a specific setup:**
 
