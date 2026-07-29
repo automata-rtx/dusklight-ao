@@ -1029,13 +1029,99 @@ Added **2026-07-29**:
    wrongly, which suggests it is being lit as ordinary world geometry when it
    is meant to be unlit UI.
 
-   **Neither is visible in Remix's texture categorization screen**, which is
-   the most useful clue in the report: whatever draws them is not reaching the
-   categorization path at all, so they cannot currently be tagged as UI or
-   emissive even by hand. That points at the capture/draw path rather than at
-   categorization, which makes this at least partly an aurora question.
-   Nothing diagnosed yet; recorded so the next session starts from the pattern
-   rather than rediscovering it.
+   **Neither is visible in Remix's texture categorization screen.**
+
+   **Investigated 2026-07-29. The mechanism is Remix's RTX injection boundary,
+   and it is not an aurora bug.** A further clue narrowed it: this only ever
+   happens **while the letterbox black bars are up** — Z-targeting or a dungeon
+   door transition — though bars do not guarantee it.
+
+   **The boundary, verified in the fork:**
+
+   | Step | Code |
+   | :-- | :-- |
+   | The first **orthographic, z-write-disabled** draw on the primary RT is classified UI | `isRenderingUI()`, `d3d9_rtx.cpp:559` |
+   | That classification returns `Rasterized` **and sets `triggerRtxInjection`** | `makeDrawCallType`, `:519` |
+   | From then on, `internalPrepareDraw` early-returns for **every remaining draw in the frame** — `Ignore` if `rtx.skipDrawCallsPostRTXInjection`, else `PreserveDrawCallAndItsState` | `:576-591` |
+
+   A post-injection draw never enters the raytraced scene, so **its textures are
+   never categorised**. That is precisely the "not in the categorization screen"
+   symptom, and it means **no dev-menu tagging can ever reach these draws** —
+   the same shape of trap as the vrbox sky, arrived at by a different route.
+   `rtx.uiTextures` is checked inside `isRenderingUI()`, which is only reached
+   *before* injection, so tagging is unavailable exactly when it would be needed.
+
+   **Where these two draws sit in the frame** (`m_Do/m_Do_graphic.cpp`):
+
+   | Line | Draw | Projection |
+   | :-- | :-- | :-- |
+   | 2257 | `drawCopy2D` | 2D |
+   | 2642 | `drawXluList2DScreen` | perspective (explicitly re-set) |
+   | **2689** | **`drawOpaList3Dlast` — the targeting cursor** | **perspective** |
+   | **2714** | **`particle_draw2Dgame`** (JPA group 14) | **ortho** |
+   | 2717 | `trimming()` — the letterbox bars | **ortho + `GXSetZMode(GX_FALSE, …)`** |
+   | 2722 | `calcFade` | ortho |
+   | 2824+ | HUD — `draw2DOpa` / `OpaTop` / `Xlu` | ortho |
+
+   `trimming()` at 2717 is a textbook `isRenderingUI()` trigger: ortho, z-write
+   off, on the primary RT. It is also **where the letterbox is defined** — the
+   bars are sized from `view_port->scissor` against the viewport, and on PC the
+   guard around it is compiled out, so "bars visible" is exactly "the D3D9
+   scissor is smaller than the viewport".
+
+   **Two things this settles.**
+
+   1. **The targeting cursor is not UI, and never was.** `d_attention.cpp:1619`
+      creates a real J3D model (`NoticeCursor`, yellow and red variants with
+      BCK/BPK/BRK/BTK animations) and submits it with `dComIfGd_setList3Dlast()`
+      under a perspective projection. So "it goes dim under shadow" is the
+      *correct and expected* result of path-tracing it — a game-side fact, not a
+      Remix misclassification. `DB_LIST_3D_LAST` has exactly one producer in the
+      whole game and one draw site.
+   2. **The cursor and the flames are not one system.** The flames are JPA
+      "simple" particles (`dComIfGp_particle_setSimple` — `d_a_ep.cpp:495`; the
+      Forest Temple's are `d_a_obj_lv1Candle00`), and they are *not* in the
+      group-14 2D pass. So "they appear together" is not a shared code path; it
+      is a shared *position relative to the injection boundary*.
+
+   **Ruled out, each with evidence:**
+
+   - **2D draw list overflow.** `dDlst_list_c::set` silently drops when full
+     (`d_drawlist.cpp:1989`, `if (p_start >= p_end) return 0;`) and the lists are
+     fixed-size (`mp2DXlu[32]`, `mp2DOpa[64]`, `mp2DOpaTop[16]`, `mpCopy2D[4]`).
+     A real hazard, and worth remembering — but every caller is HUD, menu or
+     message code, not these two.
+   - **`GXPeekZ`.** Aurora implements it via a depth-snapshot path
+     (`lib/dolphin/gx/GXCpu2Efb.cpp`). Neither element uses it; the sun lens
+     flare and the insects do.
+   - **`GX_DEBUG_GROUP`.** Calls through in both configurations
+     (`include/helpers/gx_helper.h:24`) — it is not swallowing the draws.
+
+   **What is still open, stated plainly:** the boundary explains the
+   intermittency, the "appear together", and the categorization absence. It does
+   **not** yet explain why the letterbox specifically helps — `trimming()` sits
+   *after* both draws, so the bars cannot themselves be the trigger that saves
+   them. Something else that correlates with letterbox must be issuing an ortho
+   z-write-off draw *earlier* in those frames. The transition wipe
+   (`dDlst_list_c::wipeIn` / `calcWipe`), the fade, and `drawCopy2D` at 2257 are
+   the candidates.
+
+   **Also worth flipping around before assuming which way is the bug.** For a UI
+   arrow, "correct" probably means flat and unlit — which is the *rasterized*,
+   post-injection path. "Dim under shadow" is the *path-traced*, pre-injection
+   one. So the arrow may be behaving correctly precisely when it lands **after**
+   injection, and the goal is to get it there reliably rather than to rescue it
+   into the raytraced scene.
+
+   **Three experiments that would settle it, cheapest first:**
+
+   1. Log `m_drawCallID` at the moment injection triggers, with and without
+      bars. Two numbers, and it is settled completely.
+   2. `rtx.skipDrawCallsPostRTXInjection = False` — post-injection draws still
+      rasterize. If the arrow and flames become reliably visible but flat, the
+      boundary is confirmed and the question becomes which look is wanted.
+   3. `rtx.drawCallRange` to bisect the frame and find the injection index
+      directly from the dev menu, with no rebuild.
 
 #### Built and CI-green but NEVER RUN
 
