@@ -41,21 +41,28 @@ exactly this situation and links everything else.
   by merging/cherry-picking **into** `Fixed-Function-dev`. Neither is otherwise
   related to the FF DX9 work.
 
-**Standing authorization — this file is the authority for it.** A remote
-session is often configured to push to a generated branch name like
-`claude/<something>-<hash>`. That is fine, but **every such push must also be
-mirrored to `Fixed-Function-dev` in the same repo, in the same turn**:
+**The auto-mirror authorization was REVOKED by the owner on 2026-07-29.**
+Earlier revisions of this file told a session to push its `claude/*` branch and
+then immediately mirror it to `Fixed-Function-dev` without being asked. **Do not
+do that any more.** The owner merges to `Fixed-Function-dev` themselves, at
+milestones they choose:
 
 ```
-git push -u origin <session-branch>
-git push origin HEAD:Fixed-Function-dev
+git push -u origin <session-branch>        # yes
+git push origin HEAD:Fixed-Function-dev    # NO - the owner does this
 ```
 
-Do not wait to be asked. `claude/*` branches are disposable and get deleted;
-`Fixed-Function-dev` is where the work actually lives. Two `claude/*` branches
-have already been retired this way
-(`claude/dusklight-dx9-fixed-function-6uoy92`,
-`claude/dusklight-bloom-remix-3zx834`) with nothing lost, because of this rule.
+Push only to the session branch. If a session branch is about to be deleted and
+its work is not yet merged, **say so and stop** rather than mirroring it.
+
+**The containment check survives the revocation, and matters more because of
+it.** Before anyone deletes a branch:
+`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
+This has already caught a near-miss: dxvk-remix's `Fixed-Function-dev` was
+**19 commits behind** its `claude/*` branch, so deleting that branch would have
+destroyed the entire atmosphere, overlay, warp and clock work. With auto-mirror
+off, that gap is now the *normal* state between milestones rather than an
+anomaly — so the check is no longer a formality.
 
 **Before anyone deletes a branch, verify it is contained:**
 `git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.

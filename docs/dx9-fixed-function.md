@@ -94,6 +94,25 @@ rtx.dusklight.game.celestialNoonElevation = 80
 # leaks through the gap. Tested - it works and visibly helps.
 rtx.dusklight.game.disableFrustumCulling = True
 
+# Local point lights. Tested 2026-07-29 and these are the values that work -
+# neither is the built-in default yet. 19 is not a taste value: it is the
+# derived reading of the game's own attenuation curve (mPow is where the light
+# reaches 1/11 of peak, not where it ends), and testing picked it independently
+# as the minimum giving usable light. Radius 10 clears the Forest Temple light
+# posts without clipping. The two interact - radiance is solved to reach the
+# same distance, so a bigger emitter needs less of it - so set them as a pair.
+rtx.dusklight.game.localLights          = True
+rtx.dusklight.game.localLightIntensity  = 19
+rtx.dusklight.game.localLightRadius     = 10
+
+# Stops the game's sun/moon/star billboards. Tested 2026-07-29: this is what
+# fixes shadow coverage wandering with the camera at night. The billboards are
+# anchored to the camera eye, so the 80 m moon quad hanging 800 m away along
+# the moon's own direction was occluding every shadow ray cast toward the moon
+# light. Costs the visible moon and stars; the generated sky paints that region
+# and the moonlight comes from the distant light, not the billboard.
+rtx.dusklight.game.hideSkyBillboards = True
+
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
 
@@ -124,15 +143,28 @@ every dawn/dusk/night transition run off `dComIfGs_getTime()` and
 elevations barely move either (14.8° → 15.0° at the extreme), so those
 transitions look the same.
 
-**Sky billboards (diagnostic).** The sun, moon and stars are drawn at a
+**Sky billboards — recommended ON.** The sun, moon and stars are drawn at a
 fixed offset from the camera eye (`dKyr_drawStar`:
 `moon_pos = camera->view.lookat.eye + envlight->moon_pos`), so as world
 geometry they travel with the player. Anything Remix captures from them as
-ordinary geometry becomes an occluder that follows the camera — which would
-only show at night, since stars and the moon are the only sky billboards
-drawn then. Tag those textures as **Sky** to fix it properly;
-`game.remixHideSkyBillboards` skips drawing them entirely, which is a
-one-click way to test whether that is what you are looking at.
+ordinary geometry becomes an occluder that follows the camera — which only
+shows at night, since stars and the moon are the only sky billboards drawn
+then.
+
+**Tested 2026-07-29: this is real, and `hideSkyBillboards` fixes it.** Shadow
+coverage that wandered as the camera moved stops wandering. The measurement
+predicted it — an 80 m quad 800 m away, sitting in the same direction the moon
+light arrives from, intersects a moving band of every shadow ray cast toward
+the moon — so the cause is confirmed rather than merely masked.
+
+An earlier revision of this section suggested tagging the billboard textures as
+Sky "to fix it properly". That is still *possible* — unlike the vrbox dome
+these draws are textured — but it is no longer the recommendation: it keeps a
+real quad in the world and depends on an untested assumption about whether a
+Sky-tagged draw still renders while the generated dome has replaced the sky
+probe. If you want the moon back, the clean route is to paint it into the
+generated dome, where it is visible, correctly placed, contributes its own
+light and cannot cast a shadow. Not built.
 
 **Frustum culling (off by default).** The game drops geometry outside the
 camera's view, which is right for a rasterizer and wrong for a path tracer:
@@ -145,16 +177,29 @@ saving, so it is off by default. Remix's own
 `rtx.antiCulling.object.enable` is the cheaper half measure: it retains
 objects it has already seen rather than stopping them being dropped.
 
-**Local lights (game-side, off by default).** Aurora does not forward GX
-lights to D3D9, so Remix sees no light from the game itself; outdoors the
-sun/moon light covers that, but interiors and night fall through to Remix's
-fallback light. `rtx.dusklight.game.localLights` mirrors the game's live
-point-light list — torches, braziers, lanterns, campfires, Midna, bomb
-flashes and the dungeon lights — into Remix sphere lights, with intensity
-derived the same way Remix derives it for a legacy D3D9 light. Tune with
-`rtx.dusklight.game.localLightIntensity` and `…localLightRadius` in the
-Dusklight tab. Keep `rtx.fallbackLightMode = 1` so the fallback light
-yields to them.
+**Local lights (game-side, off by default — turn them on).** Aurora does not
+forward GX lights to D3D9, so Remix sees no light from the game itself;
+outdoors the sun/moon light covers that, but interiors and night fall through
+to Remix's fallback light. `rtx.dusklight.game.localLights` mirrors the game's
+live point-light list — torches, braziers, lanterns, campfires, Midna, bomb
+flashes and the dungeon lights — into Remix sphere lights. Keep
+`rtx.fallbackLightMode = 1` so the fallback light yields to them.
+
+**Tested 2026-07-29 and the shipped defaults are too conservative.** The
+intensity default of 1.0 uses `mPow` as the light's reach. It is not: `mPow` is
+where the game's attenuation curve falls to 1/11 of peak, so the light carries
+about 4.3× further, which is ~19× the radiance. Testing found 19 to be the
+minimum giving usable light — the derived number and the measured one agree.
+Radius 10 (default 4) clears the Forest Temple light posts without the emitter
+clipping through them.
+
+Set them together: the radiance is solved so the light still reaches the same
+distance, so a larger emitter needs less of it, and changing one alone moves
+the brightness as well as the softness.
+
+Still unmeasured: the churn cost in a busy room. Still ignored: `mFluctuation`,
+the per-light flicker, because applying it would mean re-creating every
+flickering light every frame.
 
 **Sky setup — do not tag textures.** An earlier revision of this document
 told you to tag the vrbox as Sky in the Remix dev menu. That does not work
