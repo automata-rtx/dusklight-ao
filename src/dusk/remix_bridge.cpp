@@ -1074,7 +1074,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "4");
+    push("rtx.dusklight.env.protocol", "5");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1267,6 +1267,14 @@ void tick() {
                                               game.remixHideVrbox.getValue());
         if (hideVrbox != game.remixHideVrbox.getValue()) {
             game.remixHideVrbox.setValue(hideVrbox);
+        }
+
+        // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys
+        // Remix a stable hash for each blade - see dGrass_packet_c::draw.
+        const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",
+                                                  game.remixPerBladeGrass.getValue());
+        if (perBladeGrass != game.remixPerBladeGrass.getValue()) {
+            game.remixPerBladeGrass.setValue(perBladeGrass);
         }
 
         // The game's own recording mode. Its settings screen is never drawn in this rendering

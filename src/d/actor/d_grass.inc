@@ -10,6 +10,7 @@
 
 #include "d/d_camera.h"
 #include "f_op/f_op_camera_mng.h"
+#include "dusk/settings.h"
 
 #include "dusk/frame_interpolation.h"
 
@@ -756,13 +757,93 @@ void dGrass_packet_c::draw() {
         dKy_GfFog_tevstr_set(tevstr);
         dKy_setLight_nowroom_grass(tevstr->room_no, 0.0f);
 
+        // Per blade rather than batched, for RTX Remix.
+        //
+        // The batch path below merges every blade in the room into one immediate mode stream
+        // under an identity position matrix, i.e. all blades pre-transformed into world space in
+        // a single dynamic vertex buffer. That is the right shape for a rasterizer and the wrong
+        // one for Remix: its asset hash includes vertex positions by default, so the whole patch
+        // is one instance whose hash changes the moment any blade sways, is cut or regrows. An
+        // instance with no stable identity cannot be tagged in the dev menu, cannot be replaced
+        // with authored geometry, and carries no denoiser or ReSTIR history - which is what makes
+        // grass lighting lag behind the rest of the scene.
+        //
+        // Drawing each blade from its display list with its own position matrix gives static
+        // geometry plus a transform, so the hash is stable and every blade is its own instance.
+        // It costs exactly what the batching saves, which is why it is a switch and not the
+        // default.
+        const bool perBlade = dusk::getSettings().game.remixPerBladeGrass.getValue();
+        if (perBlade) {
+            GXSetVtxDescv(l_vtxDescList);
+            for (dGrass_data_c* blade = first; blade != NULL; blade = blade->mp_next) {
+                if (cLib_checkBit<u8>(blade->field_0x01, 2)) {
+                    continue;  // clipped
+                }
+                // Regrowing blades are drawn by the block further down, which already handles
+                // their per blade TEVREG2 alpha ramp. Leave them to it rather than duplicating it.
+                if (blade->field_0x02 < -1) {
+                    continue;
+                }
+
+                const bool kusaTex = blade->field_0x05 <= 3 || blade->field_0x05 >= 10;
+                const bool cut = blade->field_0x02 < 0;
+
+                if (kusaTex) {
+                    GXLoadTexObj(&mTexObj_l_M_kusa05_RGBATEX, GX_TEXMAP0);
+                    if (lightCount <= 2) {
+                        GXCallDisplayList(mp_kusa9q_14_DL, m_kusa9q_DL_14_size);
+                    } else {
+                        GXCallDisplayList(mp_kusa9q_DL, m_kusa9q_DL_size);
+                    }
+                } else {
+                    GXLoadTexObj(&mTexObj_l_M_Hijiki00TEX, GX_TEXMAP0);
+                    GXCallDisplayList(l_Tengusa_matDL, 0xA0);
+                }
+
+                // The material display list restores ambient from the register, so the per blade
+                // ambient goes there - the batch path bakes the same value into vertex colours
+                // instead, which is the other half of why its geometry cannot hold still.
+                reg1.a = cut ? 0 : shine;
+                GFSetTevColorS10(GX_TEVREG1, reg1);
+                GXSetChanAmbColor(GX_COLOR0A0, blade_amb_color(blade, tevstr));
+                GFSetTevColorS10(GX_TEVREG2, {0, 0, 0, 0});
+
+                Mtx modelMtx;
+                GXLoadPosMtxImm(get_model_mtx(blade->m_modelMtx, modelMtx), GX_PNMTX0);
+                GXLoadNrmMtxImm(j3dSys.getViewMtx(), 0);
+
+                if (cut) {
+                    GXCallDisplayList(mp_Mkusa_9q_cDL, m_Mkusa_9q_cDL_size);
+                } else if (kusaTex) {
+                    GXCallDisplayList(mp_Mkusa_9q_DL, m_Mkusa_9q_DL_size);
+                } else {
+                    GXCallDisplayList(l_M_TenGusaDL, 0xC0);
+                }
+            }
+
+            // Restore the register ambient the batch path would have left, so the regrowing
+            // block below starts from the same state either way.
+            reg1.a = shine;
+            GFSetTevColorS10(GX_TEVREG1, reg1);
+        }
+
         GXSetVtxDescv(l_batchVtxDescList);
         GXLoadPosMtxImm(identity, GX_PNMTX0);
         GXLoadNrmMtxImm(j3dSys.getViewMtx(), 0);
 
         // buckets: (kusa05 vs tengusa) x (standing vs cut)
         bool hasRegrowing = false;
-        for (int bucket = 0; bucket < 4; bucket++) {
+        if (perBlade) {
+            // The blades above are already drawn; the regrowing ones are not, and the block
+            // below still needs to know whether any exist.
+            for (dGrass_data_c* blade = first; blade != NULL; blade = blade->mp_next) {
+                if (!cLib_checkBit<u8>(blade->field_0x01, 2) && blade->field_0x02 < -1) {
+                    hasRegrowing = true;
+                    break;
+                }
+            }
+        }
+        for (int bucket = 0; !perBlade && bucket < 4; bucket++) {
             const bool kusaTex = bucket < 2;
             const bool cut = (bucket & 1) != 0;
             const batch::LeafTemplate& tpl =

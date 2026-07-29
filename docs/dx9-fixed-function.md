@@ -113,6 +113,13 @@ rtx.dusklight.game.localLightRadius     = 10
 # and the moonlight comes from the distant light, not the billboard.
 rtx.dusklight.game.hideSkyBillboards = True
 
+# Grass, one draw per blade instead of one batch per room. Off by default
+# because it costs exactly what the batching saves - a draw call per blade,
+# paid on the CPU in dense grass. Turn it on when you want grass that Remix can
+# identify: stable per-blade hashes make the blades taggable, replaceable with
+# authored geometry, and able to hold denoiser history.
+#rtx.dusklight.game.perBladeGrass = True
+
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
 

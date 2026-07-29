@@ -86,7 +86,7 @@ visible. See open issue 2.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **4**; skew in either direction has cost an
+   commit point. Protocol is at **5**; skew in either direction has cost an
    evening twice.
 2. **Interactive approval prompts do not work in the owner's environment** —
    they always resolve as "no approval given". Never route anything through
@@ -800,7 +800,7 @@ new observations (issues 5 and 6).
 **One standing rule:** the game and the Remix DLL are a single protocol and
 must be built from the same point. Both directions of skew have already cost
 an evening — see "Two protocol bugs" below. The Dusklight tab reports which
-is which. **Protocol is now 4**; when you bump it, bump `kRequiredProtocol` in
+is which. **Protocol is now 5**; when you bump it, bump `kRequiredProtocol` in
 the fork's `showDusklightRemixTab` in the same commit.
 
 **The one live rendering defect:** the fog medium dims the generated sky
@@ -1176,13 +1176,17 @@ Added **2026-07-29**:
    path already exists in the same function; the batching optimisation is what
    takes it away.
 
-   **Proposed, not built:** a `rtx.dusklight.game.*` switch forcing the
-   per-blade path under Remix. It costs exactly what the batching saves, so it
-   belongs behind a switch — but it is the prerequisite for everything else
-   wanted here, since stable hashes are what make the blades taggable,
-   replaceable and temporally stable. That also addresses the delayed lighting
-   directly: an instance whose identity churns every frame cannot carry denoiser
-   or ReSTIR history.
+   **BUILT 2026-07-29 — `rtx.dusklight.game.perBladeGrass`, protocol 5.** Off by
+   default, because it costs exactly what the batching saves. Turning it on
+   draws each blade from its display list with its own position matrix, so every
+   blade is a separate instance with a hash that holds still. That is the
+   prerequisite for everything else wanted here — tagging, replacement, and
+   denoiser history — and it addresses the delayed lighting directly, since an
+   instance whose identity churns every frame cannot carry history at all.
+
+   Regrowing blades still go through the existing per-blade block below the
+   batch loop, which owns their TEVREG2 alpha ramp; the new path skips them
+   rather than duplicating it. **Untested in game.**
 
    **The other two symptoms are separate and worth testing independently:**
 
@@ -1230,14 +1234,27 @@ Added **2026-07-29**:
      from vertex colour is discarded by the hint itself. This is the likelier of
      the two for a rupee.
 
-   **Fix directions, neither built:** have the hint modulate by `TFACTOR` when
-   the colour is konst-driven and vertex colour is absent; or emit a following
-   `MODULATE(CURRENT|TEMP, TFACTOR)` stage, which Remix *does* decode —
-   `rtx.enableMultiStageTextureFactorBlending` defaults **true** and
-   `isTextureFactorBlendingEnabled` matches exactly that pattern against
-   `CURRENT` or `TEMP` (`d3d9_rtx.cpp:944-980`). More generally: when a material
-   tint can go to either constant slot, prefer TFACTOR, because only one of the
-   two survives into Remix.
+   **FIXED 2026-07-29 in aurora** (`dx9_tev.cpp`), by the second of the two
+   routes considered. A new `albedo_tint()` reports the konst that modulates the
+   albedo stage's texture; `apply_tev` claims **TFACTOR** for it before any other
+   constant can take the slot, which also makes the real stage reuse it for free
+   since `materialize()` already returns TFACTOR for a matching value. The hint
+   then emits one extra stage — `MODULATE(TEMP|CURRENT, TFACTOR)` — immediately
+   after itself, which is exactly the shape Remix decodes
+   (`isTextureFactorBlendingEnabled`, `d3d9_rtx.cpp:944-980`;
+   `rtx.enableMultiStageTextureFactorBlending` defaults **true**).
+
+   Deliberate choices worth keeping: only a plain `texture × constant` lead
+   counts as a tint, because advertising a guess would trade a missing colour
+   for a wrong one, which is far harder to spot; white tints are skipped as the
+   identity they are; the extra stage is emitted only when a tint exists and the
+   stage budget allows; and **opacity is left alone** — tinting alpha would eat
+   alpha-tested cutout shapes, which is the failure this same hint exists to
+   prevent for foliage. **Untested in game.**
+
+   The general rule this leaves behind: when a material tint can go to either
+   constant slot, prefer TFACTOR, because only one of the two survives into
+   Remix.
 
    This is the same root as the white-ground defect seen from the other side —
    both are "Remix reads one stage and aurora's later stages carry meaning" —

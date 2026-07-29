@@ -210,6 +210,7 @@ struct UserSettings {
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
         ConfigVar<bool> remixHideVrbox;
+        ConfigVar<bool> remixPerBladeGrass;
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;
