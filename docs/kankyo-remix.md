@@ -83,6 +83,42 @@ be tagged; `rtx.dusklight.game.hideSkyBillboards` removes them outright
 instead, and tagging them is worth revisiting only if you want to keep them
 visible. See open issue 2.
 
+### Awaiting a test window
+
+*Added 2026-07-29. The owner has no test window for a while, so work has
+continued without one and this is the single list of what is owed a run. Keep it
+here rather than scattered through the issues — the point is that one visit can
+clear several of these if they are done in the right order.*
+
+**Built since the last test session, never run:**
+
+| Thing | Where | What a test would settle |
+| :-- | :-- | :-- |
+| Per-blade grass, `rtx.dusklight.game.perBladeGrass` | `d_grass.inc`, protocol 5 | Do blade hashes hold still (check the texture categorization screen); does the delayed lighting go away; what does it cost in open field |
+| Albedo tint into Remix, greyscale rupees/hearts | aurora `dx9_tev.cpp` | Do rupees and hearts get their colour back; nothing else regressed to a wrong colour |
+
+**Settled by testing but not yet shipped as defaults** — no new test needed to
+land these, only the decision:
+
+- `localLightIntensity` **19**, `localLightRadius` **10** (open issue 3).
+- Whether `localLights` should default on now that it works.
+
+**Blocked on a fix rather than on a test window:**
+
+- **Phase C, the physical sky.** Cannot be judged until open issue 4 is fixed —
+  part of what you would be looking at is the fog eating the sky.
+- **The ambient grade.** Should not be tuned against a wrongly-lit sky either.
+
+**Pinned, needs a specific setup:**
+
+- The torch flame (open issue 6) — read the aurora `warn_once` log at a lit
+  torch, then A/B raw D3D9 against Remix.
+- The injection boundary (open issue 6) — draw-call id at injection, with and
+  without letterbox bars.
+- Mono overlay and base weight — **in twilight, not wolf senses**, which is
+  blocked by open issue 5.
+- Goron Mines, for the near-and-dense end of the fog mapping.
+
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
