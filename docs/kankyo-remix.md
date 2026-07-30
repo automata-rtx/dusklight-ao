@@ -58,7 +58,8 @@ exempts the sky, the volumetric half does not) and it is the thing to fix next.
 
 **Also open:** the wolf-senses overlay rendering as an opaque white disc
 (issue 5), grass shading under Remix (issue 7), greyscale rupees and hearts
-(issue 8), the ambient grade, and the Controls tab.
+(issue 8), Ganon's barrier over Hyrule Castle (issue 9 — investigated,
+awaiting a first look), the ambient grade, and the Controls tab.
 
 **Issue 6's targeting-arrow half is RESOLVED (2026-07-30) by tagging the two
 arrow textures as `rtx.uiTextures` in the dev menu — no code at all.** The
@@ -104,6 +105,12 @@ clear several of these if they are done in the right order.*
 | Painted moon, `atmosphere.skyMoonEnable` | fork `dusklight_sky.comp.slang` | Does it read as the moon at 5.7°, does it fade cleanly across the dawn/dusk handover, does it fire only at night |
 | Controls tab, protocol 6 | fork + `remix_bridge.cpp` | Does capture work while the overlay blocks input; does displace name the right action; does the neutral-wait stop the Rebind click being captured |
 | Local light defaults now **19 / 10** | shipped both sides | Only that nothing else assumed the old 1.0 / 4.0 |
+
+**Investigated, nothing built, needs a look rather than a run:** Ganon's
+barrier (open issue 9). Needs a save after the story event. One visit answers
+five questions listed in the issue — most usefully whether the texture hash is
+stable in the categorization screen and what aurora's `warn_once` log says
+about `mat00`, which between them decide the whole route.
 
 **One decision still open, needing no test:** whether
 `rtx.dusklight.game.localLights` should default **on** now that it works. The
@@ -1378,6 +1385,113 @@ over a lap) and baked lighting (`D3DRS_LIGHTING = FALSE`; aurora never
 evaluates the GX light model, so vanilla's Link-following light reaches
 neither the vertex colours nor the albedo). The day case is now believed
 correct; what remains is night-only and is open issue 2.
+
+9. **Ganon's barrier over Hyrule Castle — investigated 2026-07-30, awaiting a
+   first look under Remix.** The giant energy field that appears over the
+   castle after the story event. No test has been run yet; this entry is the
+   code-side investigation and the plan, so the first visit measures instead
+   of guesses.
+
+   **How the game renders it — two actors, one look** (both read 2026-07-30):
+
+   | Actor | Archive | Role |
+   | :-- | :-- | :-- |
+   | `daObjGWall_c` (`d_a_obj_ganonwall.cpp`) | `Y_gwall` | the barrier seen from the field; `cullSizeFar = 1,000,000` so it renders from essentially anywhere; draw gated on two event bits |
+   | `daObjGWall2_c` (`d_a_obj_ganonwall2.cpp`) | `V_CTGWall` | the Castle Town version; same tables, plus MoveBG collision, a looping SE (`Z2SE_OBJ_HYRULE_BARRIER`), and it draws via `dComIfGd_setListBG()` |
+
+   Shared rendering, identical in both:
+
+   - **One J3D model, single joint (`world_root`), one material that matters
+     (`mat00`).** Static geometry — nothing moves, ever.
+   - **A BTK texture-scroll animation** playing every frame (the energy
+     pattern crawling). Animation is a texture matrix; vertices never change.
+   - **A time-of-day tint on `TevKColor(1)`** of `mat00`: a 24-row hourly
+     table (`l_idx`) interpolating between `GXColor` keys (`l_color`) —
+     white through the day, dropping to ~0.4 (`0x64`) around hours 11 and
+     17, ~0.47/0.7 grey at dusk rows. The alpha lane of that interpolation
+     has an upstream copy-paste bug (`l_color[idx2].r` where `.a` was meant)
+     — faithful decomp, do not fix, but do not trust barrier alpha to be
+     intentional either.
+   - **Per-material fog forced to BLACK, start 1000, end 250000**, every
+     frame, overriding whatever kankyo fog says.
+
+   **That fog override is the tell.** Fogging a surface to *black* is only
+   sensible authoring for an **additive** surface: additive-to-black = the
+   glow fades out with distance, while standard alpha-to-black would render a
+   darkening curtain. So the material is almost certainly additive blend —
+   worth confirming from aurora's logs on first visit, but the design below
+   assumes it. (The BMD itself is not in-repo — only the index headers under
+   `assets/*/res/Object/Y_gwall.h` — so the exact TEV layout has to come from
+   a live run.)
+
+   **What Remix will make of it, predicted from the capture path:**
+
+   1. **Additive blend → emissive-blend override.**
+      `rtx.enableEmissiveBlendEmissiveOverride` defaults true, so the barrier
+      becomes an unlit emissive surface at
+      `rtx.emissiveBlendOverrideEmissiveIntensity` = **0.2 — a global knob
+      shared with every particle in the game**. Roughly the right look;
+      exactly the wrong control.
+   2. **Hashes are stable.** Static single-joint geometry (positions/indices
+      never change) and a static texture (the scroll is a UV matrix, which
+      hashes touch not at all). Unlike the grass, this instance **can** be
+      tagged and replaced in the dev menu / toolkit. This is the property
+      that decides the route.
+   3. **The distance fade is lost.** Remix does not apply per-draw
+      fixed-function fog to traced surfaces, and the atmosphere's
+      `applyFogOverride` dominates the frame fog regardless
+      (`rtx_scene_manager.cpp:2073`). Under Remix the barrier will glow at
+      full strength from any distance; raw D3D9 keeps the authored fade.
+      Note also this actor is a **fog-lottery entrant** (§2.5): its black
+      fog can win a frame's captured fog state. Harmless while the
+      atmosphere owns fog; worth remembering if anyone ever tests with the
+      atmosphere off.
+   4. **The time-of-day tint may or may not survive.** It rides
+      `TevKColor(1)` — a konst. Aurora carries a konst tint into Remix's
+      material only when the lead TEV stage is a plain
+      `MODULATE(TEXTURE, konst)` (the `389e4d5` albedo-tint hint, built for
+      the rupees). Whether `mat00`'s lead stage has that shape is unknown
+      until the `warn_once` log is read at the barrier. If it does not
+      survive, the barrier is equally bright at 3am and noon — the table
+      says it should dim to ~40%.
+   5. **The BTK scroll should survive**: a plain 2D texture transform, inside
+      what Remix supports (R6 only excludes projected/3+-element transforms).
+
+   **The route that fits Remix's conventions — texture-hash replacement, no
+   code.** Post-arrow, the house lesson is to reach for the capture-side
+   mechanisms first, and this object is their ideal customer: stable mesh
+   hash, stable texture hash, one material. In order of effort:
+
+   - **First visit: judge the default.** Emissive-blend override may already
+     read acceptably. Screenshot day and night, raw vs Remix, near and far.
+   - **If the glow is wrong (too dim/bright, no bloom presence):** author a
+     replacement material for `mat00`'s texture in the toolkit — emissive
+     translucent, per-texture intensity, freeing it from the global particle
+     knob. This is the Remix-native answer to "energy effect", and it also
+     makes the barrier a genuine GI emitter: an orange glow cast over the
+     castle grounds at night is a path-traced upgrade vanilla could never do.
+   - **If the ToD tint is lost and its absence shows:** the smallest fix is
+     aurora-side — the tint hint already exists (`389e4d5`); the question is
+     only whether `mat00`'s lead stage shape matches, and if not, whether the
+     hint can be taught that shape. Not a fork feature; do not build
+     ToD-tint plumbing through the bridge for one object.
+   - **If the missing distance fade shows** (probably only conspicuous from
+     the far field): options in cost order are "accept it", or a small
+     emissive-distance falloff in the replacement material if the toolkit
+     material supports it. Do not re-plumb fixed-function fog for one draw.
+
+   **What the first visit needs** (a save after the story event, near either
+   face of the barrier):
+
+   1. Does it render at all under Remix, and does it read as a glow?
+   2. Texture categorization screen: is its hash present and stable? (It
+      should be — if it is not, that finding invalidates the whole route
+      above and issue 7's lesson applies instead.)
+   3. Aurora `warn_once` log: what TEV shapes did `mat00` hit? That answers
+      the tint question and confirms the blend mode.
+   4. Day vs night brightness under Remix vs raw D3D9 — is the ToD dimming
+      alive?
+   5. From the far field: does the missing distance fade actually show?
 
 **First-run checklist for the sun/moon light:** Remix's Dusklight tab should
 report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
