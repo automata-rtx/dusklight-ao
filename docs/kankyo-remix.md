@@ -1281,7 +1281,12 @@ Added **2026-07-29**:
      from the rest of the scene" on its own.
 
 8. **Rupees and hearts render greyscale under Remix; correct in raw D3D9.**
-   Reported 2026-07-29. **Cause identified, verified by reading both sides.**
+   Reported 2026-07-29. **The 389e4d5 fix SHIPPED AND DID NOT WORK** — the
+   owner confirmed 2026-07-30 that rupees and hearts are still greyscale.
+   Re-diagnosed the same day; read the 2026-07-30 block at the end of this
+   entry before acting on anything above it.
+
+   Original diagnosis, still correct as far as it goes:
 
    Remix rebuilds a material from one texture stage plus a small set of
    decodable args. It understands `D3DTA_TFACTOR`; it **never reads
@@ -1327,6 +1332,93 @@ Added **2026-07-29**:
    both are "Remix reads one stage and aurora's later stages carry meaning" —
    and it is worth fixing before any texture-replacement work, since a greyscale
    albedo would get baked into replacements.
+
+   ---
+
+   **RE-DIAGNOSED 2026-07-30, after the fix shipped and changed nothing.** The
+   owner reports rupees and hearts still greyscale, and adds that **the rupee
+   texture reads greyscale in Remix's texture categorization screen** — as does
+   Ganon's barrier's (issue 9). Five parallel investigations, each told to
+   refute rather than confirm; all five converged.
+
+   **What the categorization screen proves: nothing.** It draws the raw
+   captured texels through an untinted `ImGui::ImageButton`
+   (`dxvk_imgui.cpp:2429`) — the source texture exactly as uploaded, never the
+   reconstructed material. GX intensity formats (I4/I8/IA4/IA8) are greyscale
+   by construction and take their colour from TEV konst modulation, so a
+   greyscale thumbnail is the **expected** appearance whether the tint works or
+   not. It cannot distinguish the two states. **Do not use it as the instrument
+   for this bug.** The discriminating one is Remix's debug view pair, *Diffuse
+   Albedo* (post-TEV, after `albedo *= tFactor.rgb`) against *Diffuse Raw
+   Albedo* (pre-TEV): if Raw is grey and Diffuse is coloured, the tint is
+   landing and the problem is elsewhere.
+
+   **The Remix half is sound — verified end to end, twice, independently.**
+   `D3DTA_TFACTOR` maps to a real source (`d3d9_rtx_utils.cpp:71`, not the
+   `None`/white default), `D3DRS_TEXTUREFACTOR` is captured
+   (`d3d9_rtx_utils.cpp:175`), and the multi-stage scan that recognises a later
+   `MODULATE(previous-result, TFACTOR)` exists for exactly this shape
+   (`d3d9_rtx.cpp:944-992`) — it even reconstructs which register the previous
+   stage wrote, so a TEMP-writing predecessor matches. It runs **before** the
+   null-texture `continue`, so the tint stage carrying no texture does not
+   disqualify it. `rtx.enableMultiStageTextureFactorBlending` defaults on
+   (`rtx_options.h:1016`), and the shader does `albedo *= tFactor.rgb`
+   (`opaque_surface_material_interaction.slangh:718-720`). CPU→GPU packing
+   offsets and the D3DCOLOR swizzle were both checked for a silent scramble;
+   both are correct.
+
+   **The build contained the fix.** `389e4d5` is an ancestor of aurora's
+   `Fixed-Function-dev`; dusklight's `Fixed-Function-dev` pins `extern/aurora`
+   at that exact SHA (bumped 21 seconds after the fix landed, so no window
+   existed where the dev line pinned a pre-fix aurora); CI checks out
+   submodules recursively; `AURORA_ENABLE_D3D9` defaults on for WIN32 as a
+   PUBLIC definition. Every link verified. **Do not spend a test window
+   re-checking this.**
+
+   **So the failure is upstream of the wire, in aurora's own gate** —
+   `albedo_tint()` (`dx9_tev.cpp:816`). It has **six reject paths**, and four
+   further **emission gates** downstream that can drop the stage even after the
+   tint is claimed and TFACTOR spent. Eleven outcomes. **Not one of them logged
+   anything.** A material that comes out grey looked identical in all eleven
+   cases, which is precisely why "the fix did not work" produced no next step.
+
+   Worse, `albedo_tint`'s speculative `reduce_pass` used
+   `xxh3_hash(stage, 0)` — byte-identical to the real emission path's seed —
+   so it consumed `reduce_pass`'s `warn_once` dedup keys first, and every
+   unsupported-TEV line a run produced described a decode that was then thrown
+   away. **The log looked populated while saying nothing about what was
+   actually drawn.**
+
+   **Fixed 2026-07-30 (aurora `faf5d15`): instrumentation, not a wider gate.**
+   Every reject now names itself, the successful emission logs too, and the
+   speculative pass has its own seed. No behaviour change — same materials
+   accepted, same stages emitted. The gate was **deliberately** not widened:
+   the decisive premise (what TEV shape a rupee actually presents) lives in BMD
+   assets this repo does not ship, so widening it now would be guessing, and
+   `389e4d5`'s own reasoning holds — advertising a wrong colour is worse than a
+   missing one, because a wrong colour is much harder to notice.
+
+   **The single most likely reject, named so the log can confirm or kill it:**
+   `MODULATE2X` / `MODULATE4X`. GX output scale (`GX_CS_SCALE_2`, very common)
+   on an otherwise plain `texture x konst` stage reduces to those, and the gate
+   demands exactly `D3DTOP_MODULATE`. That is still a tint — just not this
+   shape. If the log says this, widening is a two-line change **and** Remix's
+   `isTextureFactorBlendingEnabled` would need checking for whether it accepts
+   a scaled modulate.
+
+   **What the next run needs** (no new build required beyond this one): visit a
+   rupee and the barrier, then read aurora's log for `albedo tint:` lines. One
+   of eleven messages will name the failure exactly. Also compare *Diffuse
+   Albedo* against *Diffuse Raw Albedo* in Remix's debug views.
+
+   **Two loose ends found while looking, neither urgent.** Remix has a live
+   off-by-one at `d3d9_rtx.cpp:473-474`, indexing `textureStages[0]` with
+   `D3DTSS_*` (COLOROP=1) where the array is `DXVK_TSS_*`-indexed (COLOROP=0).
+   And `albedo_tint` claims TFACTOR unconditionally on success, even when an
+   emission gate later drops the stage — which displaces any other constant to
+   `D3DTSS_CONSTANT`, a slot Remix never reads. Defensible (the tint konst is
+   the one that matters) but now logged when it happens.
+
 
 #### Built and CI-green but NEVER RUN
 
@@ -1483,6 +1575,42 @@ correct; what remains is night-only and is open issue 2.
      the far field): options in cost order are "accept it", or a small
      emissive-distance falloff in the replacement material if the toolkit
      material supports it. Do not re-plumb fixed-function fog for one draw.
+
+   **UPDATED 2026-07-30 — first look happened, and it changes the priorities.**
+   The owner reports the barrier renders as a **flat solid surface with no
+   visible scrolling texture and no golden colour**, and that its texture reads
+   greyscale in the texture categorization screen.
+
+   The missing gold is **the same defect as issue 8**, not a barrier-specific
+   one: the tint lives in `TevKColor(1)` = `GX_KCOLOR1`, a KONST slot (verified
+   through J3D — `mTevKColor[i]` emits BP register pair `0xE0+2i`/`0xE1+2i`
+   with the konst bit, decoded into `g_gxState.kcolors[1]`), and aurora's
+   albedo-tint gate is what should be carrying it to Remix. The greyscale
+   thumbnail proves nothing here either, for the same reason as issue 8. The
+   barrier's per-frame konst write **does** reach aurora: its differed-DL flags
+   `0x11000284` set `J3DDiffFlag_TevReg`, which re-emits all four konst colours
+   every frame.
+
+   **Two mechanisms were suspected for the missing scroll and both are dead.**
+   Remix *does* apply the D3D9 texture transform to traced surfaces — captured
+   at `d3d9_rtx_utils.cpp:103-108`, refreshed every frame at
+   `rtx_instance_manager.cpp:1152`, packed transposed for D3D row-vector at
+   `rtx_materials.h:241-248`, applied at `surface_interaction.slangh:546-549`
+   with the translation surviving in row 2 — and aurora sets the hint stage's
+   own matrix via `apply_texgen` (`dx9_tev.cpp:1011`). A BTK scroll expressed
+   as an animated texture matrix animates under Remix. Nor can the
+   emissive-blend override erase texture detail: it sets
+   `emissiveColorTexture = albedoOpacityTexture`, sampled per pixel.
+
+   **So the leading explanation for "solid" is that the pattern is not in the
+   stage Remix took.** Remix reads ops, texcoord index and the texture matrix
+   from exactly ONE stage (`d3d9_rtx.cpp:1102` — the sole caller of
+   `setTextureStageState`), chosen by lowest `D3DTSS_TEXCOORDINDEX`. The
+   barrier raises `TexGenNum` to **2** in its differed flags — the author sized
+   for two animated texture matrices — so a second scrolling layer is exactly
+   the thing that would be dropped. That is issue 8's root cause wearing a
+   different hat: *Remix reads one stage, aurora's later stages carry meaning.*
+   It cannot be confirmed from this repo, which ships no BMDs.
 
    **What the first visit needs** (a save after the story event, near either
    face of the barrier):
