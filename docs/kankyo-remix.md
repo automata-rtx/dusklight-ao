@@ -57,10 +57,14 @@ by the fog medium.** It has a verified cause in the composite (the far ramp
 exempts the sky, the volumetric half does not) and it is the thing to fix next.
 
 **Also open:** the wolf-senses overlay rendering as an opaque white disc
-(issue 5), the world-space UI billboards appearing only intermittently
-(issue 6 — the torch-flame half is **pinned**, awaiting a test window), grass
-shading under Remix (issue 7), greyscale rupees and hearts (issue 8), the
-ambient grade, and the Controls tab.
+(issue 5), grass shading under Remix (issue 7), greyscale rupees and hearts
+(issue 8), the ambient grade, and the Controls tab.
+
+**Issue 6's targeting-arrow half is RESOLVED (2026-07-30) by tagging the two
+arrow textures as `rtx.uiTextures` in the dev menu — no code at all.** The
+torch-flame half remains **pinned**. Read issue 6 before touching anything
+near the injection boundary: a whole cross-repo feature was built and thrown
+away there, and the reason it was wrong is worth not repeating.
 
 **Issues 7 and 8 share a root with the white-ground defect** and are the ones
 with the clearest next step: aurora hands Remix a single reconstructed material
@@ -114,33 +118,15 @@ values are shipped; the on/off default is not.
   part of what you would be looking at is the fog eating the sky.
 - **The ambient grade.** Should not be tuned against a wrongly-lit sky either.
 
-**Next up, and it needs no test window — start here.** Resubmitting the
-world-space UI elements through the Remix API tagged
-`REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI`. Decided 2026-07-29 as the route for
-open issue 6: it addresses the defect directly instead of restructuring the
-frame around the injection boundary, and the mechanism is now proven to exist
-(§14.9 in `DusklightAtmosphere.md`).
+**Next up.** Open issue 4 (the generated sky dimmed by the fog medium) is
+fixed but untested; so are the sky/fog modes, the painted moon, the Controls
+tab, per-blade grass and the greyscale-item fix. The ledger below says what
+each one needs. Nothing on this list needs new design work first.
 
-What it needs, in order:
-
-1. **Survey what deserves the tag**, not just the targeting arrow. The fire
-   billboards are the obvious co-suspect — they appear and vanish with it — and
-   there are likely others. `REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI` is one of
-   a list (`remix_c.h:454`), so the survey should ask which category each
-   candidate wants, not only which ones are broken.
-2. **Confirm the submission shape**: `CreateMesh` once per distinct geometry,
-   `DrawInstance` per frame with the transform and category flags. The bridge
-   already does exactly this shape for lights, so the lifecycle questions —
-   when to create, when to destroy, what to key identity on — have answers to
-   copy rather than invent.
-3. **Decide what happens to the original draw.** Submitting a second copy
-   without suppressing the game's own draw would double it.
-
-Two things already known that constrain the design: the arrow is a real
-perspective-projected J3D model rather than UI (`d_attention.cpp:1619`), so
-"resubmit it as UI" is a genuine change of category and not a correction of a
-misclassification; and a captured draw cannot be tagged after RTX injection, so
-the API route is what sidesteps that entirely.
+*(This slot previously said to resubmit the world-space UI elements through the
+Remix API tagged `REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI`. That was built,
+tested, and removed — see issue 6. Tagging the arrow textures as
+`rtx.uiTextures` fixes them completely and needs no code.)*
 
 **Pinned, needs a specific setup:**
 
@@ -1098,115 +1084,119 @@ Added **2026-07-29**:
    (senses), so that test should be done in a twilight zone instead and is not
    gated on this.
 
-6. **World-space UI billboards appear only intermittently.** The targeting
-   arrow and the fire billboards in torch-lit areas appear to share a fate:
-   they show up at the same times, and the fire billboards were seen appearing
-   during room transitions in the Forest Temple. The targeting arrow looked
-   correct only while actively targeting, and not always even then — it
-   depended on player and camera position. Under shadow it goes dim and reads
-   wrongly, which suggests it is being lit as ordinary world geometry when it
-   is meant to be unlit UI.
+6. **World-space UI billboards appear only intermittently.**
+   **The targeting-arrow half is RESOLVED (2026-07-30). The torch-flame half is
+   still pinned** — see the PIN at the end of this entry.
 
-   **Neither is visible in Remix's texture categorization screen.**
+   The targeting arrow and the fire billboards appeared and vanished together,
+   the arrow read as lit world geometry rather than flat UI, and **neither
+   showed in Remix's texture categorization screen**. Only ever right while the
+   letterbox bars were up, and not even reliably then.
 
-   **Investigated 2026-07-29. The mechanism is Remix's RTX injection boundary,
-   and it is not an aurora bug.** A further clue narrowed it: this only ever
-   happens **while the letterbox black bars are up** — Z-targeting or a dungeon
-   door transition — though bars do not guarantee it.
+   **The fix: tag the two arrow textures as `rtx.uiTextures` in Remix's dev
+   menu.** No code, in any repo. The arrow is then correct always, in every
+   camera position, with or without bars.
 
-   **The boundary, verified in the fork:**
+   **Why that works, and why it is not the paradox it looks like.**
 
-   | Step | Code |
+   `isRenderingUI()` (`d3d9_rtx.cpp:559`) feeding `makeDrawCallType` (`:516`)
+   returns **two** things, and only one of them is the famous one:
+
+   | Return | Effect |
    | :-- | :-- |
-   | The first **orthographic, z-write-disabled** draw on the primary RT is classified UI | `isRenderingUI()`, `d3d9_rtx.cpp:559` |
-   | That classification returns `Rasterized` **and sets `triggerRtxInjection`** | `makeDrawCallType`, `:519` |
-   | From then on, `internalPrepareDraw` early-returns for **every remaining draw in the frame** — `Ignore` if `rtx.skipDrawCallsPostRTXInjection`, else `PreserveDrawCallAndItsState` | `:576-591` |
+   | `RtxGeometryStatus::Rasterized` | the draw is rasterized straight over the traced image — flat, unlit, unoccluded, **deterministically, every frame** |
+   | `triggerRtxInjection = true` | the raytraced frame ends at this draw |
 
-   A post-injection draw never enters the raytraced scene, so **its textures are
-   never categorised**. That is precisely the "not in the categorization screen"
-   symptom, and it means **no dev-menu tagging can ever reach these draws** —
-   the same shape of trap as the vrbox sky, arrived at by a different route.
-   `rtx.uiTextures` is checked inside `isRenderingUI()`, which is only reached
-   *before* injection, so tagging is unavailable exactly when it would be needed.
+   For a targeting reticle the first one *is* the goal. "Correct" for this
+   element means flat, unlit and on top — which is exactly what the rasterized
+   overlay path gives, and exactly what path tracing takes away. The
+   intermittency was never the arrow failing to reach the raytraced scene; it
+   was the arrow **sometimes** reaching it, and looking wrong when it did.
 
-   **Where these two draws sit in the frame** (`m_Do/m_Do_graphic.cpp`):
+   The injection side effect is close to free **here specifically**, because of
+   where the cursor sits (`m_Do_graphic.cpp`):
 
    | Line | Draw | Projection |
    | :-- | :-- | :-- |
-   | 2257 | `drawCopy2D` | 2D |
-   | 2642 | `drawXluList2DScreen` | perspective (explicitly re-set) |
    | **2689** | **`drawOpaList3Dlast` — the targeting cursor** | **perspective** |
-   | **2714** | **`particle_draw2Dgame`** (JPA group 14) | **ortho** |
-   | 2717 | `trimming()` — the letterbox bars | **ortho + `GXSetZMode(GX_FALSE, …)`** |
+   | 2714 | `particle_draw2Dgame` | ortho |
+   | 2717 | `trimming()` — the letterbox bars | ortho + z-write off |
    | 2722 | `calcFade` | ortho |
-   | 2824+ | HUD — `draw2DOpa` / `OpaTop` / `Xlu` | ortho |
+   | 2824+ | HUD | ortho |
 
-   `trimming()` at 2717 is a textbook `isRenderingUI()` trigger: ortho, z-write
-   off, on the primary RT. It is also **where the letterbox is defined** — the
-   bars are sized from `view_port->scissor` against the viewport, and on PC the
-   guard around it is compiled out, so "bars visible" is exactly "the D3D9
-   scissor is smaller than the viewport".
+   Everything after the cursor is 2D and wants rasterizing anyway. Moving the
+   boundary to 2689 costs the frame nothing it wanted.
 
-   **Two things this settles.**
+   **It also settles the letterbox question this entry left open.** The bars
+   correlated because in those frames something earlier triggered injection, so
+   the cursor landed on the rasterized side by luck. Tagging the arrow makes the
+   arrow itself the trigger, so it is on that side every frame, by construction.
+   That is why the fix is total rather than partial.
 
-   1. **The targeting cursor is not UI, and never was.** `d_attention.cpp:1619`
-      creates a real J3D model (`NoticeCursor`, yellow and red variants with
-      BCK/BPK/BRK/BTK animations) and submits it with `dComIfGd_setList3Dlast()`
-      under a perspective projection. So "it goes dim under shadow" is the
-      *correct and expected* result of path-tracing it — a game-side fact, not a
-      Remix misclassification. `DB_LIST_3D_LAST` has exactly one producer in the
-      whole game and one draw site.
-   2. **The cursor and the flames are not one system.** The flames are JPA
-      "simple" particles (`dComIfGp_particle_setSimple` — `d_a_ep.cpp:495`; the
-      Forest Temple's are `d_a_obj_lv1Candle00`), and they are *not* in the
-      group-14 2D pass. So "they appear together" is not a shared code path; it
-      is a shared *position relative to the injection boundary*.
+   ---
 
-   **Ruled out, each with evidence:**
+   **A cross-repo feature was built here and thrown away. Read this before
+   going near the injection boundary again.**
 
-   - **2D draw list overflow.** `dDlst_list_c::set` silently drops when full
-     (`d_drawlist.cpp:1989`, `if (p_start >= p_end) return 0;`) and the lists are
-     fixed-size (`mp2DXlu[32]`, `mp2DOpa[64]`, `mp2DOpaTop[16]`, `mpCopy2D[4]`).
-     A real hazard, and worth remembering — but every caller is HUD, menu or
-     message code, not these two.
-   - **`GXPeekZ`.** Aurora implements it via a depth-snapshot path
-     (`lib/dolphin/gx/GXCpu2Efb.cpp`). Neither element uses it; the sun lens
-     flare and the insects do.
-   - **`GX_DEBUG_GROUP`.** Calls through in both configurations
-     (`include/helpers/gx_helper.h:24`) — it is not swallowing the draws.
+   On 2026-07-29 this was routed to "resubmit the arrow through the Remix API
+   tagged `REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI`", built across all three
+   repos (aurora capture hook, bridge mesh/instance submission, overlay toggle,
+   protocol 7), CI-green, and **removed on 2026-07-30 without ever working**.
 
-   **What is still open, stated plainly:** the boundary explains the
-   intermittency, the "appear together", and the categorization absence. It does
-   **not** yet explain why the letterbox specifically helps — `trimming()` sits
-   *after* both draws, so the bars cannot themselves be the trigger that saves
-   them. Something else that correlates with letterbox must be issuing an ortho
-   z-write-off draw *earlier* in those frames. The transition wipe
-   (`dDlst_list_c::wipeIn` / `calcWipe`), the fade, and `drawCopy2D` at 2257 are
-   the candidates.
+   Three errors, in the order they compounded:
 
-   **Also worth flipping around before assuming which way is the bug.** For a UI
-   arrow, "correct" probably means flat and unlit — which is the *rasterized*,
-   post-injection path. "Dim under shadow" is the *path-traced*, pre-injection
-   one. So the arrow may be behaving correctly precisely when it lands **after**
-   injection, and the goal is to get it there reliably rather than to rescue it
-   into the raytraced scene.
+   1. **`rtx.uiTextures` was read as "the injection trigger" and nothing else.**
+      True but incomplete: it also forces `Rasterized`. Having found the
+      dramatic effect, the mundane one next to it went unweighed — and the
+      mundane one was the fix.
+   2. **The cost of moving the boundary was asserted, not measured.** "It would
+      push more of the frame out of the raytraced scene" sounds decisive and is
+      quantitatively false at line 2689, where only HUD follows. The draw-order
+      table that disproves it was *already in this entry* at the time.
+   3. **`WORLD_UI` was assumed to fit because it was the only category with
+      "UI" in the name.** It keeps the instance in the traced scene as emissive
+      geometry — it is for UI that genuinely lives in 3D and should be lit and
+      occluded as part of the world, which is why it has a coplanar-background
+      offset hack (`worldSpaceUiBackgroundOffset`) for Portal's monitors. A
+      reticle is an overlay. Wrong category, independent of any of the above.
 
-   **Three experiments that would settle it, cheapest first:**
+   **The conclusion was already written down here and was passed over.** This
+   entry said, before any of that work started:
 
-   1. Log `m_drawCallID` at the moment injection triggers, with and without
-      bars. Two numbers, and it is settled completely.
-   2. `rtx.skipDrawCallsPostRTXInjection = False` — post-injection draws still
-      rasterize. If the arrow and flames become reliably visible but flat, the
-      boundary is confirmed and the question becomes which look is wanted.
-   3. `rtx.drawCallRange` to bisect the frame and find the injection index
-      directly from the dev menu, with no rebuild.
+   > *"For a UI arrow, 'correct' probably means flat and unlit — which is the
+   > rasterized, post-injection path... So the arrow may be behaving correctly
+   > precisely when it lands after injection, and the goal is to get it there
+   > reliably rather than to rescue it into the raytraced scene."*
 
-   **PINNED 2026-07-29 — the flame half is parked, and it probably is not this
-   issue.** The owner corrected a load-bearing detail: the "bright white circle"
-   at a lit torch is **not** the animated fire, it is a separate circular
-   sprite. The torch emits three named resources at one position —
-   `ZI_J_O_fire_a.jpa` (`0x100`), `ZI_J_O_fire_b.jpa` (`0x101`) and
-   `ZI_J_O_kagerou.jpa` (`0x103`, heat haze), `d_a_ep.cpp:423-431`.
+   That is the answer. It was three paragraphs above the plan that contradicted
+   it. **The expensive failure was not the wrong theory — it was not re-reading
+   the entry before acting on it.**
+
+   Cheap and skipped: experiment 1 of the three this entry listed (log
+   `m_drawCallID` at injection, with and without bars) would have shown the
+   boundary moving and pointed straight at the rasterized path. Also never
+   tried: simply toggling the two textures in the dev menu, which is what
+   eventually fixed it in one step.
+
+   **Ruled out earlier, still ruled out** (each was checked with evidence): 2D
+   draw list overflow (`dDlst_list_c::set` silently drops when full,
+   `d_drawlist.cpp:1989` — a real hazard, but every caller is HUD/menu/message
+   code); `GXPeekZ` (neither element uses it); `GX_DEBUG_GROUP` (calls through
+   in both configurations).
+
+   Two game-side facts that remain true and are worth keeping: the cursor is a
+   real perspective-projected J3D model (`d_attention.cpp:1619`,
+   `NoticeCursor`, yellow/red variants with BCK/BPK/BRK/BTK), submitted via
+   `dComIfGd_setList3Dlast()`; and `DB_LIST_3D_LAST` has exactly one producer
+   and one draw site in the whole game, so it carries the cursor and nothing
+   else — both cursor slots, both models and the impact variant included.
+
+   **PINNED — the flame half is parked, and it probably is not this issue.**
+   The owner corrected a load-bearing detail: the "bright white circle" at a lit
+   torch is **not** the animated fire, it is a separate circular sprite. The
+   torch emits three named resources at one position — `ZI_J_O_fire_a.jpa`
+   (`0x100`), `ZI_J_O_fire_b.jpa` (`0x101`) and `ZI_J_O_kagerou.jpa` (`0x103`,
+   heat haze), `d_a_ep.cpp:423-431`.
 
    Since `fire_a` and `fire_b` are emitted back to back at the same position in
    the same frame, an injection boundary cannot stably separate them — so the
@@ -1214,11 +1204,12 @@ Added **2026-07-29**:
    The competing explanation is that the white circle **is** a fire sprite
    saturated to white by aurora's compare-mode TEV approximation, the same
    defect already suspected for the white ground. Full write-up, including the
-   two experiments that decide ownership (read the aurora `warn_once` log at a
-   torch; A/B raw D3D9 against Remix), is in
+   two experiments that decide ownership, is in
    `aurora-ao/docs/dx9/unsupported-effects.md` §"PINNED — the torch flame".
 
-   The targeting-arrow half of this issue is unaffected and still belongs here.
+   That the arrow was fixed by tagging says nothing about the flame: they were
+   only ever grouped because they appeared and vanished together, which the
+   boundary explains for the arrow and does not explain for the flame.
 
 7. **Grass patches shade wrongly under Remix; fine in raw D3D9.** Reported
    2026-07-29: blades glow in the dark, or come out too dark, with a very
