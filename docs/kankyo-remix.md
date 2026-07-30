@@ -1420,9 +1420,13 @@ correct; what remains is night-only and is open issue 2.
    glow fades out with distance, while standard alpha-to-black would render a
    darkening curtain. So the material is almost certainly additive blend —
    worth confirming from aurora's logs on first visit, but the design below
-   assumes it. (The BMD itself is not in-repo — only the index headers under
-   `assets/*/res/Object/Y_gwall.h` — so the exact TEV layout has to come from
-   a live run.)
+   assumes it. (Dusklight ships **source only, never game assets** — the BMDs
+   come from the owner's own game dump at runtime, and the repo carries just
+   the generated index headers (`assets/*/res/Object/Y_gwall.h`). So no
+   session working from this repo can ever read a material's TEV layout or
+   blend mode off disk, for this object or any other; that always comes from
+   a live run — aurora's `warn_once` log — or from the owner inspecting the
+   archive locally.)
 
    **What Remix will make of it, predicted from the capture path:**
 

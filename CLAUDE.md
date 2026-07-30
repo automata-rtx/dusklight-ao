@@ -100,6 +100,13 @@ Merge aurora dev → `Fixed-Function` **before** dusklight dev →
 
 ## Other standing facts
 
+- **Dusklight ships source only — never game assets.** Models, textures and
+  animations (BMD/BTK/etc.) come from the owner's own game dump at runtime;
+  the repo carries only generated index headers under `assets/*/res/`. A
+  session can never read a material's TEV layout, blend mode or texture off
+  disk here — that information comes from a live run (aurora's `warn_once`
+  log) or from the owner inspecting the archive locally. Do not spend time
+  hunting for asset binaries; they are absent by design.
 - `mods/shadow_mod` and `mods/ao_mod` are third-party demonstration mods —
   **ignore them entirely.**
 - The owner tests via the GitHub Actions **"Build Windows (MSVC x86_64)"**
