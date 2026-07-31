@@ -58,8 +58,14 @@ exempts the sky, the volumetric half does not) and it is the thing to fix next.
 
 **Also open:** the wolf-senses overlay rendering as an opaque white disc
 (issue 5), grass shading under Remix (issue 7), greyscale rupees and hearts
-(issue 8), Ganon's barrier over Hyrule Castle (issue 9 — investigated,
-awaiting a first look), the ambient grade, and the Controls tab.
+(issue 8 — **the shipped fix did not work**, re-diagnosed and instrumented),
+Ganon's barrier over Hyrule Castle (issue 9 — same root cause as 8), water
+rendering as opaque milk (issue 10 — investigated, needs a translucent
+material replacement), the ambient grade, and the Controls tab.
+
+**Issues 8, 9 and 10 are the same shape of problem seen three ways: Remix
+reconstructs a material from one captured stage and always as an *opaque*
+one.** Read 8 before 9 or 10.
 
 **Issue 6's targeting-arrow half is RESOLVED (2026-07-30) by tagging the two
 arrow textures as `rtx.uiTextures` in the dev menu — no code at all.** The
@@ -1624,6 +1630,126 @@ correct; what remains is night-only and is open issue 2.
    4. Day vs night brightness under Remix vs raw D3D9 — is the ToD dimming
       alive?
    5. From the far field: does the missing distance fade actually show?
+
+10. **Water renders as an opaque milky surface you cannot see through.**
+    Reported 2026-07-30, with the detail that it stays milky **even when the
+    water textures are tagged as water** in the dev menu. Investigated the same
+    day, entirely from source. **The cause is structural, the tag is a red
+    herring, and the fix needs no code in any of the three repos.**
+
+    **`rtx.animatedWaterTextures` does not make anything transparent.** Its own
+    description says what it does: *"animate their normals to fake a basic water
+    effect based on the layered water material parameters, and only when
+    `rtx.opaqueMaterial.layeredWaterNormalEnable` is set"*
+    (`rtx_options.h:269`). It is a normal-animation hint. Nothing in it touches
+    opacity, refraction or transmission. Tagging water with it and expecting
+    see-through is expecting the wrong thing from the right-sounding name — the
+    same shape of error as `WORLD_UI` in issue 6.
+
+    Worse, on our draws it currently does **nothing at all**. The opaque path
+    (`opaque_surface_material_interaction.slangh:604-618`) takes a *second
+    sample from the normal map* — and a legacy captured material has no normal
+    map, so the sample fails and the branch is inert. The other, useful animated
+    path is explicitly gated on a material we do not have:
+    `rtx.translucentMaterial.animatedWaterEnable` says *"draw calls in the
+    AnimatedWater category **and a translucent material**"*
+    (`material_args.h:151-153`).
+
+    **The structural cause: every captured draw becomes an Opaque material.**
+    `SceneManager::determineMaterialData` (`rtx_scene_manager.cpp:783-812`) has
+    exactly four outcomes — an explicit override, a **replacement material**, a
+    Ray Portal, and then the fallthrough:
+
+    ```cpp
+    // Standard legacy material conversion
+    return input.getMaterialData().as<OpaqueMaterialData>();
+    ```
+
+    There is **no path** from a captured alpha-blended D3D9 draw to a
+    Translucent (refractive) material. None. An alpha-blended opaque surface in
+    a path tracer is a partially transmissive *diffuse* layer — no refraction,
+    no Fresnel, no depth-dependent absorption. That is exactly "milky", and it
+    is what the renderer is being asked for.
+
+    Note this also rules out the API: `remixapi_MaterialInfoTranslucentEXT`
+    exists, but API materials attach to API-submitted meshes, not to captured
+    geometry. It is not a route to fixing the game's own water.
+
+    **So a translucent material has to come from a replacement — and that is a
+    supported, no-code route.** `rtx_mod_usd.cpp:373` keys on the MDL name: a
+    material referencing `AperturePBR_Translucent.mdl` deserialises as
+    `RtSurfaceMaterialType::Translucent`. Mods load from
+    `<game>/rtx-remix/mods/` (`rtx_mod_manager.cpp:93`). The full parameter set,
+    with the exact USD token strings, is `LIST_TRANSLUCENT_MATERIAL_*` in
+    `rtx_material_data.h:96-126`:
+
+    | USD token | Type | Default | What it is for water |
+    | :-- | :-- | :-- | :-- |
+    | `ior_constant` | float 1..3 | 1.3 | **1.33** for water. The single most important value |
+    | `transmittance_color` | Vector3 | 0.97³ | The colour light picks up passing through — the green-blue of Lake Hylia |
+    | `transmittance_measurement_distance` | float | 1.0 | **The depth knob.** The distance over which `transmittance_color` is reached; this is what makes shallows clear and depths opaque |
+    | `thin_walled` | bool | false | **false** for a lake (a real volume), true only for a thin sheet |
+    | `thin_wall_thickness` | float | .001 | only with `thin_walled` |
+    | `use_diffuse_layer` | bool | false | leave **false** for clear water; true adds a milky diffuse layer, i.e. the bug |
+    | `normalmap_texture` | TextureRef | {} | ripples. Also what makes the AnimatedWater tag finally do something |
+    | `emissive_*`, `sprite_sheet_*` | | | not needed here |
+
+    With a translucent material in place, tagging the same textures
+    `rtx.animatedWaterTextures` **does** become worthwhile — that is the
+    combination `animatedWaterEnable` is gated on, and it animates the primary
+    texcoords and takes a second normal-map sample with an LoD bias for
+    lower-frequency waves (`material_args.h:141-153`). Tag second, not first.
+
+    **Two Remix options worth knowing before judging the result**, both default
+    **false**: `rtx.enableDirectTranslucentShadows` and
+    `rtx.enableIndirectTranslucentShadows` (`rtx_options.h:706-708`). With them
+    off, water casts an opaque shadow — a lake will look like a hole in the
+    lighting. Turning them on is what gives coloured light through water and
+    caustic-ish pooling on a lake bed.
+
+    **The game side: TP water is name-identifiable, which is unusual and
+    useful.** Room BG water is not an actor — it is materials in the room model,
+    dispatched by name prefix in `dKy_bg_MAxx_proc` (`d_kankyo.cpp:11402`),
+    which switches on `mat_name[3..4] == "MA"`:
+
+    | Material | Handling |
+    | :-- | :-- |
+    | `MA00`, `MA01`, `MA04`, `MA16` | **the water surfaces** — fed `g_env_light.mFogDensity`, and the `...1` variants swap alpha-compare and Z-mode on `dKy_camera_water_in_status_check()`, i.e. this is TP's own above/below-surface handling |
+    | `MA02`, `MA10` | projected `C_MTXLightPerspective` texgen — caustics/reflection layer, pushed to the invisible list |
+    | `MA06` | murky water (`dKy_murky_set`) |
+    | `MA07` | takes the lightning flash colour |
+    | `MA03/09/17/19` | routed to the dark-BG list |
+
+    Separately there are water *actors* (`d_a_obj_groundwater.cpp`,
+    `d_a_obj_lv3Water*.cpp`, `d_a_obj_waterfall.cpp`, `d_a_izumi_gate.cpp`),
+    which are ordinary J3D models with BTK scrolls. So "water" is several
+    distinct texture hashes, not one, and a replacement has to cover the ones
+    that actually appear in the area being judged.
+
+    **What to try, cheapest first:**
+
+    1. Turn on both translucent-shadow options and re-look. This changes nothing
+       about the milkiness but it is one line and it is a precondition for
+       judging any later result.
+    2. Author one translucent replacement for a single water texture — a lake
+       is the clearest test — with `ior_constant = 1.33`, `thin_walled = false`,
+       `use_diffuse_layer = false`, and tune `transmittance_measurement_distance`
+       until shallows read clear and depth reads deep. **That one value is most
+       of the look.**
+    3. Only then tag the same textures as `rtx.animatedWaterTextures` and add a
+       `normalmap_texture` for ripples.
+
+    **Open, and it is a real decision.** Steps 2–3 mean authoring USD, and this
+    project's testing rhythm is slow — a value that needs twenty iterations is
+    badly served by an edit/restart loop. The alternative is a small fork
+    change: a `rtx.dusklight.water.*` texture-hash list that synthesises a
+    translucent material in `determineMaterialData`, with IOR, transmittance and
+    measurement distance as live overlay sliders. That is more code than this
+    project likes to write where a tag would do — but here the tag provably will
+    not do, the no-code route is USD authoring rather than a dev-menu toggle,
+    and live tuning is worth a great deal for a look that is entirely a
+    judgement call. **Try route 2 once to prove the look is reachable before
+    deciding.**
 
 **First-run checklist for the sun/moon light:** Remix's Dusklight tab should
 report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
