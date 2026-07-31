@@ -61,7 +61,9 @@ exempts the sky, the volumetric half does not) and it is the thing to fix next.
 (issue 8 — **the shipped fix did not work**, re-diagnosed and instrumented),
 Ganon's barrier over Hyrule Castle (issue 9 — same root cause as 8), water
 rendering as opaque milk (issue 10 — investigated, needs a translucent
-material replacement), the ambient grade, and the Controls tab.
+material replacement), large distant transparent surfaces such as the
+twilight boundary wall (issue 11 — investigated, one look decides the
+lever), the ambient grade, and the Controls tab.
 
 **Issues 8, 9 and 10 are the same shape of problem seen three ways: Remix
 reconstructs a material from one captured stage and always as an *opaque*
@@ -1750,6 +1752,90 @@ correct; what remains is night-only and is open issue 2.
     and live tuning is worth a great deal for a look that is entirely a
     judgement call. **Try route 2 once to prove the look is reachable before
     deciding.**
+
+11. **Large distant transparent surfaces render wrongly** — the twilight
+    boundary wall Link howls at during the title sequence is the reported case
+    (2026-07-30). Investigated from source the same day. **No fix applied: the
+    right lever depends on which of three buckets the draw lands in, and that
+    is a one-look question.** What follows is the decision tree so the look
+    settles it in one visit instead of several.
+
+    **Remix sorts every non-opaque surface into one of three buckets**
+    (`rtx_instance_manager.cpp:1185-1226`), and they behave very differently.
+    The bucket is chosen from `alphaState`, derived at `:815-845`:
+
+    | Bucket | Entered when | Behaviour |
+    | :-- | :-- | :-- |
+    | **Unordered TLAS** (`m_isUnordered`) | `alphaState.isParticle` (the `Particle` category), or `isDecal`, or **`emissiveBlend`** — i.e. an additive/emissive blend mode (`isBlendTypeEmissive`, `rtx_materials.h:49-60`) | Order-independent accumulation through any-hits. Fast, and **explicitly documented as producing artifacts with stacked transparency**: *"the unordered nature… may result in visual artifacts with large numbers of stacked particles due to difficulty in determining the intended order"* (`rtx_options.h:699-704`). Also only resolved **on the first indirect bounce** |
+    | **Primary TLAS, alpha-tested** | blending disabled, not fully opaque | Cutouts. Correct and cheap; wrong for a soft-edged wall |
+    | **Primary TLAS, alpha-blended** | blending enabled, not particle/decal/emissive | The ordered path, `NO_DUPLICATE_ANY_HIT`. **This is where a big translucent wall should be**, and it is still an *Opaque material* — see issue 10 |
+
+    **Three distinct things can therefore be wrong, and they need different
+    fixes. Do not guess between them:**
+
+    1. **It is milky rather than transparent** → same root cause as issue 10.
+       Every captured draw becomes `OpaqueMaterialData`
+       (`rtx_scene_manager.cpp:812`); alpha-blended-opaque is a transmissive
+       diffuse layer, not glass. Fix is a translucent replacement, and the
+       twilight wall is a *better* candidate for one than water because it is a
+       single distinctive texture rather than a family.
+    2. **It is washed out, blown out, or flickers/sorts wrongly against other
+       transparency** → it is in the **unordered** bucket, almost certainly
+       because its blend mode is additive. Then the emissive-blend override is
+       also driving it at `rtx.emissiveBlendOverrideEmissiveIntensity` = 0.2,
+       **a global shared with every particle in the game** — a value tuned for
+       sparks, applied to a surface covering half the screen. Same trap as the
+       Ganon barrier (issue 9), and the two should be judged together.
+    3. **It disappears behind other transparency, or only the nearest layer
+       shows** → the ray interaction budget. `rtx.primaryRayMaxInteractions`
+       is 32 and `rtx.secondaryRayMaxInteractions` only **8**
+       (`rtx_options.h:686-698`) — the number of transparent surfaces a ray can
+       accumulate. A giant wall seen *through* twilight particles, fog and
+       foliage is exactly the stacking case that exhausts it, and the secondary
+       budget of 8 is why it will look worse in reflections and GI than in the
+       primary view.
+
+    **Why "distant" is not incidental.** A wall at the horizon covers a large
+    solid angle, so every artifact above is magnified: unordered sorting errors
+    become whole-screen shimmer rather than fringing on a spark, and the
+    emissive override's fixed intensity has no distance falloff at all. The
+    authored GX look almost certainly relied on distance fog to fade it — and
+    Remix does not apply per-draw fixed-function fog to traced surfaces, the
+    same loss recorded for the Ganon barrier in issue 9.
+
+    **What one look settles**, in the categorization screen and the debug views:
+
+    1. Does the wall's texture appear in the categorization screen at all? If
+       **no**, it is post-injection and this is issue 6's mechanism, not a
+       transparency problem — check that first, it invalidates everything else.
+    2. Is it in the unordered bucket? Symptom: it does not sort against other
+       transparent things, and looks unaffected by `rtx.enableSeparateUnordered
+       Approximations`. Toggling that option off is the direct test — if the
+       wall changes, it was unordered.
+    3. Is it additive? Aurora's `warn_once` log at that moment names the blend
+       mode. That single fact decides between fix 1 and fix 2 above.
+
+    **Levers in order of cost**, none of them yet tried:
+
+    - `rtx.emissiveBlendOverrideEmissiveIntensity` — if the wall is additive,
+      this one value may be most of the look. Cheap, global, and it will also
+      move every particle in the game, so judge that trade deliberately.
+    - Tagging as `rtx.particleTextures` moves it **into** unordered; tagging it
+      out is not possible, so if it is already unordered via an emissive blend
+      the only exit is a replacement material that is not emissive-blended.
+    - A translucent replacement (`AperturePBR_Translucent.mdl`, tokens listed in
+      issue 10) with a low `transmittance_measurement_distance` and
+      `use_diffuse_layer = false`. This is the route most likely to actually
+      look like a twilight boundary rather than a foggy pane.
+    - Raising `rtx.secondaryRayMaxInteractions` from 8 only if symptom 3 shows.
+
+    **What is not knowable from this repo.** Which actor or room material draws
+    the wall could not be pinned from source — it is not one of the named
+    `*wall*` actors (those are all physical `MoveBG` walls), and it may well be
+    room BG geometry identified by material name the way water is
+    (`dKy_bg_MAxx_proc`, issue 10) rather than an actor at all. Its blend mode
+    and TEV shape live in absent BMD assets. The categorization screen and
+    aurora's log at the title sequence answer both in one visit.
 
 **First-run checklist for the sun/moon light:** Remix's Dusklight tab should
 report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
