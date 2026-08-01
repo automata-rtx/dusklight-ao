@@ -20,6 +20,53 @@ static void J3DFrameInterpConcat(MtxP lhs, MtxP rhs, Mtx out) {
 #define J3DFrameInterpConcat MTXConcat
 #endif
 
+#ifdef TARGET_PC
+#include <dolphin/gx/GXAurora.h>
+
+// J3D stores a single-joint ("full weight") shape's vertices in that joint's
+// local frame, and an enveloped shape's vertices in model (bind) space - one
+// skinned character mixes both spaces within what the PC D3D9 backend merges
+// into a single mesh, which is why a raw capture of such a model shows its
+// full-weight parts collapsed toward the origin. Right after each
+// position-matrix load whose source is the draw-matrix array (pipelines
+// PNGP/NCPU - PCPU/PNCPU load the packet base matrix over CPU-deformed
+// model-space vertices), announce the joint-local case's rest transform (the
+// inverse of the joint's inverse-bind matrix) via GXSetPosMtxRest so the
+// backend can rewrite the geometry into one coherent rest pose while
+// compensating the render matrices. Rasterization is unchanged; enveloped
+// and CPU-deformed loads need no annotation because their vertices are
+// already model-space.
+static void J3DRestSpaceNote(int slot, u16 useMtxIdx) {
+    if (J3DShapeMtx::sCurrentPipeline != 0 && J3DShapeMtx::sCurrentPipeline != 2) {
+        return;
+    }
+    J3DModel* model = j3dSys.getModel();
+    if (model == NULL) {
+        return;
+    }
+    J3DModelData* modelData = model->getModelData();
+    if (modelData == NULL || modelData->getDrawMtxFlag(useMtxIdx) != 0) {
+        return; // enveloped entry: vertices already sit in model space
+    }
+    J3DJointTree& jointTree = modelData->getJointTree();
+    if (jointTree.getWEvlpMtxNum() == 0) {
+        return; // no envelope block, so no inverse-bind table to derive from
+    }
+    u16 joint = modelData->getDrawMtxIndex(useMtxIdx);
+    if (joint >= jointTree.getJointNum()) {
+        return;
+    }
+    Mtx invBind, rest;
+    modelData->getInvJointMtx(joint).to_host(invBind);
+    if (MTXInverse(invBind, rest) == 0) {
+        return;
+    }
+    GXSetPosMtxRest(rest, slot * 3);
+}
+#else
+#define J3DRestSpaceNote(slot, useMtxIdx) ((void)0)
+#endif
+
 void J3DShapeMtx::resetMtxLoadCache() {
     sMtxLoadCache[0] =
     sMtxLoadCache[1] =
@@ -354,6 +401,7 @@ void J3DShapeMtxConcatView::loadMtxConcatView_PNGP_LOD(int slot, u16 drw) const 
 void J3DShapeMtx::load() const {
     J3DShapeMtx_LoadFunc func = sMtxLoadPipeline[sCurrentPipeline];
     (this->*func)(0, mUseMtxIndex);
+    J3DRestSpaceNote(0, mUseMtxIndex);
 }
 
 void J3DShapeMtx::calcNBTScale(Vec const& param_0, Mtx33* param_1, Mtx33* param_2) {
@@ -370,6 +418,7 @@ void J3DShapeMtxConcatView::load() const {
 
     u16 draw_mtx_index = j3dSys.getModel()->getModelData()->getDrawMtxIndex(mUseMtxIndex);
     (this->*func)(0, draw_mtx_index);
+    J3DRestSpaceNote(0, mUseMtxIndex);
 }
 
 void J3DShapeMtxConcatView::loadNrmMtx(int param_0, u16 param_1, MtxP param_2) const {
@@ -411,6 +460,7 @@ void J3DShapeMtxMulti::load() const {
     for (int i = 0; i < use_mtx_num; i++) {
         if (mUseMtxIndexTable[i] != 0xffff) {
             (this->*func)(i, mUseMtxIndexTable[i]);
+            J3DRestSpaceNote(i, mUseMtxIndexTable[i]);
         }
     }
 }
@@ -442,6 +492,7 @@ void J3DShapeMtxMultiConcatView::load() const {
                 u16 draw_mtx_index = j3dSys.getModel()->getModelData()->getDrawMtxIndex(mUseMtxIndexTable[i]);
                 j3dSys.setModelDrawMtx((Mtx*)sMtxPtrTbl[j3dSys.getModel()->getModelData()->getDrawMtxFlag(mUseMtxIndexTable[i])]);
                 (this->*func)(i, draw_mtx_index);
+                J3DRestSpaceNote(i, mUseMtxIndexTable[i]);
             }
         }
     } else {
