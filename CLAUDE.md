@@ -156,9 +156,12 @@ git add extern/aurora          # from the dusklight root
 git submodule status           # verify before committing
 ```
 
-Merge aurora dev → `Fixed-Function` **before** dusklight dev →
-`Fixed-Function`, so the pinned aurora SHA is reachable from aurora's
-`Fixed-Function`.
+**Aurora is always merged first.** Whenever a merge carries a submodule bump,
+merge aurora into the target branch **before** dusklight, so the pinned aurora
+SHA is reachable from that branch rather than only from a session branch that
+may later be deleted. This applies to `Fixed-Function-dev` and `Fixed-Function`
+alike — a dusklight branch pinning a SHA that lives only on a `claude/*` branch
+still builds today and breaks the moment that branch is cleaned up.
 
 ## Other standing facts
 
