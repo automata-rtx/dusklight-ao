@@ -122,5 +122,5 @@ The code default stays at 59.036 so that a build with no configuration behaves
 exactly like vanilla.
 
 This is one of the few things in the Remix work that is **tested and settled**
-rather than built-and-unrun — see `kankyo-remix.md` §"Picking this up cold" for
+rather than built-and-unrun — see `kankyo-remix.md` for
 which side of that line everything else sits on.

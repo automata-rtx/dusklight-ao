@@ -123,6 +123,13 @@ rtx.dusklight.game.hideSkyBillboards = True
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
 
+# Material translation report (Remix half; aurora's half is always on). Turn it
+# on for any session where a surface is the wrong colour - it prints what each
+# material became on the way through D3D9, so a log answers the question instead
+# of someone describing pixels. Bounded, and free when off.
+# Format: extern/aurora/docs/dx9/material-report.md
+#rtx.dusklight.matrep = True
+
 # AMBIENT GRADE: re-applies the colour of the game's ambient term, which the
 # path tracer replaced. Off by default; turn it on once the rest of the
 # bridge is behaving, so a colour shift is never ambiguous about its source.
@@ -208,13 +215,20 @@ Still unmeasured: the churn cost in a busy room. Still ignored: `mFluctuation`,
 the per-light flicker, because applying it would mean re-creating every
 flickering light every frame.
 
-**Sky setup — do not tag textures.** An earlier revision of this document
-told you to tag the vrbox as Sky in the Remix dev menu. That does not work
-and cannot be made to: the vrbox is painted from a handful of vertex colours
-with no texture bound, so Remix has no texture content to hash and there is
-nothing to put in a category. Use the generated sky instead — it reads the
-same kankyo palette colours over the bridge, builds a lat-long dome and
-registers it as a dome light, which is where the sky fill light comes from:
+**Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox by
+*texture* hash in the dev menu does not work: it is painted from a handful of
+vertex colours with no texture bound, so there is no texture content to hash.
+
+*(An earlier revision went further and said it therefore could not be
+categorised at all. That does not follow, and it was corrected on 2026-07-29:
+`rtx.skyBoxGeometries` categorises by **geometry** hash and needs no texture.
+See `dxvk-remix/documentation/DusklightAtmosphere.md` §14.9 — the general lesson
+is that "no texture, therefore untaggable" is wrong, and there are three
+categorisation routes rather than one.)*
+
+The generated sky remains the recommendation, because it is built and tested: it
+reads the same kankyo palette colours over the bridge, builds a lat-long dome
+and registers it as a dome light, which is where the sky fill light comes from:
 
 ```
 rtx.dusklight.atmosphere.skyEnable = True
@@ -463,30 +477,11 @@ open-ended linear radiance, and none of them mean what they meant.
 
 ## Branches
 
-**All three repos — `dusklight-ao`, `aurora-ao` and `dxvk-remix` — develop on
-`Fixed-Function-dev`.** Dusklight's `extern/aurora` pin tracks the matching
-aurora branch. The dusklight/aurora lineage includes the GPU skinning work and
-shares its fork-point ancestry with `ao`/`main`, so mainline updates can be
-backported by merge/cherry-pick.
+All three repos develop on `Fixed-Function-dev`, and dusklight's
+`extern/aurora` pin tracks the matching aurora branch.
 
-`Fixed-Function` (dusklight and aurora only — the Remix fork has none and needs
-none) is the **integration** branch. It advances only by merging
-`Fixed-Function-dev` at checkpoints that are both CI-green *and* tested in game
-by the owner. It is deliberately well behind the dev branch — as of 2026-07-28,
-37 commits in dusklight and 4 in aurora — because most of what has landed since
-the last checkpoint is CI-green but not yet run. **That gap is the design, not
-drift to close.** When you do merge: aurora dev → aurora `Fixed-Function`
-first, then dusklight, so the pinned aurora SHA is reachable.
-
-Remote sessions are often configured to push to a generated `claude/*` branch.
-Those are disposable and get deleted; **mirror every such push to
-`Fixed-Function-dev` in the same turn.** Each repo's `CLAUDE.md` is the
-standing authorization. Before deleting any branch, check it is contained:
-`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
-This is not theoretical — dxvk-remix's `Fixed-Function-dev` was found 19
-commits behind its `claude/*` branch on 2026-07-28, right before that branch
-was to be deleted.
-
-`claude/thin-gbuffer-authored-normals-wgqupt` (dusklight + aurora) is
-**unrelated, unmerged work** in neither `main` nor `Fixed-Function-dev`. Leave
-it alone.
+**`CLAUDE.md` at each repo root is the authority on branch rules** — including
+what happens to session branches and the containment check that must pass before
+any branch is deleted. This section deliberately does not restate them, because
+an earlier revision of this file went stale against `CLAUDE.md` and told readers
+to do something that had been revoked.
