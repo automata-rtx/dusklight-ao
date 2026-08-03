@@ -64,39 +64,38 @@ rtx.dusklight.matrep = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
-### 0. Materials — the colour fix and the report (2026-08-03, UNTESTED)
+### 0. Materials — the colour fix (2026-08-04, UNTESTED)
 
-This build changes material translation *and* instruments it, so read this
-section before judging anything else: a material change alters what every other
-test is looking at.
+Second attempt. The first (2026-08-03) was safe but fired on 3 materials out of
+111; the log showed the material model was wrong, and this round evaluates what
+each material actually produces instead of pattern-matching a shape. Simulated
+against the captured materials, 30 now carry colour rather than 6.
 
-**What to do.** Walk past a rupee, a heart, and into the Goron Mines. Then quit
-and send both logs. That is the whole test — no readouts, no numbers to report.
+**What to do.** Same as last time: walk past a rupee and a heart, go into the
+Goron Mines, look around some ordinary indoor geometry, quit, send both logs.
 
-**What should have happened.** Rupees, hearts and lava have colour.
+**What to report — one thing only, and only if you see it:** anything that used
+to look right now looking **noticeably darker or washed out**. Roughly where is
+enough. Everything else is in the log, including what each material's colour
+*should* be (`out0`/`out1`) next to what we told Remix.
 
-**The regression to watch for is different from the bug.** The failure mode of
-this change is **surfaces going dark**, not staying grey. Grey means the fix did
-not fire; dark means it fired somewhere it should not have. Concretely: a
-material whose GameCube program starts with "texture × a dark colour" and then
-*brightens* it in a later step will now be read by Remix at that first step
-only, and come out too dark.
+Two changes worth knowing, because they shift where a regression could appear:
 
-So the visual tell, in order of usefulness:
+- Some materials now reach Remix as `texture + colour` rather than
+  `texture × colour`. That is deliberate — a multiply drives a colour-floored
+  ramp to black — but the failure mode if the choice is wrong is a surface
+  looking **washed out or too bright**, not too dark.
+- The hint no longer multiplies by vertex colour on materials that never used
+  it, so a few surfaces may look slightly *brighter* or flatter than before.
 
 | What you see | Reading |
 | :-- | :-- |
-| Rupees/hearts/lava coloured, nothing else changed | The fix worked. |
-| Still grey | The fix did not fire. The log says which condition rejected it — no guessing needed. |
-| **Something that used to look right is now noticeably darker or black** | The suppression was too broad. Note roughly where; the log names every material it applied to. |
-| Foliage becomes solid quads, or grass vanishes | Should be impossible — opacity handling was deliberately left alone. If it happens, that is the most important thing in the session. |
+| Rupees/hearts/lava coloured | Worked. |
+| Still grey | Did not fire; the log names the material and its endpoints. |
+| **Used to look right, now darker or washed out** | The op or endpoint choice was wrong for that material. Note roughly where. |
+| Foliage becomes solid quads, or grass vanishes | Should be impossible — opacity handling is untouched. Most important thing in the session if it happens. |
 
-Look at ordinary world geometry as well as the three target objects, since the
-darkening regression would show on things nobody is watching. Interiors and
-anything with a strongly tinted material are the likeliest places.
-
-**Nothing here needs the clock or Freeze Time**, so it can be done first, cold,
-before the setup below.
+**Nothing here needs the clock or Freeze Time**, so do it first, cold.
 
 ### 1. Clock — do this first, it is the tool the rest want
 

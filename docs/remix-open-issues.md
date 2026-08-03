@@ -478,19 +478,35 @@ Added **2026-07-29**:
    the colour lives in a TEV colour register or konst, which aurora *can* see —
    nothing is hidden from us.
 
-   **Fixed 2026-08-03**, by making the hint conditional: it is suppressed when
-   Remix would already reconstruct the albedo we meant, tint included
-   (`remix_decodes_albedo()`, `dx9_tev.cpp`). Deliberately restricted to
-   single-stage materials — on a multi-stage material a later stage may change
-   the colour, and Remix reading only one would be confidently wrong.
-   **Untested in game.**
+   **First attempt 2026-08-03 (hint made conditional): tested, and it was safe
+   but nearly inert — 3 materials out of 111.** The log said exactly why, and it
+   was a wrong *model*, not a coding error.
 
-   **The regression to watch for is surfaces going dark, not staying grey.** A
-   material whose GX first stage is `texture × dark konst` and whose alpha is
-   plainly the texture's alpha will now be read by Remix directly rather than
-   through the hint, and if later GX stages brightened it, Remix does not see
-   them. The material report names every material where the hint was suppressed,
-   so this is diagnosable from the log rather than by hunting.
+   **The material shape we assumed does not exist here.** Every attempt so far
+   looked for `greyscale texture × one tint colour`. Measured over 111 real
+   materials, the dominant shape is a **two-colour ramp**:
+   `lerp(colourA, colourB, textureIntensity)` — the texture selects between two
+   authored colours, which is how one rupee texture yields seven rupee colours.
+   A multiply is only the special case where colourA is black. **104 of 111
+   materials reported no tint**, and the 6 that were detected were exactly the
+   black-floored ones — which came out of Remix correctly coloured. Same code,
+   same session, split precisely along that line.
+
+   **Second attempt 2026-08-04: evaluate instead of pattern-match.** The GX
+   colour pass is now computed with the texture pinned to black and to white,
+   and the two endpoints drive both the colour advertised and the *operation*: a
+   multiply cannot represent a ramp with a coloured floor (it falls to black
+   where the texture is dark, which darkens the surface), so those use `ADD`,
+   which Remix also decodes. Simulated against the captured materials: **30 now
+   carry colour, up from 6.** Also fixed: the albedo stage selector now prefers
+   a stage that *reads* its texture over one that merely binds it. **Untested in
+   game.**
+
+   **What to look for, since the risk changed with the fix.** Grey means it did
+   not fire; the log now prints `out0`/`out1` — what the surface *should* be —
+   next to what we advertised, so a mismatch is readable rather than guessable.
+   The remaining approximation is the ramp-between-two-real-colours case, where
+   no single Remix op is exact; those will be closer than grey but not perfect.
 
    Full account of the interface and the rules that follow from it:
    `extern/aurora/docs/dx9/remix-material-interface.md`.
