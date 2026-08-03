@@ -1521,10 +1521,44 @@ Added **2026-07-29**:
    not apply to rupees at all. It may still apply to the barrier, whose tint
    genuinely is a konst.
 
-   Worth noting for whoever picks this up: the green texture being *in* the
-   categorization screen is itself evidence. Post-injection draws are never
-   categorised (issue 6), so a HUD or menu icon would not appear there — which
-   argues the captured world rupee really is the draw using it.
+   **CORRECTION 2026-08-03 — a claim made in this entry a day earlier was
+   wrong, and it pointed the diagnosis the wrong way.** It said: *"the green
+   texture being in the categorization screen is itself evidence — post-injection
+   draws are never categorised, so a HUD or menu icon would not appear there."*
+   That is false. **The texture grid is populated at texture UPLOAD, not at draw
+   capture**: `ImGUI::AddTexture` is called from `D3D9CommonTexture`
+   (`d3d9_common_texture.cpp:689`, and `:647` for render targets) at the point
+   the image hash is computed, with no reference to draw calls, categorisation
+   or the injection boundary. **Every texture the game uploads appears in that
+   grid, including the HUD's.**
+
+   So the grid cannot tell a world texture from a HUD texture, and the owner's
+   suspicion that they measured the HUD rupee icon rather than the world model's
+   is entirely live. The lesson is the same one as issue 6 and §14.11: a
+   mechanism was reasoned about from its *name* and its neighbours rather than
+   read, and it happened to sound right.
+
+   **Is the HUD rupee icon transformed? Checked 2026-08-03: not by the game
+   code.** `dMeter2Draw_c::drawRupee` (`d_meter2_draw.cpp:2121`) applies only
+   `scale()` and `paneTrans()` to the rupee panes — uniform scale and
+   translation. The only `rotate()` calls in the whole file are for `mpItemB`
+   and `mpItemXY`, the B and X/Y item buttons (`:2509`, `:2697`). The rupee
+   panes are never rotated at draw time.
+
+   That does **not** settle where the slant comes from: the panes are J2D
+   (`CPaneMgr` over a `.blo` screen), and a rotation authored into the layout
+   would persist untouched because nothing in the code clears it. Layout and
+   texture are both absent assets. So "the icon is slanted on screen but the
+   texture is straight" is possible via the layout, and "the slant is baked into
+   the texture" is equally possible — the code cannot distinguish them.
+
+   **What can distinguish them: resolution.** The world model's texture and the
+   HUD icon are different images with different hashes and, almost certainly,
+   different dimensions. `40x64` is what was measured. Aurora now logs every
+   material's albedo texture as `[mapN WxH fmtF]` on every outcome including the
+   accepted ones (`cfd2c4d`), so the next log lists both and says which one a
+   captured 3D draw used — the HUD's pass through aurora too, but only the world
+   rupee's will appear against a perspective material.
 
    **The decisive test needs no new build:** Remix's **Diffuse Albedo** debug
    view. Green there means the material is right and the problem is lighting,
