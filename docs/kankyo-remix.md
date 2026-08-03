@@ -1419,6 +1419,45 @@ Added **2026-07-29**:
    of eleven messages will name the failure exactly. Also compare *Diffuse
    Albedo* against *Diffuse Raw Albedo* in Remix's debug views.
 
+   **FIRST LOG READ, 2026-08-02 — the transport is confirmed working and the
+   gate is confirmed as the problem.** 101 `albedo tint:` lines. The decisive
+   one is a **negative**: not a single "claimed, but ... never emitted" warning
+   fired. Eleven material configs claimed a tint and every one reached a stage.
+   So the emission gates are innocent, the wire is innocent, and the whole
+   failure is the acceptance test.
+
+   | Outcome | Distinct material configs |
+   | :-- | --: |
+   | rejected — lead op is not MODULATE | 55 |
+   | rejected — lead is not texture x const | 17 |
+   | **rejected — lead is MODULATE2X/4X (GX output scale)** | **11** |
+   | accepted, tint claimed | 11 |
+   | constant is white, no tint needed | 4 |
+   | claimed but never emitted | **0** |
+
+   **The 11 MODULATE2X/4X rejects are unambiguous losses** — a plain
+   `texture x konst` stage carrying GX output scale, dropped for the scale
+   alone. That was the predicted most-likely reject and the count confirms it.
+   Fixed in aurora `dfd7874`: the scale is accepted, and deliberately *not*
+   carried into the tint (it multiplies the rasterized result, but Remix wants
+   a material albedo, and doubling that goes past 1 — unphysical for a diffuse
+   surface, and it would read as blown-out rather than tinted).
+
+   **The other two buckets are a mix and the first instrumentation could not
+   split them.** A plain `SELECTARG1(TEXTURE)` material has no tint to carry, so
+   most of the 55 are *correct* rejections; likewise `texture x vertex colour`
+   is ordinary world geometry and belongs in the 17. Both messages now name the
+   actual op and the albedo texture's map index, dimensions and format — the
+   same shape the multi-texture diagnostic uses — so the next run can be matched
+   against Remix's texture list and point at the rupee specifically rather than
+   at a category.
+
+   **Still unproven: whether a rupee is among the 11 that were fixed.** Nothing
+   in the run identifies which config is a rupee, which is exactly the gap the
+   enriched messages close. If rupees come back coloured on the next build, it
+   was the output scale; if not, the next log names the material and the reason
+   together.
+
    **Two loose ends found while looking, neither urgent.** Remix has a live
    off-by-one at `d3d9_rtx.cpp:473-474`, indexing `textureStages[0]` with
    `D3DTSS_*` (COLOROP=1) where the array is `DXVK_TSS_*`-indexed (COLOROP=0).
