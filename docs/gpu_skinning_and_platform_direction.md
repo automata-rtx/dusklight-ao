@@ -140,6 +140,64 @@ surface {rest verts, PNMTXIDX (or expanded weights), per-frame draw-matrix
 palette}. Only the two niche `J3DSkinDeform` actors are genuinely CPU-deformed;
 those DO need GPU-skinning offload (which this branch provides) to be Remix-safe.
 
+> **The trap in "1 bone per vertex", which has now cost two wrong diagnoses
+> downstream.** Because the envelope blend is pre-baked into the palette
+> matrix, a character's D3D9 vertices carry blend weight **1.0** and a single
+> index. That is *not* evidence the character deforms rigidly — the
+> deformation lives in the palette entry, which is rebuilt every frame from
+> the animation. Two corollaries anyone consuming this data needs:
+>
+> - Looking for multi-bone weights on a character finds none. Concluding
+>   "this mesh is unskinned" from that is wrong.
+> - Single influence per **vertex** does not mean rigid per **triangle**. A
+>   triangle whose corners point at different palette slots is interpolated
+>   across its face, so the surface stretches over the joint. Anything
+>   attaching to the surface *between* vertices — fur strands, decals,
+>   procedural geometry — needs the barycentric blend of the corner slots,
+>   not one corner's slot.
+>
+> See aurora `docs/dx9/progress.md` §3.21 for how each of these was learned
+> the expensive way.
+
+## 6a. Rest-space annotation (`J3DRestSpaceNote`) — game side
+
+*Added 2026-08-02. Pairs with aurora checkpoint 3.20.*
+
+J3D stores vertices in **two different spaces within one model**: a
+single-joint ("full weight") shape's vertices sit in that joint's local frame,
+while enveloped shapes' vertices sit in model/bind space. Each part's draw
+matrix undoes its own storage space, so rasterization is correct either way —
+but anything reading the merged bytes as *one* mesh sees the full-weight parts
+(Wolf Link's head and tail) collapsed around the model origin. Remix captures
+exported exactly that explosion.
+
+`J3DRestSpaceNote` (`libs/JSystem/src/J3DGraphBase/J3DShapeMtx.cpp`, under
+`TARGET_PC`) announces, immediately after each position-matrix load, the
+constant transform from the loaded vertices' storage space to model rest
+space — `R = MTXInverse(invJointMtx[getDrawMtxIndex(useMtxIdx)])`, the joint's
+bind-pose global — via aurora's `GXSetPosMtxRest(rest, slot * 3)`. It is
+called from the four `load()` sites; TP loads its models with the ConcatView
+flag, so the ConcatView loads are the ones that actually fire.
+
+It deliberately does nothing in four cases, each a real guard rather than
+defensive padding:
+
+| Guard | Why |
+| :-- | :-- |
+| `sCurrentPipeline` not PNGP (0) or NCPU (2) | CPU-deform pipelines already emit model-space vertices |
+| `getDrawMtxFlag(useMtxIdx) != 0` | enveloped entry — already model-space |
+| `getWEvlpMtxNum() == 0` | no envelope block, so no inverse-bind table to derive `R` from |
+| `MTXInverse` returns 0 | singular bind matrix; leave the vertices alone |
+
+Aurora consumes it D3D9-only and **clears the annotation on every position
+matrix load**, so unannotated engine code (particles, UI, other games) is byte
+-for-byte unchanged. The wgpu backend ignores it entirely.
+
+**Net effect:** a character reaches Remix as one coherent bind-pose mesh.
+Verified in game — captures of Wolf Link now export with head and tail in bind
+pose. Note captures come out at **0.01 scale**; anything authored against a
+capture and fed back in must match that.
+
 ## 7. What was built on `claude/gpu-skinning-72pstj`
 
 - **aurora-ao:** a public `GXSetSkinning` / `GXClearSkinning` extension +

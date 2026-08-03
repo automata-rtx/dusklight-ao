@@ -24,9 +24,9 @@ exactly this situation and links everything else.
 
 | Repo | Role | Its docs |
 | :-- | :-- | :-- |
-| `automata-rtx/dusklight-ao` | the game (Twilight Princess decomp/port) | `docs/kankyo-remix.md`, `docs/dx9-fixed-function.md`, `docs/kankyo-fog.md`, `docs/sun-elevation.md` |
+| `automata-rtx/dusklight-ao` | the game (Twilight Princess decomp/port) | `docs/kankyo-remix.md`, `docs/dx9-fixed-function.md`, `docs/kankyo-fog.md`, `docs/sun-elevation.md`, `docs/gpu_skinning_and_platform_direction.md` |
 | `automata-rtx/aurora-ao` | GX→D3D9 backend, vendored at `extern/aurora` | `docs/dx9/` (README first, then `progress.md`) |
-| `automata-rtx/dxvk-remix` | the RTX Remix fork | `documentation/DusklightAtmosphere.md`, `documentation/DusklightOverlay.md` |
+| `automata-rtx/dxvk-remix` | the RTX Remix fork | `documentation/DusklightAtmosphere.md`, `documentation/DusklightOverlay.md`, `documentation/DusklightHair.md` |
 
 ## Branches — ALL THREE repos use the same structure
 
@@ -63,12 +63,6 @@ This has already caught a near-miss: dxvk-remix's `Fixed-Function-dev` was
 destroyed the entire atmosphere, overlay, warp and clock work. With auto-mirror
 off, that gap is now the *normal* state between milestones rather than an
 anomaly — so the check is no longer a formality.
-
-**Before anyone deletes a branch, verify it is contained:**
-`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
-This has already caught a near-miss: dxvk-remix's `Fixed-Function-dev` was
-**19 commits behind** its `claude/*` branch, so deleting that branch would
-have destroyed the entire atmosphere, overlay, warp and clock work.
 
 **`claude/thin-gbuffer-authored-normals-wgqupt`** (dusklight + aurora) is
 **unrelated, unmerged work — 15 commits in neither `main` nor
@@ -113,3 +107,11 @@ Merge aurora dev → `Fixed-Function` **before** dusklight dev →
 - Verify D3D9 code with the MinGW syntax harness described in
   `extern/aurora/docs/dx9/progress.md` §"How to resume"; full builds happen on
   the owner's Windows machine and in CI.
+- **Characters are matrix-palette skinned, and their D3D9 vertices carry blend
+  weight 1.0 with a single index.** That is *not* rigid deformation — J3D
+  pre-blends the envelope on the CPU into the palette matrix, which is rebuilt
+  every frame. Only `d_a_door_boss` and `d_a_demo00` use the `J3DSkinDeform`
+  path with real per-vertex weights. Misreading this cost two build-and-test
+  rounds on the Remix fur work; `docs/gpu_skinning_and_platform_direction.md`
+  §6 is the authority, and its consequences for anything attaching to a
+  character's surface are in §6's callout.

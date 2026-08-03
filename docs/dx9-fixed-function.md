@@ -479,13 +479,20 @@ drift to close.** When you do merge: aurora dev → aurora `Fixed-Function`
 first, then dusklight, so the pinned aurora SHA is reachable.
 
 Remote sessions are often configured to push to a generated `claude/*` branch.
-Those are disposable and get deleted; **mirror every such push to
-`Fixed-Function-dev` in the same turn.** Each repo's `CLAUDE.md` is the
-standing authorization. Before deleting any branch, check it is contained:
+**Push only that branch.** Earlier revisions of this file instructed sessions
+to mirror every such push to `Fixed-Function-dev`; that authorization was
+**revoked by the owner on 2026-07-29**, and the owner now performs those
+merges themselves. Each repo's `CLAUDE.md` is the authority.
+
+The containment check survives the revocation and matters more because of it:
+before deleting any branch,
 `git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
 This is not theoretical — dxvk-remix's `Fixed-Function-dev` was found 19
 commits behind its `claude/*` branch on 2026-07-28, right before that branch
-was to be deleted.
+was to be deleted. With auto-mirror off, a non-zero count is the expected
+state between milestones, so the check is the only thing standing between a
+routine cleanup and lost work. If a branch is about to be deleted with
+unmerged work on it, say so and stop.
 
 `claude/thin-gbuffer-authored-normals-wgqupt` (dusklight + aurora) is
 **unrelated, unmerged work** in neither `main` nor `Fixed-Function-dev`. Leave

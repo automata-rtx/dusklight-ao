@@ -14,7 +14,7 @@ paths.
 
 ## Picking this up cold
 
-*Updated 2026-07-28. Read this and "Verification state", then stop — the rest
+*Updated 2026-08-03. Read this and "Verification state", then stop — the rest
 is reference. §"Test session playbook" is what to do next.*
 
 **The three repos and what each holds:**
@@ -23,12 +23,19 @@ is reference. §"Test session playbook" is what to do next.*
 | :-- | :-- | :-- |
 | `dusklight-ao` | the game | this file, `kankyo-fog.md`, `dx9-fixed-function.md`, `sun-elevation.md` |
 | `aurora-ao` | GX→D3D9 backend, at `extern/aurora` | `docs/dx9/` |
-| `dxvk-remix` | the Remix fork | `documentation/DusklightAtmosphere.md` (rendering), `documentation/DusklightOverlay.md` (control plane) |
+| `dxvk-remix` | the Remix fork | `documentation/DusklightAtmosphere.md` (rendering), `documentation/DusklightOverlay.md` (control plane), `documentation/DusklightHair.md` (strand fur) |
 
 **All three use `Fixed-Function-dev` as the working branch.** Each repo's
-`CLAUDE.md` carries the full rule, including the standing authorization to
-mirror a session's generated `claude/*` branch to `Fixed-Function-dev` on every
-push. Do that without being asked — `claude/*` branches get deleted.
+`CLAUDE.md` carries the full rule. **Push only your session's `claude/*`
+branch.** The auto-mirror authorization that earlier revisions of this file
+described was **revoked by the owner on 2026-07-29** — they merge to
+`Fixed-Function-dev` themselves, at milestones they choose. Never
+`git push origin HEAD:Fixed-Function-dev`.
+
+Because of that, a `claude/*` branch holding unmerged work is now the *normal*
+state between milestones, not an anomaly. Before anyone deletes a branch,
+`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`;
+if it is not, say so and stop rather than mirroring it.
 
 **Where the work stands.**
 
@@ -47,6 +54,8 @@ push. Do that without being asked — `claude/*` branches get deleted.
 | Ambient grade | built, off by default, **never reached** |
 | Mono overlay + base weight | built; **wolf-senses route blocked by open issue 5**, twilight route still open |
 | Controls tab | **placeholder, nothing built** |
+| Character mesh coherence for Remix (aurora 3.19 batching + 3.20 rest-space) | **tested, working** — a character is one bind-pose mesh with a stable hash; captures export correctly |
+| Strand fur (dxvk-remix `rtx.hairTest.*`) | grows, is masked, is shaded with the RTXCR hair BCSDF — but **attachment to the skeleton is not good enough in practice**, owner's verdict 2026-08-03 after two rounds. See open issue 9 |
 
 **Nothing is known-broken in the bridge any more.** Local point lights, the
 last standing bug, work; the night shadow wandering is fixed; the level-entry
@@ -59,8 +68,17 @@ exempts the sky, the volumetric half does not) and it is the thing to fix next.
 **Also open:** the wolf-senses overlay rendering as an opaque white disc
 (issue 5), the world-space UI billboards appearing only intermittently
 (issue 6 — the torch-flame half is **pinned**, awaiting a test window), grass
-shading under Remix (issue 7), greyscale rupees and hearts (issue 8), the
-ambient grade, and the Controls tab.
+shading under Remix (issue 7), greyscale rupees and hearts (issue 8), strand
+fur not following the skeleton well enough (issue 9), the ambient grade, and
+the Controls tab.
+
+**Issue 9 is the one with no established cause.** Everything about fur except
+skeletal attachment works; two rounds of fixes were spent on wrong diagnoses,
+both traceable to misreading how these characters are skinned. If you touch
+it, read `gpu_skinning_and_platform_direction.md` §6 and aurora
+`docs/dx9/progress.md` §3.21 **first** — between them they explain why a
+character's vertices carry blend weight 1.0 while still deforming, which is
+the fact both wrong diagnoses missed.
 
 **Issues 7 and 8 share a root with the white-ground defect** and are the ones
 with the clearest next step: aurora hands Remix a single reconstructed material
@@ -1329,6 +1347,41 @@ Added **2026-07-29**:
    both are "Remix reads one stage and aurora's later stages carry meaning" —
    and it is worth fixing before any texture-replacement work, since a greyscale
    albedo would get baked into replacements.
+
+9. **Strand fur does not follow the skeleton well enough.** Reported
+   2026-08-03, after two rounds of fixes. **Open, cause not established.**
+
+   Everything upstream of attachment works: fur grows across hair-tagged
+   meshes, an artist scatter mask confines it, it survives to disk cache, and
+   it shades with the RTXCR hair BCSDF. What is unsatisfactory is how the coat
+   tracks the body as it animates — visible as bare skin opening along joints.
+
+   The two rounds, and what each ruled out, so neither is repeated:
+
+   - **Round 1 — group strands by their root vertex's own blend weights.** No
+     effect, and the overlay said why: **204 clusters, 0 blended.** This game's
+     characters are matrix-palette (PNGP): J3D pre-blends the envelope on the
+     CPU into a palette matrix, so every vertex carries weight 1.0 and one
+     index. There are no per-vertex multi-bone weights to group by.
+     See `gpu_skinning_and_platform_direction.md` §6 — which said so already.
+   - **Round 2 — group by the root's barycentric blend over its triangle's
+     corner palette slots.** Correct in principle (single influence per vertex
+     does not mean rigid per triangle; a triangle spanning slots is
+     interpolated across its face) and it does produce blended clusters
+     offline — a synthetic single-influence mesh whose triangles straddle
+     bones went from 0 to 7 of 9 blended. In game it still did not satisfy.
+
+   So the defect is **not** "the weights are single-influence" and **not**
+   "the blend math is wrong". Both were checked, offline and in game.
+
+   **Get ground truth before writing more code**: the overlay's cluster and
+   blended counts for the character, plus a capture showing where strands sit
+   versus where the pelt sits. The leading untested hypothesis is **palette
+   identity across frames** — hair records palette indices once at growth time
+   and reuses them forever, while aurora allocates entries per (slot,
+   load-generation); if that numbering shifts on an LOD change or actor
+   reload, the fur follows the wrong matrices. Full candidate list in aurora
+   `docs/dx9/progress.md` §3.21.
 
 #### Built and CI-green but NEVER RUN
 
