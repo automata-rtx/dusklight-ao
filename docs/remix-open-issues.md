@@ -546,6 +546,31 @@ Added **2026-07-29**:
    The NEE cache performs next-event estimation on emissive triangles and is on
    by default, so no fallback light farm is needed once materials emit.
 
+10. **`rtx.vertexColorIsBakedLighting` is degrading every surface in the game.**
+    Found 2026-08-03 while root-causing the greyscale defect; **not** its cause,
+    but a real and separate loss.
+
+    The option defaults **on**, and what it does is normalise vertex colour —
+    dividing each component by the largest, then mixing toward that result. The
+    effect is to remove all vertex-colour *brightness* and roughly 40% of its
+    *saturation*, on every draw. It is a global transform, not per-material,
+    which is precisely why it could be ruled out as the cause of a defect
+    affecting only three objects.
+
+    Its intent is sound for a game that bakes lighting into vertex colours. This
+    one does not: aurora never evaluates the GX light model, so a vertex colour
+    here is authored material colour, not baked light.
+
+    **Free to test, no build required:** add `rtx.vertexColorIsBakedLighting =
+    False` to `rtx.conf` and compare. Expect vertex-coloured surfaces to gain
+    saturation and contrast.
+
+    The principled fix is per-draw rather than global: the flag is already a
+    per-draw field that is merely copied from the global option, and the GX
+    colour-channel lighting bit says exactly which draws have genuinely baked
+    lighting. That is the same signal issue 9 needs, so the two should be built
+    together.
+
 #### Built and CI-green but NEVER RUN
 
 *This list was five items long on 2026-07-28 and is two on 2026-07-29. It had
