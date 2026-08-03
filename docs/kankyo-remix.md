@@ -1496,6 +1496,45 @@ Added **2026-07-29**:
    by construction, which is why they look the way they do in that screen).
    One resolution read settles which op the rupee actually uses.
 
+   **2026-08-03, and the picture changes: the rupee texture is 40x64 and it is
+   GREEN in Remix's categorization screen, while the world rupee is still
+   grey.** That reverses the working theory. If the colour is already in the
+   texture, there is nothing for a konst tint to supply, and "the tint is not
+   reaching Remix" cannot be the explanation for this object.
+
+   Two things follow, and the second is the useful one.
+
+   **`40x64` appears in neither log, anywhere.** Not in a reject, not in the
+   multi-texture diagnostic. That was a hole in the instrumentation, not a fact
+   about the material: the *accepted* paths — claimed, claimed-from-next-stage,
+   constant-is-white — named an outcome but no texture. So a material aurora
+   handled **correctly** was invisible. Closed in aurora `cfd2c4d`; every
+   outcome now names its albedo texture, and an absence next run will genuinely
+   mean the draw never reached `apply_tev`.
+
+   **The likeliest reading is that aurora is doing its job here.** The texture
+   is a colour format, so `preferred_albedo_stage()` prefers it over any
+   intensity mask (`is_color_texture_format`, `dx9_tev.cpp:425` — only
+   I4/I8/IA4/IA8 are excluded), the hint stage advertises it, and Remix picks
+   stage 0. If the albedo handed over is the green texture, the greyness is
+   **downstream of aurora** and the whole konst-tint line of investigation does
+   not apply to rupees at all. It may still apply to the barrier, whose tint
+   genuinely is a konst.
+
+   Worth noting for whoever picks this up: the green texture being *in* the
+   categorization screen is itself evidence. Post-injection draws are never
+   categorised (issue 6), so a HUD or menu icon would not appear there — which
+   argues the captured world rupee really is the draw using it.
+
+   **The decisive test needs no new build:** Remix's **Diffuse Albedo** debug
+   view. Green there means the material is right and the problem is lighting,
+   post, or the grade — a completely different search. Grey there means the
+   material is wrong despite a green source texture, and the candidates are
+   `rtx.legacyMaterial.useAlbedoTextureIfPresent` (default true; false makes
+   every legacy material flat `albedoConstant`), `rtx.ignoreBakedLightingTextures`
+   if the rupee's hash ended up in it, or a wrong stage winning `firstStage`.
+   **Do that before reading another log.**
+
    **Two loose ends found while looking, neither urgent.** Remix has a live
    off-by-one at `d3d9_rtx.cpp:473-474`, indexing `textureStages[0]` with
    `D3DTSS_*` (COLOROP=1) where the array is `DXVK_TSS_*`-indexed (COLOROP=0).
