@@ -1458,6 +1458,44 @@ Added **2026-07-29**:
    was the output scale; if not, the next log names the material and the reason
    together.
 
+   **SECOND LOG READ, 2026-08-03 — with the ops named, the shape of the
+   problem is finally visible.** The `MODULATE2X/4X` bucket is gone from the
+   rejects, so that widening took. What the named ops reveal:
+
+   | Reject | Configs | Reading |
+   | :-- | --: | :-- |
+   | lead op is **SELECTARG1** | **26** | the albedo stage only *samples* — it applies no colour at all |
+   | lead op is **LERP** | 17 | a blend between two colours keyed by the texture |
+   | lead is texture x **non-const** | 17 | texture x vertex colour — ordinary world geometry, a correct reject |
+   | lead op is **MULTIPLYADD** | 9 | modulate plus an additive term |
+   | lead is **non-const x texture** | 8 | as above, operands reversed |
+   | claimed | 11 | working |
+
+   **26 bare `SELECTARG1(TEXTURE)` leads is the finding.** A stage that only
+   samples cannot be the whole material — the colour has to arrive later. And
+   `albedo_tint` only ever examined **one** stage (`preferred_albedo_stage()`),
+   so a material written as "sample in stage 0, modulate by a konst in stage 1"
+   — a standard GX idiom, and exactly the same product as `texture x konst` —
+   was invisible to it. Handled in aurora `3b2122e`, restricted to the
+   immediately following stage so no assumption is made about intervening math.
+
+   **The remaining buckets are informative but not yet actionable.** `LERP`
+   between two registers keyed by texture intensity would render greyscale under
+   Remix in exactly the reported way, and is a plausible rupee shape given the
+   colour comes from a BRK. But a lerp has no single tint colour, so carrying it
+   would mean choosing one — the guess this gate exists to refuse. It becomes
+   principled only if the "off" operand is near-black, where
+   `lerp(black, B, tex) == B * tex` exactly; worth doing **only** if a rupee is
+   confirmed to be one of these, not on spec.
+
+   **Identification is still the gap, and it is now cheap to close.** Every
+   reject names its albedo texture as `[mapN WxH fmtF]`. Read the rupee's
+   texture resolution off Remix's categorization screen and match it: the
+   intensity-format candidates at item scale are `32x32 fmt1`, `64x64 fmt1/3`,
+   `32x32 fmt0` and `64x64 fmt0` (fmt 0=I4, 1=I8, 2=IA4, 3=IA8 — all greyscale
+   by construction, which is why they look the way they do in that screen).
+   One resolution read settles which op the rupee actually uses.
+
    **Two loose ends found while looking, neither urgent.** Remix has a live
    off-by-one at `d3d9_rtx.cpp:473-474`, indexing `textureStages[0]` with
    `D3DTSS_*` (COLOROP=1) where the array is `DXVK_TSS_*`-indexed (COLOROP=0).
