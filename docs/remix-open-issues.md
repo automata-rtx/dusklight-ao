@@ -2,8 +2,9 @@
 
 The volatile half of the Remix effort. [`kankyo-remix.md`](kankyo-remix.md) is
 the stable design reference; [`remix-test-playbook.md`](remix-test-playbook.md)
-is how to run a test session; [`remix-history.md`](remix-history.md) is what
-previous sessions established, including several lessons that were expensive.
+is how to run a test session. [`remix-history.md`](remix-history.md) is an
+unmaintained archive of old session notes — a last resort for checking whether
+something was already investigated, never a source of fact.
 
 **Rule for this file: an entry states its evidence and its confidence.** Three
 separate sessions have written a plausible story here as though it were a

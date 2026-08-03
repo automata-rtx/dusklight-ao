@@ -4,7 +4,8 @@ The recipe for a test session, so one does not have to be reconstructed from
 scratch each time. Companion documents:
 [`remix-open-issues.md`](remix-open-issues.md) is what is currently owed a run;
 [`kankyo-remix.md`](kankyo-remix.md) is the design these tests exercise;
-[`remix-history.md`](remix-history.md) is what previous sessions found.
+[`remix-history.md`](remix-history.md) is an unmaintained archive — do not
+consult it for how anything currently behaves.
 
 **Before anything else — logs are the deliverable, not impressions.** Aurora and
 the Remix fork both write structured diagnostics, and the project rule is that a

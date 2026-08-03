@@ -1,11 +1,31 @@
-# Remix integration: history and lessons
+# Remix integration: archive
 
-What previous sessions established. Kept separate from
-[`remix-open-issues.md`](remix-open-issues.md) so the live list stays short, and
-from [`kankyo-remix.md`](kankyo-remix.md) so the design reference stays stable.
-
-Read this when a result looks surprising, or before re-investigating something —
-several entries exist specifically because a conclusion was reached twice.
+> ## ⚠ Last resort. Do not read this to find out how anything works.
+>
+> **This file is unmaintained by design.** It is a dump of point-in-time session
+> notes, kept only so that reasoning which was expensive to produce is not
+> destroyed. Entries are **not** updated when the thing they describe changes.
+>
+> **Assume anything here is out of date until you have confirmed it elsewhere.**
+> It contains status snapshots that were true on the day they were written,
+> phase plans that have since been superseded, and at least one diagnosis that
+> was later proved wrong. Formatting is inconsistent because the content was
+> written across many sessions for different purposes.
+>
+> **Read one of these instead:**
+>
+> | Question | Document |
+> | :-- | :-- |
+> | What is broken right now? | [`remix-open-issues.md`](remix-open-issues.md) |
+> | How does the design work? | [`kankyo-remix.md`](kankyo-remix.md) |
+> | How do I test it? | [`remix-test-playbook.md`](remix-test-playbook.md) |
+> | Why is this surface the wrong colour? | `extern/aurora/docs/dx9/remix-material-interface.md` |
+>
+> **The only good reasons to open this file:** you are about to re-investigate
+> something and want to know whether it was already investigated; or a live
+> document cites an entry here by name. Nothing routes here for a fact — if you
+> find yourself citing this file as evidence, find the claim in a maintained
+> document instead, or verify it against the source yourself.
 
 ### Status log
 

@@ -16,7 +16,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | :-- | :-- |
 | Understand what is broken right now | [`remix-open-issues.md`](remix-open-issues.md) |
 | Run a test session | [`remix-test-playbook.md`](remix-test-playbook.md) |
-| Know what previous sessions found | [`remix-history.md`](remix-history.md) |
+| Check whether something was already investigated (last resort — unmaintained archive) | [`remix-history.md`](remix-history.md) |
 | Understand the fog specifically | [`kankyo-fog.md`](kankyo-fog.md) (game side) + `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer) |
 | Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
@@ -547,5 +547,6 @@ colour/amount, base weight. One calibration knob is needed:
 
 ## Where the implementation lives
 
-Status, phases, and the record of what was built when: [`remix-history.md`](remix-history.md).
+Superseded phase plans and old session notes are archived in
+[`remix-history.md`](remix-history.md) — unmaintained, and not a source of fact.
 What is currently broken or untested: [`remix-open-issues.md`](remix-open-issues.md).
