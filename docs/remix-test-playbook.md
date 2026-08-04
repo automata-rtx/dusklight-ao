@@ -61,8 +61,10 @@ rtx.dusklight.matrep = True
 
 # Self-illumination. On by default with its own bounded log; these are here so
 # a session can start from a known state rather than whatever was last saved.
-rtx.dusklight.emissive.enable = True
-rtx.dusklight.emissive.log    = True
+# threshold is the one to move: 0.70 is conservative, 0.20 is wide.
+rtx.dusklight.emissive.enable    = True
+rtx.dusklight.emissive.log       = True
+rtx.dusklight.emissive.threshold = 0.70
 ```
 
 **Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
@@ -101,34 +103,37 @@ a coloured floor gets `texture + colour`, a black floor keeps `texture × colour
 | Surfaces washed out or too bright | The `add` branch overshoots on that material — expected direction if the choice is wrong. |
 | Foliage becomes solid quads, or grass vanishes | Should be impossible, opacity is untouched. Most important thing in the session if it happens. |
 
-#### 0b. Self-illumination — first attempt
+#### 0b. Self-illumination — second attempt
 
-Surfaces GX marked as taking no light can now emit. Replayed against the last
-session's log the rule fires on **8 materials out of 117**, so expect a handful
-of things to glow, not a scene-wide change.
+The first attempt was tested in the Goron Mines and caught **one** material,
+which was not lava. The rule required GX lighting to be off; the lava has it on.
+It now scores evidence instead, and the cut is a slider.
 
-Controls are live in **F1 → Dusklight Remix → Materials**, so this is tunable
-without a rebuild:
+Controls are live in **F1 → Dusklight Remix → Materials**:
 
 | Control | Do this |
 | :-- | :-- |
-| Emissive Surfaces Enabled | Turn it off and on to see what it is responsible for. |
+| Evidence Needed | **Start at the 0.70 default, then try 0.20.** That admits the "brighter than the console could display" materials on their own, which is the most promising signal for lava. |
 | Emissive Intensity | Raise it if something glows but does not light the room. |
-| Minimum Brightness / Saturation | **Lower** them if something that should glow does not. |
+| Minimum Brightness / Saturation | Lower if something that should glow does not. |
 
-| What you see | Reading |
-| :-- | :-- |
-| Lava glows and lights the cave | Worked. |
-| Lava glows but lights nothing | Raise Emissive Intensity. |
-| Lava still flat | Look for its `dusklight.emis` line; if there is none, aurora rejected it and `selfLit=` says why. |
-| Rupees and hearts glow | Expected — they are unlit in the original too. Say if it looks wrong. |
-| **Ordinary interior walls glow** | The known false-positive risk. Raise Minimum Saturation; note roughly where. |
-| Grainy speckling near an emitter | The emitter is too bright for the sampler. Lower Emissive Intensity. |
+A pass at each of 0.70 and 0.20, looking at the lava and the geysers, is worth
+more than anything else in this section — the two logs will then bracket the
+answer.
 
-The glow is a **flat colour** by design, not the texture — this game keeps a
-material's colour in a GX constant, so a textured glow would come out white.
-If the flatness is the problem rather than the colour, that is what
-`rtx.dusklight.emissive.useTextureColor` is for.
+#### 0c. What the logs now answer by themselves
+
+Every material line carries `grp=`, the name of the game code that drew it. That
+means **"which one is the lava?" no longer needs you to describe anything** —
+it is in the log. Nothing to do here; it is noted so you know that question is
+retired.
+
+Two things still worth a sentence if you notice them:
+
+- **Frame time noticeably worse than last session.** The `grp=` labelling costs
+  a small amount per draw and is the first suspect.
+- **Anything glowing that obviously should not.** The accepted materials are all
+  named in the log, so "roughly where" is enough.
 
 ### 1. Clock — do this first, it is the tool the rest want
 

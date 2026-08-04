@@ -8,25 +8,39 @@
 #include "f_pc/f_pc_leaf.h"
 #include "f_pc/f_pc_node.h"
 #include "f_pc/f_pc_pause.h"
+#include "f_pc/f_pc_name.h"
 #include "dusk/frame_interpolation.h"
 #include <cstdio>
 #include "dusk/logging.h"
+#include <dolphin/gx/GXAurora.h>
 
 int fpcDw_Execute(base_process_class* i_proc) {
     if (!fpcPause_IsEnable(i_proc, 2)) {
         layer_class* save_layer;
         int ret;
         process_method_func draw_func;
-    
+
         save_layer = fpcLy_CurrentLayer();
         if (fpcBs_Is_JustOfType(g_fpcLf_type, i_proc->subtype)) {
             draw_func = ((leafdraw_method_class*)i_proc->methods)->draw_method;
         } else {
             draw_func = ((nodedraw_method_class*)i_proc->methods)->draw_method;
         }
-    
+
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
+        // Name the draw for the renderer. This is the single funnel every
+        // process draw passes through, so labelling it here tells the D3D9
+        // backend which piece of game code issued each material - the field
+        // that makes "which material is the lava?" a log question instead of a
+        // guess. See extern/aurora/docs/dx9/material-report.md.
+        // GetProcName returns null for an id outside its table, so never pass
+        // it straight through; push/pop must stay balanced either way.
+        IF_DUSK({
+            const char* procName = GetProcName(i_proc->profname);
+            GXPushDebugGroup(procName != nullptr ? procName : "proc?");
+        });
         ret = draw_func(i_proc);
+        IF_DUSK(GXPopDebugGroup());
         fpcLy_SetCurrentLayer(save_layer);
         return ret;
     }

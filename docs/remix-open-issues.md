@@ -25,9 +25,12 @@ only syntax check it gets.
 
 **The two live rendering defects:**
 
-1. **Materials lose their colour** — rupees, hearts, lava (issue 8). Root-caused
-   2026-08-03 after a shipped fix failed; a corrected fix and the material report
-   are in the current build, **untested**.
+1. **Materials are coloured now, but two-colour ramps are only approximated**
+   (issue 8). Tested 2026-08-04: rupees, hearts and lava all carry colour. What
+   remains is that Remix cannot express a lerp between two constants in the one
+   stage it reads, so the Goron Mines lava reads red-and-white instead of
+   red-to-orange. Exact reproduction is designed and not built —
+   `extern/aurora/docs/dx9/remix-material-interface.md` §10.
 2. **The fog medium dims the generated sky** (issue 4). Cause verified in the
    composite; `skyFogMode` ships two candidate treatments and one is meant to be
    deleted once they have been compared.
@@ -36,10 +39,10 @@ only syntax check it gets.
 world-space UI billboards (issue 6), grass shading (issue 7), the ambient grade,
 and the Controls tab.
 
-**Untested but built 2026-08-04:** self-illumination (issue 9). Aurora reports
-the GX evidence, the fork applies thresholds that live in the F1 overlay, and
-both halves log what they decided — so a session that shows nothing glowing
-still says why.
+**Self-illumination (issue 9) was tested 2026-08-04 and did not catch the lava**
+— the rule required GX lighting to be off and the lava has it on. Rev 2 replaces
+the predicate with a score, and adds `grp=` to the material report so "which
+material is the lava?" stops being a guess. Untested.
 
 #### Confirmed working in-game
 
@@ -521,74 +524,55 @@ Added **2026-07-29**:
    into Remix.
 
 9. **Emissive surfaces.** Raised 2026-08-03 (Goron Mines lava is unlit as well
-   as grey): no route existed by which an opaque captured draw could be made
-   emissive at any point in the chain. **Built 2026-08-04, untested in game.**
+   as grey). **First attempt shipped and was tested 2026-08-04. It fired on one
+   material, and that material was not lava. Rev 2 is in the tree, untested.**
 
-   **What was wrong.** GX carries a per-draw colour-channel lighting bit that
-   comes straight out of the model file — the artist marking a surface as
-   self-lit. Aurora decoded the whole colour-channel state and the D3D9 backend
-   read exactly one field of it, not that one, so a self-lit lava material and a
-   lit rock emitted byte-identical D3D9 state. On the Remix side all three
-   existing routes were unusable: `rtx.legacyMaterial.enableEmissive` is global,
-   the emissive-blend override requires alpha blending that opaque lava does not
-   have, and `rtx.lightConverter` is keyed on texture hash — the per-texture
-   tagging this project exists to avoid.
+   **The finding that matters, and it kills the original premise.** The rule
+   required GX lighting to be *disabled*. In the Goron Mines every candidate
+   lava material has **`lit=1`** — lighting enabled. The rule could never have
+   caught the one surface the feature exists for. Combined with the earlier
+   measurement (69 of 117 materials unlit in a mixed scene), "unlit" is both too
+   broad and too narrow: **no single GX fact identifies an emitter.**
 
-   **The measurement that shaped the fix.** Issue 9 previously said "count how
-   often the rule would fire before building on it." Replayed against the
-   2026-08-03 22:23 log: **69 of 117 materials had GX lighting disabled**, so
-   acting on that bit alone would have set 59% of the scene glowing — the
-   false-positive risk this entry warned about, confirmed. 44 of those 69 take
-   their colour from the vertex stream, which is issue 10's baked lighting, not
-   an emitter.
+   What did fire: exactly one material, a brown `965744`, which had already been
+   flagged as the likeliest false positive. Nothing else in the room. That also
+   explains the owner's report that the F1 controls did nothing — **they worked;
+   there was nothing emissive on screen for them to change.**
 
-   **What was built.** Aurora reports *evidence* — unlit, register-sourced, 3D,
-   evaluable, plus the colour the surface presents — over `D3DMATERIAL9::Emissive`,
-   a field that was free end to end. The fork applies the thresholds that turn
-   evidence into a decision, and patches the opaque material the same way the
-   `WorldUI` precedent does. **The thresholds are options, not constants**
-   (`rtx.dusklight.emissive.*`, in the F1 overlay under Dusklight Remix →
-   Materials), so widening or narrowing the rule does not need a rebuild.
+   **Rev 2 — a score instead of a predicate.** Aurora sums what GX does say
+   (lighting disabled 0.50, colour authored in a register 0.25, a TEV stage
+   scaled past what the console could display 0.25) and the fork cuts at
+   `rtx.dusklight.emissive.threshold`, live in the overlay as **Evidence
+   Needed**. 0.70 keeps the old behaviour; **0.20 admits the over-range
+   materials on their own**, which is the setting to try first.
 
-   At the shipped defaults the rule fires on **8 of 117 materials** in that log,
-   including a red ramp matching the heart, a green one matching the rupee, and
-   two orange ones consistent with fire or lava. **Which of the eight is lava
-   has not been established** — that is what the log is for.
+   The over-range signal is new and is the only thing in GX that states
+   "brighter than the display can show". It is evidence, not proof.
 
-   **How the next session settles it without anyone describing a picture.**
-   `matrep.sum` gains `selfLit=` (aurora's verdict, or why not), and the fork
-   writes one `dusklight.emis` line per candidate, **accepted or rejected**,
-   with the luma and chroma that decided it. So:
+   **A real bug fixed alongside.** `emissiveColorConstant` does not reach the
+   shader untouched — the fixed-function block re-applies the *albedo's* texture
+   op to it, so the glow was coming out as `colour + tFactor`, roughly double.
+   The fork now sets the pre-image, and declines rather than glowing a wrong
+   colour when the op cannot be inverted (`invertible=0` in the log).
 
-   - nothing glows and there is no `dusklight.emis` line → aurora rejected it;
-     read `selfLit=` for the reason
-   - nothing glows and there is a `verdict=rejected` line → lower Minimum
-     Brightness or Minimum Saturation in the overlay, by the amount the line
-     shows
-   - too much glows → the accepted lines name every offender
+   **The instrument that ends the guessing: `grp=`.** The recurring blocker was
+   never the rule, it was that nobody could tell which logged material was the
+   lava. The game now pushes a debug group per process draw, labelled with the
+   process name, at `fpcDw_Execute` — the single funnel every draw passes
+   through. Aurora prints it on every `matrep.sum` line. Every material is now
+   labelled with the game code that drew it, permanently, for every future
+   material question. Cost: one short string per drawn process per frame; if
+   frame time regresses noticeably, suspect this first.
 
-   Format: `extern/aurora/docs/dx9/material-report.md`. Design and the full
-   measurement: `extern/aurora/docs/dx9/remix-material-interface.md` §9.
-
-   **Two couplings, both now satisfied.**
-
-   - **The colour fix had to land first**, because the glow colour comes from
-     the same evaluation as the albedo — emission pointed at a bleached albedo
-     would have made the lava glow white. Issue 8's fix landed 2026-08-04.
-   - **"Unlit" is not "emissive."** Handled by requiring a register-sourced
-     colour and a perspective draw, then by the brightness and saturation
-     thresholds. The remaining exposure is that the game forces interior ambient
-     to black in places, which gave its artists reason to author ordinary
-     interior geometry as unlit too; on real hardware lit-with-black-ambient and
-     unlit look identical. If interior walls glow, that is this.
+   Design and both measurements: `extern/aurora/docs/dx9/remix-material-interface.md`
+   §9. Log format: `extern/aurora/docs/dx9/material-report.md`.
 
    **Emitters illuminate rather than merely glowing, but only because the
    surface flag is set.** `NEECacheUtils.shouldSampleObject` is
    `isEmissiveBlend || isEmissive`, so next-event estimation reaches an emissive
    triangle only when `RtInstance::surface.isEmissive` is true; the fix sets it.
    The same flag also excludes the surface from motion blur unless
-   `rtx.postfx.enableMotionBlurEmissive` is set, which is how Remix treats
-   emitters elsewhere.
+   `rtx.postfx.enableMotionBlurEmissive` is set.
 
 10. **Vertex colour carries baked lighting, and was being forwarded to Remix.**
     **RESOLVED 2026-08-04 — and it settled a claim the docs had backwards.**
