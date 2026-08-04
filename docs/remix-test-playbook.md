@@ -55,8 +55,14 @@ rtx.fallbackLightMode    = 1
 
 # Material translation report, Remix half. Aurora's half is always on.
 # Costs nothing when off and kilobytes when on; leave it on for any session
-# where a surface looks the wrong colour.
+# where a surface looks the wrong colour. Also toggleable live in
+# F1 -> Dusklight Remix -> Materials.
 rtx.dusklight.matrep = True
+
+# Self-illumination. On by default with its own bounded log; these are here so
+# a session can start from a known state rather than whatever was last saved.
+rtx.dusklight.emissive.enable = True
+rtx.dusklight.emissive.log    = True
 ```
 
 **Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
@@ -64,38 +70,65 @@ rtx.dusklight.matrep = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
-### 0. Materials — the colour fix (2026-08-04, UNTESTED)
+### 0. Materials — colour and self-illumination (2026-08-04, UNTESTED)
 
-Second attempt. The first (2026-08-03) was safe but fired on 3 materials out of
-111; the log showed the material model was wrong, and this round evaluates what
-each material actually produces instead of pattern-matching a shape. Simulated
-against the captured materials, 30 now carry colour rather than 6.
+Two changes land together, both about material colour, so one walk covers both.
 
-**What to do.** Same as last time: walk past a rupee and a heart, go into the
-Goron Mines, look around some ordinary indoor geometry, quit, send both logs.
+**What to do.** Walk past a rupee and a heart, go into the Goron Mines and look
+at the lava, look around some ordinary indoor geometry, quit, send both logs.
+Nothing here needs the clock or Freeze Time, so do it first, cold.
 
-**What to report — one thing only, and only if you see it:** anything that used
-to look right now looking **noticeably darker or washed out**. Roughly where is
-enough. Everything else is in the log, including what each material's colour
-*should* be (`out0`/`out1`) next to what we told Remix.
+**What to report — and it is deliberately short.** The logs carry the numbers;
+what they cannot carry is where you were standing. So:
 
-Two changes worth knowing, because they shift where a regression could appear:
+- anything that used to look right and now looks **noticeably darker, washed
+  out, or glowing when it should not**. Roughly where is enough.
+- if the answer is "nothing looks different at all", say that — it is a real
+  result and it points at a different part of the chain.
 
-- Some materials now reach Remix as `texture + colour` rather than
-  `texture × colour`. That is deliberate — a multiply drives a colour-floored
-  ramp to black — but the failure mode if the choice is wrong is a surface
-  looking **washed out or too bright**, not too dark.
-- The hint no longer multiplies by vertex colour on materials that never used
-  it, so a few surfaces may look slightly *brighter* or flatter than before.
+#### 0a. Colour — third attempt
+
+The first (2026-07-29) was a no-op. The second (2026-08-03) coloured rupees but
+rendered their highlights **black**, because it multiplied by the colour where
+the material actually adds to it. This round lets the material's floor decide:
+a coloured floor gets `texture + colour`, a black floor keeps `texture × colour`.
 
 | What you see | Reading |
 | :-- | :-- |
-| Rupees/hearts/lava coloured | Worked. |
-| Still grey | Did not fire; the log names the material and its endpoints. |
-| **Used to look right, now darker or washed out** | The op or endpoint choice was wrong for that material. Note roughly where. |
-| Foliage becomes solid quads, or grass vanishes | Should be impossible — opacity handling is untouched. Most important thing in the session if it happens. |
+| Rupees and hearts coloured, highlights bright | Worked. |
+| Highlights dark or inverted again | The op choice is still wrong; the log gives `out0`/`out1` per material. |
+| Still grey | Did not fire; the log names the material. |
+| Surfaces washed out or too bright | The `add` branch overshoots on that material — expected direction if the choice is wrong. |
+| Foliage becomes solid quads, or grass vanishes | Should be impossible, opacity is untouched. Most important thing in the session if it happens. |
 
-**Nothing here needs the clock or Freeze Time**, so do it first, cold.
+#### 0b. Self-illumination — first attempt
+
+Surfaces GX marked as taking no light can now emit. Replayed against the last
+session's log the rule fires on **8 materials out of 117**, so expect a handful
+of things to glow, not a scene-wide change.
+
+Controls are live in **F1 → Dusklight Remix → Materials**, so this is tunable
+without a rebuild:
+
+| Control | Do this |
+| :-- | :-- |
+| Emissive Surfaces Enabled | Turn it off and on to see what it is responsible for. |
+| Emissive Intensity | Raise it if something glows but does not light the room. |
+| Minimum Brightness / Saturation | **Lower** them if something that should glow does not. |
+
+| What you see | Reading |
+| :-- | :-- |
+| Lava glows and lights the cave | Worked. |
+| Lava glows but lights nothing | Raise Emissive Intensity. |
+| Lava still flat | Look for its `dusklight.emis` line; if there is none, aurora rejected it and `selfLit=` says why. |
+| Rupees and hearts glow | Expected — they are unlit in the original too. Say if it looks wrong. |
+| **Ordinary interior walls glow** | The known false-positive risk. Raise Minimum Saturation; note roughly where. |
+| Grainy speckling near an emitter | The emitter is too bright for the sampler. Lower Emissive Intensity. |
+
+The glow is a **flat colour** by design, not the texture — this game keeps a
+material's colour in a GX constant, so a textured glow would come out white.
+If the flatness is the problem rather than the colour, that is what
+`rtx.dusklight.emissive.useTextureColor` is for.
 
 ### 1. Clock — do this first, it is the tool the rest want
 
