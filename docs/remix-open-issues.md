@@ -15,9 +15,10 @@ inferred rather than read, say so.
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
-configs. The 2026-08-04 aurora work is **syntax-checked** in both the d3d9-on
-and d3d9-off configs; the fork half is not — it has no cross-compilable harness,
-so treat its first CI run as the syntax check.
+configs, **including the 2026-08-04 material and self-illumination work**. The
+aurora half is additionally **syntax-checked** in both the d3d9-on and d3d9-off
+configs; the fork half has no cross-compilable harness, so its CI run is the
+only syntax check it gets.
 
 **Protocol is at 6.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
