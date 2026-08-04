@@ -25,12 +25,12 @@ only syntax check it gets.
 
 **The two live rendering defects:**
 
-1. **Materials are coloured now, but two-colour ramps are only approximated**
-   (issue 8). Tested 2026-08-04: rupees, hearts and lava all carry colour. What
-   remains is that Remix cannot express a lerp between two constants in the one
-   stage it reads, so the Goron Mines lava reads red-and-white instead of
-   red-to-orange. Exact reproduction is designed and not built —
-   `extern/aurora/docs/dx9/remix-material-interface.md` §10.
+1. **Materials are coloured, and two-colour ramps are now reproduced exactly**
+   (issue 8). Tested 2026-08-04: rupees, hearts and lava all carry colour, but
+   the lava read red-and-white because stock Remix cannot express a lerp between
+   two constants. The fork now evaluates the GX colour combiner directly from
+   both endpoints — exact for every ramp material, not just lava.
+   **Untested.** `extern/aurora/docs/dx9/remix-material-interface.md` §10.
 2. **The fog medium dims the generated sky** (issue 4). Cause verified in the
    composite; `skyFogMode` ships two candidate treatments and one is meant to be
    deleted once they have been compared.

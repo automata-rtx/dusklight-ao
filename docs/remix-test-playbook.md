@@ -88,7 +88,24 @@ what they cannot carry is where you were standing. So:
 - if the answer is "nothing looks different at all", say that — it is a real
   result and it points at a different part of the chain.
 
-#### 0a. Colour — third attempt
+#### 0a. Colour — two-colour ramps, reproduced rather than approximated
+
+The lava reading "more red than orange/yellow" was not mistuning: its material
+is `lerp(red, yellow, texture)` and no stock Remix texture op can express a lerp
+between two constants, so the bright end was going to white. The fork now
+evaluates the GameCube colour combiner itself.
+
+**The A/B is one checkbox:** F1 → Dusklight Remix → Materials → *Reproduce
+Two-Colour Ramps*. Off is the old approximation. Worth a look at the lava with
+it on and off, because that comparison is the whole result.
+
+| What you see | Reading |
+| :-- | :-- |
+| Lava reads red-to-orange, rupees and hearts richer | Worked. |
+| Lava reads flat, or light and dark inverted | The endpoints are swapped — a one-line fix, and the log names the material. |
+| No difference at all with the checkbox | The ramp was declined; `ramp=` in the log says why (most likely `tfTaken`). |
+
+#### 0a-bis. The op approximation, for materials the ramp declines
 
 The first (2026-07-29) was a no-op. The second (2026-08-03) coloured rupees but
 rendered their highlights **black**, because it multiplied by the colour where
