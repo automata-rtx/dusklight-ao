@@ -12,14 +12,29 @@ investigation, so the context is not lost.
 > current development is on `Fixed-Function-dev` in all three repos; see
 > `CLAUDE.md`.
 
+> **Superseded 2026-08-04 — the direction below was decided the other way.**
+> §3 rejects the DXVK route ("you'd write a lossy GX→D3D9FF translator"). That
+> translator was written, it works, and it is the active line: aurora carries a
+> GX→D3D9 fixed-function backend (`extern/aurora/lib/dx9/`) that feeds Remix's
+> DX9→Vulkan translation, with the Remix API and the `dxvk-remix` fork used for
+> what the D3D9 stream cannot carry. The premise that lossiness disqualifies it
+> was wrong: **the raw D3D9 image is never shown to a player — it is the feed,
+> and Remix's renderer is the product** — so fixed-function limits are not the
+> ceiling. Only the HUD and alpha still have to rasterize correctly. Full
+> statement: `extern/aurora/docs/dx9/remix-material-interface.md` §0. The
+> GPU-skinning findings (§4–§7) are unaffected by the reversal, which is the
+> main reason this file is still worth reading.
+
 ---
 
 ## 1. Why this exists
 
-Dusklight (Twilight Princess PC port) currently renders through a **forward**
-GX→WebGPU path (aurora). Graphics features are added as mods that reconstruct,
-at a cost, information the renderer already had and discarded (normals from
-depth, fog re-application, etc.). Two long-horizon directions were weighed:
+Dusklight (Twilight Princess PC port) renders through a **forward** GX→WebGPU
+path (aurora) — still true of the default build, but aurora now also carries a
+GX→D3D9 fixed-function backend (`extern/aurora/lib/dx9/`), which is what the
+Remix line uses. Graphics features are added as mods that reconstruct, at a
+cost, information the renderer already had and discarded (normals from depth,
+fog re-application, etc.). Two long-horizon directions were weighed:
 
 1. Build a **deferred(-style) renderer** for Dusklight/aurora that preserves the
    authentic look but exposes the buffers modern effects need.
@@ -58,10 +73,27 @@ nothing extra since GX lighting is cheap per-vertex.
 - Missing from **both** because GX/TEV isn't PBR: real roughness/metalness/F0
   (must be *authored*), and multi-layer transparency (single opaque layer only).
 
+**Superseded 2026-08-04 on the Remix path — emitters are not a tagging
+problem.** Aurora scores GX evidence per draw (colour-channel lighting disabled
+0.50, register-sourced colour 0.25, a TEV stage scaled past displayable 0.25)
+and the fork cuts at `rtx.dusklight.emissive.threshold`, live in the F1 overlay.
+The measured counter-example is why it is a score rather than a rule: the Goron
+Mines lava has GX lighting **enabled**, so "lighting is off" alone never
+identified an emitter. `extern/aurora/docs/dx9/remix-material-interface.md` §9.
+Rev 2 of that scoring is CI-green and **untested in game**.
+
 ## 3. Option 2: RTX Remix (SDK path)
 
 - **DXVK path is wrong** for us — Dusklight isn't D3D9 and TEV exceeds
   fixed-function; you'd write a lossy GX→D3D9FF translator.
+  **Superseded 2026-08-04:** the translator exists (`extern/aurora/lib/dx9/`)
+  and is the path in use. TEV does exceed fixed-function, and that is not
+  fatal, because the D3D9 stream only has to be a feed Remix can pick the scene
+  up from; what it cannot carry is implemented in the fork instead. Two
+  examples that were once written down as hard limits: two-colour TEV ramps are
+  now evaluated exactly in the fork's shader, and self-illumination is carried
+  as a GX evidence score (both CI-green, **untested in game**). The HUD and
+  alpha are the two things that still have to rasterize correctly.
 - **remixapi SDK path is a surprisingly good architectural match:** aurora's
   `push_gx_draw` (`aurora-ao/lib/gx/command_processor.cpp`) already centralizes
   per-draw {vertex/index ranges, world transforms in the uniform (proj + pnMtx),
@@ -74,7 +106,13 @@ nothing extra since GX lighting is cheap per-vertex.
   materials/replacements in the toolkit for a 40-hour game). Windows + RTX only;
   does not feed the 7-platform CI or mobile. Long-tail scene coverage (sky,
   twilight realm, wolf senses, heat-haze) needs re-authoring or acceptance that
-  it's gone initially.
+  it's gone initially. **2026-08-04:** the sky half of that is done — the fork
+  generates a Hillaire physical sky, and API-submitted assets are capturable and
+  replaceable in this fork (mesh hashes are derived from the submitted geometry
+  rather than a creation-order counter, and `submitExternalDraw` consults the
+  replacer), which upstream they are not. That second half is **CI-green and has
+  not yet been exercised by an actual capture in game** — it is what this route
+  would rest on, so it is worth testing before anyone plans around it.
 
 ## 4. CRITICAL: hardware/GPU skinning is a prerequisite for Remix skinned-mesh replacement
 
@@ -140,6 +178,11 @@ surface {rest verts, PNMTXIDX (or expanded weights), per-frame draw-matrix
 palette}. Only the two niche `J3DSkinDeform` actors are genuinely CPU-deformed;
 those DO need GPU-skinning offload (which this branch provides) to be Remix-safe.
 
+**Status 2026-08-04:** this landed on the D3D9 feed rather than the SDK
+backend — skinned characters render under Remix on both skinning forms.
+Aurora's `docs/dx9/progress.md` is authoritative for what the backend does and
+does not carry.
+
 ## 7. What was built on `claude/gpu-skinning-72pstj`
 
 - **aurora-ao:** a public `GXSetSkinning` / `GXClearSkinning` extension +
@@ -163,6 +206,10 @@ those DO need GPU-skinning offload (which this branch provides) to be Remix-safe
 
 ## 8. Open items / recommended next steps
 
+**Read these as of the date they were written.** The direction was settled in
+favour of the D3D9 feed into the `dxvk-remix` fork (see the note at the top), so
+items 2 and 3 are kept as the reasoning of the time, not as current plans.
+
 1. **True per-character motion vectors on the matrix-palette path** — the genuinely
    new capability for characters, and the shared prerequisite for both deferred
    and Remix. Needs game-side previous-frame draw-matrix tracking (snapshot
@@ -174,6 +221,11 @@ those DO need GPU-skinning offload (which this branch provides) to be Remix-safe
 3. **Remix SDK backend** off `push_gx_draw` — only as its own standalone project
    with the full content cost accepted; reuse the per-draw transform/identity
    understanding from the skinning work.
+   **Superseded 2026-08-04:** the route taken is the DXVK one — the GX→D3D9
+   fixed-function backend in `extern/aurora/lib/dx9/` feeding the `dxvk-remix`
+   fork, with the Remix API used for what the D3D9 stream cannot carry (the
+   generated sky, lights, the atmosphere medium). The per-draw transform work
+   was reused as predicted. Entry point: `docs/kankyo-remix.md`.
 4. **Shadow interaction (root-caused and fixed).** With the debug view on, Link's
    cast shadow became a mess: other GPU-skinned casters (a bird, the Lake Hylia
    cannons) bled into it, it had gaps, and it was pose/camera dependent. Root cause

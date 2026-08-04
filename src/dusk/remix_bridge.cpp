@@ -392,25 +392,18 @@ float celestialOrbitAngle(float time) {
 
 // Unit vector from the scene toward the sun/moon, straight from time of day.
 //
-// setSunpos writes the body's world position by placing it on an ellipse
-// around the camera eye:
-//     offset = (sin(a) * 80000, -cos(a) * 80000, -cos(a) * 48000)
-//     sun_pos = eye + offset          (moon_pos stores the offset directly)
-// The eye term cancels in offset, and the radii cancel under normalization,
-// leaving 48000/80000 = 0.6 as the only surviving term. Deriving the vector
-// here rather than differencing sun_pos against the camera keeps this a pure
-// direction: no position, no arc, no camera, nothing for a distant light to
-// misinterpret - and it stays correct in the stages where setSunpos declines
-// to update sun_pos at all.
+// setSunpos places the body at eye + (sin(a)*R, -cos(a)*R, -cos(a)*R*ratio). The eye term and R
+// both cancel under normalization, leaving only the tilt ratio. Deriving the vector here rather
+// than differencing sun_pos against the camera keeps this a pure direction - no position, no
+// arc, no camera, nothing for a distant light to misinterpret - and it stays correct in the
+// stages where setSunpos declines to update sun_pos at all.
 void celestialDirectionTo(float time, float outDir[3]) {
     const float radians = celestialOrbitAngle(time) * (3.14159265358979323846f / 180.0f);
     const float sinA = std::sin(radians);
     const float cosA = std::cos(radians);
 
     // The same tilt setSunpos places the visible body on, so the light and the thing you can see
-    // in the sky cannot disagree. Vanilla's 0.6 caps the arc at 59 degrees; raising
-    // game.celestialNoonElevation flattens the tilt towards a vertical arc and a genuinely
-    // overhead noon.
+    // in the sky cannot disagree. docs/sun-elevation.md.
     const float orbitZRatio = dKy_celestial_orbit_z_ratio();
 
     float dir[3] = {sinA, -cosA, -cosA * orbitZRatio};
@@ -594,20 +587,18 @@ void updateCelestialLight() {
 
 // --- Local point lights ------------------------------------------------------
 //
-// Mirrors the game's live point-light list (g_env_light.pointlight, everything
-// registered through dKy_plight_set: torches, braziers, lanterns, campfires,
-// Midna, bomb flashes, dungeon lights) into Remix sphere lights.
+// Mirrors the game's live point lights (g_env_light.pointlight and efplight, everything
+// registered through dKy_plight_set: torches, braziers, lanterns, campfires, Midna, bomb
+// flashes, dungeon lights) into Remix sphere lights. Tested in game 2026-07-29.
 //
-// This is not a nicety. Aurora's D3D9 backend deliberately does not forward GX
-// lights to D3D9 - the GC light model does not survive the translation and
-// Remix relights everything anyway - so Remix currently sees no game light at
-// all. Outdoors the sun/moon distant light covers that; indoors and at night
-// nothing does, and the scene falls back to Remix's fallback light. These are
-// the lights that were meant to carry those scenes.
+// This is not a nicety. Aurora's D3D9 backend deliberately does not forward GX lights to D3D9 -
+// the GC light model does not survive the translation and Remix relights everything anyway - so
+// Remix sees no game light of its own. Outdoors the sun/moon distant light covers that; indoors
+// and at night nothing does, and the scene is left on Remix's fallback light. These are the
+// lights that were meant to carry those scenes.
 //
-// Intensity is derived with Remix's own legacy-light conversion rather than a
-// tuning constant, so these land in the same range as lights in any other Remix
-// title. See localLightRadiance() for the derivation.
+// Intensity is derived with Remix's own legacy-light conversion rather than a tuning constant,
+// so these land in the same range as lights in any other Remix title - see localLightRadiance().
 
 constexpr uint64_t kLocalLightHashBase = 0xD05C114E00000000ull;
 
@@ -650,32 +641,22 @@ uint64_t localLightHash(const LIGHT_INFLUENCE* influence) {
 //
 //   radiance = reach^2 * kNewLightEndValue / (pi * radius^2)
 //
-// The game hands us the reach directly. LIGHT_INFLUENCE::mPow *is* the distance
-// at which the light stops mattering - dKy_light_influence_id treats "closer
-// than mPow" as "inside this light" - which is exactly what Remix derives from
-// a D3D9 attenuation curve. So these lights land in the same intensity range as
-// the lights of every other Remix title, without a fudge factor.
+// The reach used below is LIGHT_INFLUENCE::mPow, the game's own influence radius -
+// dKy_light_influence_id treats "closer than mPow" as "inside this light". Deriving from that
+// rather than a tuning constant is what puts these in the same intensity range as the lights of
+// every other Remix title.
 //
-// There is a second, defensible reading of "reach", and it is about 19x
-// brighter, so it is worth writing down rather than discovering by fiddling.
-// The game loads these into GX with
-//   dKy_GXInitLightDistAttn(info, mPow * 0.001f, 0.99999f, GX_DA_STEEP)
-// which is k0 = 1, k1 = 0, k2 = (1 - b) / (d^2 * b), so
+// mPow is not where the light actually ends, though, and the difference is ~19x. The game loads
+// into GX with dKy_GXInitLightDistAttn(info, mPow * 0.001f, 0.99999f, GX_DA_STEEP), i.e.
 //   attenuation(D) = 1 / (1 + 10 * D^2 / mPow^2)
-// - i.e. mPow is exactly where the light falls to 1/11 of its peak, not where
-// it ends. Applying Remix's own end threshold (1/255 of the light's brightness)
-// to that curve gives
-//   reach = mPow * sqrt((maxColorByte - 1) / 10)
-// which is 4.3x mPow for a torch (colour AF5D00), hence ~19x the radiance.
+// so mPow is where the light falls to 1/11 of peak. Applying Remix's own end threshold (1/255)
+// to that curve gives reach = mPow * sqrt((maxColorByte - 1) / 10), which is 4.3x mPow for a
+// torch (colour AF5D00) and so ~19x the radiance.
 //
-// That reading is arguably the more faithful one - Remix explicitly ignores a
-// legacy light's Range in favour of its attenuation curve, on the grounds that
-// Range was an optimization rather than the light's real extent, and mPow is
-// exactly that kind of optimization. It is not the default only because the
-// game never actually applied a point light beyond its influence radius (the
-// tevstr gets one light, chosen by proximity), and because a scene that comes
-// up too dim is far easier to diagnose than one that comes up blown out.
-// game.remixLocalLightIntensity around 19 is the number to try.
+// game.remixLocalLightIntensity carries that factor: it defaults to 19, tested in game
+// 2026-07-29 alongside a radius of 10, and the two were settled together - the radiance is
+// solved to reach the same distance, so a larger radius needs less of it. Change one and
+// re-test both. docs/remix-open-issues.md.
 bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float scale,
                         float outRadiance[3]) {
     const float channel[3] = {static_cast<float>(influence.mColor.r),
@@ -723,12 +704,6 @@ void releaseLocalLights() {
     s_localDebug.drawn = 0;
 }
 
-// Warp, driven from the Remix overlay.
-//
-// The destination table lives here, not there, and duplicating it would guarantee the two drift.
-// So the overlay sends indices and this pushes back the names for whatever those indices select -
-// which means the picker over there can list "Hyrule Field" rather than F_SP121 without either
-// side owning a copy of the other's data.
 // ---------------------------------------------------------------------------
 // Controls
 // ---------------------------------------------------------------------------
@@ -980,6 +955,12 @@ void updateControls() {
     push("rtx.dusklight.env.bindStatus", s_status);
 }
 
+// Warp, driven from the Remix overlay.
+//
+// The destination table lives here, not there, and duplicating it would guarantee the two drift.
+// So the overlay sends indices and this pushes back the names for whatever those indices select -
+// which means the picker over there can list "Hyrule Field" rather than F_SP121 without either
+// side owning a copy of the other's data.
 void updateWarp() {
     // Remembered so a commit counter that is already non-zero when the game connects - a game
     // restart under a Remix that kept running - latches instead of firing a warp nobody asked for.
@@ -1344,16 +1325,15 @@ void pushKankyoState() {
     push("rtx.dusklight.env.monoColor", formatColor(mono.r, mono.g, mono.b));
     push("rtx.dusklight.env.monoAmount", formatFloat(mono.a / 255.0f));
 
-    // Ambient colours. On the original hardware these tinted every surface at shading time -
-    // actors through their tevstr, room geometry through the BG layers - and they are the
-    // single biggest carrier of the game's time-of-day, weather and area mood. The path
-    // tracer lights the scene itself, so nothing consumes them under Remix any more; the
-    // fork's grade stage (rtx.dusklight.grade.*) puts their colour back over the final image.
+    // Ambient colours - the single biggest carrier of the game's time-of-day, weather and area
+    // mood, and nothing consumes them under Remix because the path tracer lights the scene
+    // itself. The fork's grade stage puts their colour back over the final image; the design is
+    // docs/kankyo-remix.md IV.3.
     //
-    // These are already the fully blended per-frame values: setLight() ran the four-way
-    // palette blend, folded in the event add-colours and applied the global ratios before we
-    // read them. BG layer 0 is the main room layer (the one the game itself reuses when it
-    // needs "the" background ambient, e.g. for mirror reflections).
+    // Already the fully blended per-frame values: setLight() ran the four-way palette blend,
+    // folded in the event add-colours and applied the global ratios before we read them. BG
+    // layer 0 is the main room layer, the one the game itself reuses when it needs "the"
+    // background ambient (e.g. mirror reflections).
     const dScnKy_env_light_c* env = dKy_getEnvlight();
 
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
@@ -1365,20 +1345,18 @@ void pushKankyoState() {
     // every push that gets through takes the Remix API's global lock.
     push("rtx.dusklight.env.daytime", formatFloatQ(env->daytime, 0.25f));
 
-    // Fog and sky, pushed together because the game authors them together: fog_col, the fog
-    // distances and every vrbox colour come out of the same palette entry, are picked by the same
-    // time-of-day and weather indices, and are blended by the same call. The fog colour is
-    // approximately the sky colour at any given moment, which is why distant terrain dissolves
-    // into the sky in the original, and any consumer that sources the two separately loses that.
+    // Fog and sky, pushed together because the game authors them together - one palette entry,
+    // same time-of-day and weather indices, same blend call. The fog colour is approximately the
+    // sky colour at any moment, which is why distant terrain dissolves into the sky; a consumer
+    // that sources the two separately loses that. docs/kankyo-fog.md.
     //
-    // As with the ambients these are the settled per-frame values, so the additive event colours,
-    // the ratio that lightning pulses, the start/end override the fog bank tags drive and the
-    // second "gather" palette blend are all already folded in. Reading the outputs rather than the
-    // palette tables is what keeps this correct without reimplementing any of them.
+    // As with the ambients these are the settled per-frame values (event add-colours, the ratio
+    // lightning pulses, fog-bank tag overrides and the second "gather" blend all folded in), so
+    // reading the outputs rather than the palette tables avoids reimplementing any of it.
     //
-    // Fog is D3D9-captured as well, per draw, but the game sets it per object and Remix keeps only
-    // the first state it sees in a frame - so the captured value is decided by submission order.
-    // These are the room's actual answer.
+    // Fog is D3D9-captured as well, per draw, but the game sets it per object and Remix keeps
+    // only the first state it sees in a frame - so the captured value is decided by submission
+    // order. These are the room's actual answer.
     push("rtx.dusklight.env.fogActive", formatBool(fogIsActive(env)));
     push("rtx.dusklight.env.fogColor", formatColorS10(env->fog_col));
     push("rtx.dusklight.env.fogStartZ", formatFloatQ(env->mFogNear, 1.0f));

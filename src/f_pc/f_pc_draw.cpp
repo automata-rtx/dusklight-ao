@@ -28,13 +28,12 @@ int fpcDw_Execute(base_process_class* i_proc) {
         }
 
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
-        // Name the draw for the renderer. This is the single funnel every
-        // process draw passes through, so labelling it here tells the D3D9
-        // backend which piece of game code issued each material - the field
-        // that makes "which material is the lava?" a log question instead of a
-        // guess. See extern/aurora/docs/dx9/material-report.md.
-        // GetProcName returns null for an id outside its table, so never pass
-        // it straight through; push/pop must stay balanced either way.
+        // Name the draw for the renderer. This is the single funnel every process draw passes
+        // through, so labelling it here is what puts grp=<proc> on every material in the report -
+        // the field that makes "which of these is the lava?" a log question instead of a guess.
+        // extern/aurora/docs/dx9/material-report.md.
+        // GetProcName returns null for an id outside its table, so never pass it straight
+        // through; push/pop must stay balanced either way.
         IF_DUSK({
             const char* procName = GetProcName(i_proc->profname);
             GXPushDebugGroup(procName != nullptr ? procName : "proc?");

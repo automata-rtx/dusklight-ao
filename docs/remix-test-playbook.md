@@ -22,10 +22,12 @@ Format and reading guide for the material lines:
 *The backlog is not "what to build" — it is "what to run". This section is the
 recipe, so a session does not have to be reconstructed from scratch.*
 
-**Five of the six were run on 2026-07-29 and five passed.** Each section below
-now carries its result. They are kept rather than deleted because they are the
-re-run recipe when something regresses, and because §3 and §5 both ended with a
-setting change that the next session needs to reproduce.
+**§§1–5 were run on 2026-07-29: four passed and §5 ran partially. §0 is the
+outstanding one** — it covers everything that landed on 2026-08-04, all of which
+is CI-green and untested in game. The passed sections are kept rather than
+deleted because they are the re-run recipe when something regresses, and because
+§3 and §5 both ended with a setting change that the next session needs to
+reproduce.
 
 ### Baseline `rtx.conf`
 
@@ -65,6 +67,11 @@ rtx.dusklight.matrep = True
 rtx.dusklight.emissive.enable    = True
 rtx.dusklight.emissive.log       = True
 rtx.dusklight.emissive.threshold = 0.70
+
+# Two-colour ramps, reproduced exactly in the fork's shader. On by default;
+# stated here so the session starts on rather than on whatever was last saved.
+# This is the A/B in 0a - off is the single-op approximation it replaces.
+rtx.dusklight.rampMaterials = True
 ```
 
 **Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
@@ -72,9 +79,16 @@ rtx.dusklight.emissive.threshold = 0.70
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
-### 0. Materials — colour and self-illumination (2026-08-04, UNTESTED)
+### 0. Materials — colour, emission, vertex colour (2026-08-04, UNTESTED IN GAME)
 
-Two changes land together, both about material colour, so one walk covers both.
+**This is the section to run.** Everything below it has already been run. Four
+changes land together in the material path, so one walk covers all of them:
+the two-colour ramp (0a), self-illumination (0b), selective vertex colour (0d)
+and the HUD fade-in alpha (0e). Only the first two have a control to press —
+0d is the one nobody is aiming at and the one most able to change how the whole
+scene looks, and 0e is the only one that touches opacity. A fifth change from
+the same day (0f, API assets in captures) is not in the material path and needs
+a separate two-minute check.
 
 **What to do.** Walk past a rupee and a heart, go into the Goron Mines and look
 at the lava, look around some ordinary indoor geometry, quit, send both logs.
@@ -84,16 +98,18 @@ Nothing here needs the clock or Freeze Time, so do it first, cold.
 what they cannot carry is where you were standing. So:
 
 - anything that used to look right and now looks **noticeably darker, washed
-  out, or glowing when it should not**. Roughly where is enough.
+  out, more or less saturated, or glowing when it should not**. Roughly where
+  is enough.
 - if the answer is "nothing looks different at all", say that — it is a real
   result and it points at a different part of the chain.
 
 #### 0a. Colour — two-colour ramps, reproduced rather than approximated
 
 The lava reading "more red than orange/yellow" was not mistuning: its material
-is `lerp(red, yellow, texture)` and no stock Remix texture op can express a lerp
-between two constants, so the bright end was going to white. The fork now
-evaluates the GameCube colour combiner itself.
+is `lerp(red, yellow, texture)` and no *stock* Remix texture op can express a
+lerp between two constants, so the bright end was going to white. The fork is
+ours, so it now evaluates the GameCube colour combiner itself and the ramp is
+exact.
 
 **The A/B is one checkbox:** F1 → Dusklight Remix → Materials → *Reproduce
 Two-Colour Ramps*. Off is the old approximation. Worth a look at the lava with
@@ -118,7 +134,7 @@ a coloured floor gets `texture + colour`, a black floor keeps `texture × colour
 | Highlights dark or inverted again | The op choice is still wrong; the log gives `out0`/`out1` per material. |
 | Still grey | Did not fire; the log names the material. |
 | Surfaces washed out or too bright | The `add` branch overshoots on that material — expected direction if the choice is wrong. |
-| Foliage becomes solid quads, or grass vanishes | Should be impossible, opacity is untouched. Most important thing in the session if it happens. |
+| Foliage becomes solid quads, or grass vanishes | Nothing in the colour path touches opacity, so this should be impossible *here* — but 0e does change alpha this round, so it is the suspect. Most important thing in the session if it happens. |
 
 #### 0b. Self-illumination — second attempt
 
@@ -151,6 +167,76 @@ Two things still worth a sentence if you notice them:
   a small amount per draw and is the first suspect.
 - **Anything glowing that obviously should not.** The accepted materials are all
   named in the log, so "roughly where" is enough.
+
+#### 0d. Vertex colour — now forwarded selectively, and worth watching
+
+Nothing to press. This one changes **the whole scene at once**, which is why it
+is the likeliest source of a surprise this session.
+
+Until now aurora withheld vertex colour from Remix on every draw, because
+testing proved the vertex colours carry baked room lighting and a path tracer
+would double-count it. GX turns out to say which is which per draw: with GX
+lighting **on** the stream is authored material colour (forward it — the path
+tracer supplies the light), with it **off** the stream is the finished, already
+lit result (withhold it). Aurora now sends that verdict per draw and the fork
+obeys it instead of the global `rtx.vertexColorIsBakedLighting`.
+
+**The regression signature:** surfaces that gain or lose saturation and
+contrast relative to last session. Both directions are possible and both are
+useful. Roughly where is enough — every material line carries `vtxUse=`
+(`material`, `bakedLight` or `const`), so the log resolves which verdict a
+surface got.
+
+The known judgement call, so it can be recognised rather than discovered: a
+draw with GX lighting off whose vertex colour is genuinely authored — a
+per-vertex tint or fade on an effect — is withheld today. **A lost colour
+gradient on an effect is that case**, not a general failure.
+
+#### 0e. HUD fade-ins — the alpha half
+
+A-button prompts and Epona's spur icon drew as opaque expanding rectangles: 18
+of 111 materials fade in via `konst × texture-alpha`, and aurora's hint stage
+was advertising the texture's alpha alone and dropping the constant. The scale
+now rides TFACTOR's alpha channel.
+
+This is the one change in the session that touches opacity, and opacity is one
+of the two things that must still rasterize correctly — Remix reads it to build
+the alpha test.
+
+| What you see | Reading |
+| :-- | :-- |
+| Prompts and icons fade in with transparent surrounds | Worked. |
+| Still opaque squares | Did not fire; the log names the material. |
+| **Alpha-tested foliage, grates or grass go solid or vanish** | Regression from this change. Report immediately — it is the highest-cost failure available this round. |
+
+#### 0f. API-submitted assets in a capture — the untested half of "do it in Remix"
+
+Landed 2026-08-04, **CI-green and never exercised**: API mesh hashes are now
+derived from the submitted vertex/index data instead of a creation-order
+counter, and `submitExternalDraw` consults the replacer before using the
+supplied material. The generated sky dome is the only API-submitted asset we
+have, so it is the test subject.
+
+This one matters out of proportion to its size. The whole "where D3D9 cannot
+carry it, do it in Remix" half of the design (`extern/aurora/docs/dx9/remix-material-interface.md`
+§0) is only safe if what we push through the API can still be authored over
+later. Nobody has confirmed that it can.
+
+**What to do**, with `rtx.dusklight.atmosphere.skyEnable = True`:
+
+1. Take a Remix capture (Remix's own menu) somewhere outdoors.
+2. Quit, relaunch, stand in the same place, take a second capture.
+3. Send both capture folders, or just the two USD file listings.
+
+| What you find | Reading |
+| :-- | :-- |
+| The sky dome mesh is in both captures **under the same hash** | Worked — it is capturable and stably identifiable, which is what replacement needs. |
+| It is in both captures under **different** hashes | The hash is still not content-derived in practice. This is the failure the change exists to prevent, and it is invisible from a single capture — which is why step 2 is not optional. |
+| It is in neither capture | The change did not take effect at all. |
+
+Nothing to describe by eye here, and nothing that can regress the image: if this
+is inconvenient to run, it can wait for a session that is already taking
+captures for another reason.
 
 ### 1. Clock — do this first, it is the tool the rest want
 

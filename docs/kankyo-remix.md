@@ -43,6 +43,18 @@ Remix projects cannot say. The consequence is a working rule: prefer
 *instrumentation* over asking the owner to describe what they saw. A question we
 would have to ask is a defect in the logging.
 
+**What the D3D9 renderer is for.** The raw fixed-function D3D9 image is never
+shown to a player. It exists so Remix's DX9→Vulkan translation picks the scene
+up automatically — geometry, transforms, textures, most of a frame, for free.
+**Remix's renderer is the product; D3D9 is the feed.** So fixed-function limits
+are not the ceiling: where the D3D9 stream cannot carry something faithfully
+enough to reach Remix, implement it *in Remix* — API or fork change — rather
+than contorting D3D9 to approximate it. "Raw D3D9 stays correct" is a passing
+safety property, never a design goal. The two exceptions that still have to
+rasterize correctly are the **HUD** (Remix rasterizes UI draws) and **alpha**
+(Remix reads the stage's alpha for opacity and the alpha test). Full statement:
+`extern/aurora/docs/dx9/remix-material-interface.md` §0.
+
 ---
 
 ## Part I — How kankyo actually works
@@ -193,21 +205,42 @@ Three mechanisms, all TEV/GX state:
 
 ---
 
-## Part II — What survives under Remix today: almost none of it
+## Part II — What the D3D9 stream carries on its own: almost none of it
+
+This part is about the D3D9 feed by itself. It is the *reason* for Parts III
+and IV, not a statement of what the build does today — most of what is listed
+here as lost now reaches Remix over the option wire and the Remix API instead.
 
 Aurora's D3D9 backend (`extern/aurora/lib/dx9/`) deliberately ships "v1
 unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
 
 - **Lighting**: `D3DRS_LIGHTING = FALSE` permanently
-  (`dx9_backend.cpp:83`); GX light state is fully decoded into
-  `g_gxState.lights[8]` but never becomes D3D9 lights. Remix sees zero
-  lights from the game. Kankyo ambients therefore never reach Remix.
-- **Fog**: `D3DRS_FOGENABLE = FALSE` (`dx9_backend.cpp:93`,
-  `dx9_draw.cpp:206`). GX fog regs *are* decoded into `g_gxState.fog`
-  (type/a/b/c/colour) and then dropped. The D3D9→Remix fog capture path
-  (below) never fires.
+  (`dx9_backend.cpp:106`); GX light state is fully decoded into
+  `g_gxState.lights[8]` but never becomes D3D9 lights, so the D3D9 stream
+  carries no light at all. **The conclusion that used to follow — "Remix
+  sees zero lights from the game" — is superseded.** Light reaches Remix,
+  just not through D3D9: the bridge creates the sun/moon distant light and
+  the game's live point lights through the Remix API (IV.7), and the kankyo
+  ambients drive the grade pass (IV.3).
+- **Fog**: **superseded 2026-07-27 — this bullet predates the implementation.**
+  `apply_fog_state()` (`extern/aurora/lib/dx9/dx9_draw.cpp:181`) translates
+  `g_gxState.fog` into `D3DRS_FOG*` per draw, so the D3D9→Remix capture path
+  does fire. What it does not buy is a stable frame fog: Remix keeps the first
+  non-`NONE` state of the frame and TP sets fog per tevstr, so the bridge
+  pushes the global `g_env_light` fog instead — `kankyo-fog.md` §4, and IV.4
+  below.
 - **TEV tints**: the mono pass, bloom, vrbox TEV colours are EFB tricks —
   replaced by Remix's pipeline entirely (and our rtx.bloom.dusklight port).
+- **Material colour**: this one *does* travel, and it is where the stream was
+  extended rather than accepted as it stood. Aurora encodes the colour a
+  surface presents into `D3DMATERIAL9` and the TFACTOR/texture-op chain, and
+  the fork reads it back: two-colour ramps — `lerp(colourA, colourB, texture)`,
+  this game's dominant material shape — are evaluated exactly rather than
+  squeezed into one D3D9 op, and a GX evidence score rides the same transport
+  to drive self-illumination (`rtx.dusklight.emissive.*`). Colour reaching
+  Remix was tested in game 2026-08-04; the ramp and emissive revisions are
+  CI-green and **untested in game**.
+  `extern/aurora/docs/dx9/remix-material-interface.md` §9–§10.
 - **Vertex colours**: static CLR0 from map data. **Corrected 2026-08-04 — an
   earlier revision of this line claimed GX lighting "isn't baked into vertices,
   so there is no double-counting risk". That is false.** Testing
@@ -223,8 +256,14 @@ unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
   material case is forwarded and the baked case withheld.
   See `extern/aurora/docs/dx9/remix-material-interface.md` §7c.
 
-Net: under Remix, Ordon at dusk and Ordon at noon differ only by what the
-path tracer sees — geometry and textures. The entire mood engine idles.
+Net, **for the D3D9 stream alone**: Ordon at dusk and Ordon at noon would
+differ only by what the path tracer sees — geometry and textures, with the
+whole mood engine idling. **Superseded 2026-08-04 as a statement about the
+build**: that is what Parts III and IV exist to fix, and the bridge, the
+atmosphere, the generated sky and the local lights have since closed most of
+it. The mood engine travels over the option wire and the Remix API rather than
+over D3D9. What is built and what is actually tested:
+[`remix-open-issues.md`](remix-open-issues.md).
 
 ---
 
@@ -354,10 +393,11 @@ Outside palette transitions almost all values are stable frame-to-frame (and
 quantized to the game's 8-bit parameters), so the steady-state push count is
 ~0–3 strings.
 
-Game-side gating: when the bridge is active, force `game.bloomMode = Off`
-behaviour for the EFB bloom (skip `bloom_c::draw()` under Remix) so the
-raster filter quads stop overdrawing the path-traced image — this replaces
-the "please set Bloom to Off" advice in `docs/dx9-fixed-function.md`.
+Game-side gating (implemented): when the bridge is active, `bloom_c::draw()`
+returns immediately (`src/m_Do/m_Do_graphic.cpp`), so the EFB filter quads stop
+overdrawing the path-traced image whatever `game.bloomMode` says. This replaced
+the "please set Bloom to Off" advice in `docs/dx9-fixed-function.md`; nobody has
+to set it by hand.
 
 ### IV.3 Remix fork: the grade stage (mono + ambient tint + base weight)
 
@@ -451,10 +491,16 @@ if exposure is pinned.
 >    keeps the first non-`NONE` fog state of the frame and discards the rest,
 >    and TP sets fog *per tevstr*. Plan B (a pushed fog override) is now the
 >    plan, not the fallback.
-> 2. **Volumetrics is not a drop-in "user preference".** With stock options it
+> 2. **Volumetrics is not a drop-in "user preference".** With *stock* options it
 >    cannot express the game's fog at all: the froxel grid is 20 m, fog remap
 >    is off by default, and the remap's endpoints are unclamped and calibrated
 >    for a different game.
+>
+>    **Note the word "stock".** The fork has since removed that constraint —
+>    `rtx.dusklight.atmosphere.*` derives one medium from the game's own palette
+>    and sizes the froxel grid from the game's fog range, and Remix's own fog
+>    remap is bypassed entirely while it is on. "Remix cannot express X" is a
+>    claim about the runtime we were handed, and this one is ours.
 >
 > The fog design now lives in `docs/kankyo-fog.md` (game side) and
 > `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer side), where fog
@@ -494,8 +540,10 @@ refinement of the composite fog term.
 > **Superseded.** This section was written from the first reading of
 > `bloom_c::draw2()` and is wrong in two places — the threshold and the
 > colour space. The corrected account, derived from the TEV stages, is in
-> "Bloom fidelity: four errors in the port" below. Kept for the history of
-> how the port got here.
+> [`dx9-fixed-function.md`](dx9-fixed-function.md) §"Dusklight bloom options"
+> (its origin is "Bloom fidelity: four errors in the port" in
+> [`remix-history.md`](remix-history.md), which is unmaintained). Kept for the
+> history of how the port got here.
 
 Already 1:1 (deliberately, same 0–255 units): threshold, blur size, blur
 ratio, tint, screen-blend. Missing pieces this plan adds (IV.3): mono
@@ -531,7 +579,12 @@ colour/amount, base weight. One calibration knob is needed:
 
 ### IV.7 Phase 4+ (out of first scope, designed for)
 
-- **Sun/moon distant light.** `setSunpos`/`SetBaseLight` give direction;
+**All three of these have since been built.** The design below is kept because
+it is still the shape of what shipped; where the built thing diverged, the
+bullet says so.
+
+- **Sun/moon distant light** (implemented, `game.remixSunMoonLight` default
+  true). `setSunpos`/`SetBaseLight` give direction;
   colour is constant warm white (I.4). Aurora calls
   `dxvk_RegisterD3D9Device` after device creation; the bridge then does
   `CreateLight`(same hash, DistantEXT, updated direction) when the sun
@@ -539,14 +592,16 @@ colour/amount, base weight. One calibration knob is needed:
   `game.remixSunMoonLight` and let users pick it *or* hand-placed RTX
   lights. Twilight/interiors: skip drawing the light (interiors detect via
   `dKy_SunMoon_Light_Check()`.)
-- **Sky/vrbox tint** (note: `env.skyColor`/`env.hazeColor` were designed
-  here but Phase 1 shipped only the bloom set, so nothing pushes them
-  today; adding them is a two-line change once there is a consumer):
-  investigate whether the vrbox raster draws reach Remix's sky probe with
-  TEV tint applied (TFACTOR path in `dx9_tev.cpp`); if yes, nothing to do;
-  if no, drive a low-intensity dome light or sky brightness from the
-  pushed colours.
-- **Local point lights** (implemented — see the status log). The design
+- **Sky/vrbox tint** (implemented, and the answer was neither branch the draft
+  offered). The sky colours are pushed every frame — `skyColor`,
+  `kasumiInner`/`kasumiOuter` and the kumo set, `kankyo-fog.md` §5 — and Remix
+  builds its own lat-long dome from them and registers it as a **dome light**,
+  with the game's vrbox hidden (`rtx.dusklight.game.hideVrbox`) so there is
+  only one sky. Tested good 2026-07-28. Probing the vrbox raster draws was
+  dropped rather than investigated to a conclusion: a generated dome is exact
+  and is a light source, which a captured LDR probe is not.
+- **Local point lights** (implemented — see
+  [`remix-open-issues.md`](remix-open-issues.md)). The design
   originally scoped this to the dungeon lights; the right list turned out
   to be `g_env_light.pointlight[100]`, which the dungeon lights register
   into along with every torch, brazier, lantern, campfire, Midna glow and

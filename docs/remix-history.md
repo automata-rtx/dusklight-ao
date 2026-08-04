@@ -10,7 +10,15 @@
 > It contains status snapshots that were true on the day they were written,
 > phase plans that have since been superseded, and at least one diagnosis that
 > was later proved wrong. Formatting is inconsistent because the content was
-> written across many sessions for different purposes.
+> written across many sessions for different purposes, and some of it is
+> improperly formatted; it is not worth fixing.
+>
+> **Entries written before 2026-08-04 may also carry a design philosophy that
+> has since been retired** — treating "the raw D3D9 image stays correct" as a
+> requirement, or fixed-function limits as a ceiling. Neither holds: the raw
+> image is never shown to a player, it exists only as the feed into Remix, and
+> where the D3D9 stream cannot carry something the answer is to change the fork.
+> `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 >
 > **Read one of these instead:**
 >

@@ -1,13 +1,28 @@
 # Direct3D 9 fixed-function rendering mode (RTX Remix)
 
-Dusklight has an experimental **D3D9 fixed-function** graphics backend,
-implemented in Aurora, whose sole purpose is compatibility with **RTX Remix's
-standard d3d9.dll runtime** (no Remix SDK involved). It intentionally trades
-visual fidelity for a clean fixed-function D3D9 command stream that Remix can
-capture and path-trace: `SetTransform` matrices, `DrawIndexedPrimitiveUP`
-geometry, `SetTexture` diffuse maps, alpha-tested cutouts, and fixed-function
-**indexed vertex blending** for skinning (rest-pose vertices, stable mesh
-hashes).
+Dusklight has a **D3D9 fixed-function** graphics backend, implemented in Aurora,
+whose purpose is to feed **RTX Remix**: a clean fixed-function command stream
+Remix can capture and path-trace — `SetTransform` matrices,
+`DrawIndexedPrimitiveUP` geometry, `SetTexture` diffuse maps, alpha-tested
+cutouts, and fixed-function **indexed vertex blending** for skinning (rest-pose
+vertices, stable mesh hashes). No Remix SDK build and no 32-bit bridge process
+are involved: the game is x86_64 and loads `d3d9.dll` directly.
+
+**The raw D3D9 image is never shown to a player**, so it is not something to
+evaluate and its fidelity is not a design goal. Remix's renderer is the product;
+D3D9 is the feed. Where the stream cannot carry something faithfully enough to
+reach Remix, the answer is to implement it *in Remix* — the API or the fork —
+not to contort D3D9. Two exceptions still have to rasterize correctly: the
+**HUD** (Remix rasterizes UI draws rather than path-tracing them) and **alpha**
+(Remix reads the stage's alpha to build opacity and the alpha test). Full
+statement: `extern/aurora/docs/dx9/remix-material-interface.md` §0.
+
+**Which `d3d9.dll`.** Every `rtx.dusklight.*` and `rtx.bloom.dusklight*` option
+below exists **only in our dxvk-remix fork**
+(`src/dxvk/rtx_render/rtx_dusklight_*`). Stock Remix will run the game and
+path-trace it, but those keys are simply unknown to it. The game and the DLL are
+also a single protocol — currently **6** — so build both from the same commit
+point and read the Dusklight tab's protocol line before debugging anything else.
 
 The complete design, GX→D3D9 mapping spec, architecture notes, and the living
 list of unsupported effects live in the Aurora repo:
@@ -23,8 +38,8 @@ Windows only. Any of:
 - Settings menu: Prelaunch → Graphics Backend → "D3D9 (Fixed-Function)"
   (only selectable while running on another backend — see limitations)
 
-For Remix: place the RTX Remix runtime's `d3d9.dll` next to the Dusklight
-executable and launch with the d3d9 backend.
+For Remix: place our dxvk-remix fork's `d3d9.dll` (and the rest of its runtime)
+next to the Dusklight executable and launch with the d3d9 backend.
 
 ## Running under RTX Remix — required rtx.conf settings
 
@@ -45,30 +60,32 @@ rtx.useNewGuiInputMethod = False
 # Render the game's bloom/mono state pushed by the kankyo bridge.
 rtx.bloom.dusklight = True
 
-# FOG: pick ONE mode. With Remix defaults the game's fog is captured but
-# consumed by neither path (composite fog is skipped while volumetrics are
-# enabled, and fog remap is off) - i.e. fog silently does nothing.
-#
-# Faithful mode below is the RECOMMENDED setting today. Volumetric mode
-# cannot currently reproduce the game's fog: the froxel grid only reaches
-# rtx.volumetrics.froxelMaxDistanceMeters (default 20 m = 2000 game units)
-# and the fog remap's endpoints are calibrated for another game. See
-# docs/kankyo-fog.md and the fork's documentation/DusklightAtmosphere.md.
+# FOG. With Remix's own defaults the game's fog is captured and then consumed
+# by neither path (composite fog is skipped while volumetrics are enabled, and
+# Remix's fog remap is off), i.e. fog silently does nothing. Pick ONE of the
+# two blocks below; the ATMOSPHERE block is the recommendation.
 
-# Faithful mode: exact linear ramp, vanilla look.
-rtx.volumetrics.enable = False
-rtx.maxFogDistance = 10000000
-# Captured fog colour -> pre-tonemap radiance. Calibrate once (start ~1.0
-# with auto exposure disabled; the Remix default 0.25 is very dim).
-rtx.fogColorScale = 1.0
-
-# ATMOSPHERE. One medium derived from the game's own palette drives the
-# volumetrics, the fog and the sky together, with the froxel grid sized from
-# the game's fog range and the game's own ramp taking over past where that
-# grid stops. Phases A and B are TESTED GOOD (2026-07-28); phase C, the
-# physical sky blend, is implemented and CI-green but has never been run.
+# ATMOSPHERE - RECOMMENDED. One medium derived from the game's own palette
+# drives the volumetrics, the fog and the sky together, with the froxel grid
+# sized from the game's fog range and the game's own ramp taking over past
+# where that grid stops. This is the fork answering a question stock Remix
+# could not: its 20 m froxel grid and its fog remap's endpoints (calibrated for
+# another game) are bypassed entirely while this is on. Phases A and B are
+# TESTED GOOD (2026-07-28); phase C, the physical sky blend
+# (rtx.dusklight.atmosphere.physicalSky, off by default), was run 2026-07-29 -
+# scattering confirmed, final verdict still blocked by the sky/fog defect in
+# the fork's documentation/DusklightAtmosphere.md. See also docs/kankyo-fog.md.
 rtx.dusklight.atmosphere.enable = True
 rtx.volumetrics.enable = True
+
+# Depth-fog mode, for comparison only: Remix's composite applies the exact
+# linear ramp the game authored, but ONLY while volumetrics are off. These
+# three do nothing alongside the atmosphere above - do not set both.
+#rtx.volumetrics.enable = False
+#rtx.maxFogDistance = 10000000
+# Captured fog colour -> pre-tonemap radiance. Calibrate once (start ~1.0
+# with auto exposure disabled; the Remix default 0.25 is very dim).
+#rtx.fogColorScale = 1.0
 
 # Generated sky. All three together, or you get more than one sky at once:
 # the generated dome, the game's own dome, and Remix's auto-detected probe.
@@ -123,10 +140,40 @@ rtx.dusklight.game.hideSkyBillboards = True
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
 #rtx.autoExposure.enabled = False
 
+# MATERIALS. Aurora encodes the colour a GX surface presents into the otherwise
+# unused halves of D3DMATERIAL9; the fork reads it back. The next two default ON
+# and are listed here because they are the switches to flip when a surface looks
+# wrong. Design: extern/aurora/docs/dx9/remix-material-interface.md §9-§10.
+
+# Two-colour ramps: lerp(colourA, colourB, texture), this game's dominant
+# material shape - one rupee texture yielding seven rupee colours. The fork
+# evaluates the GX combiner from both endpoints instead of approximating it
+# with a single D3D9 texture op. Turn it OFF to compare against the
+# approximation (a multiply goes black where the texture is dark; an add drives
+# the bright end to white - Goron Mines lava reads red-and-white instead of
+# red-to-orange). CI-green, untested in game as of 2026-08-04.
+#rtx.dusklight.rampMaterials = False
+
+# Self-illumination. GX has no emissive term, so aurora scores three weak
+# signals per draw - lighting disabled (0.50), colour from a register rather
+# than per-vertex (0.25), a TEV stage scaled past what the console could
+# display (0.25) - and the fork cuts at a threshold. 0.70 admits anything unlit
+# plus one other fact; drop to 0.20 to admit the over-range materials on their
+# own, which is the setting to try when something that clearly glows does not.
+# Do NOT expect "unlit" to identify emitters on its own: the Goron Mines lava
+# is lit=1, which is why the first attempt missed it. Live in the F1 overlay,
+# and every candidate is logged (dusklight.emis) accepted or rejected.
+# Rev 2 is CI-green and untested in game as of 2026-08-04.
+#rtx.dusklight.emissive.enable    = True
+#rtx.dusklight.emissive.threshold = 0.70
+#rtx.dusklight.emissive.intensity = 2.0
+
 # Material translation report (Remix half; aurora's half is always on). Turn it
 # on for any session where a surface is the wrong colour - it prints what each
 # material became on the way through D3D9, so a log answers the question instead
-# of someone describing pixels. Bounded, and free when off.
+# of someone describing pixels. Every line carries grp=, the name of the game
+# code that drew the material, so "which of these is the thing on screen" is a
+# question a log now answers. Bounded, and free when off.
 # Format: extern/aurora/docs/dx9/material-report.md
 #rtx.dusklight.matrep = True
 
@@ -240,6 +287,14 @@ All three together, or not at all. `rtx.skyBrightness` stops mattering once
 this is on — it scales the LDR probe that the dome light replaces; use
 `rtx.dusklight.atmosphere.skyIntensity` (6.0) instead.
 
+The dome is submitted through the Remix API, and **as of 2026-08-04 API-submitted
+assets are capturable and replaceable in our fork** — mesh hashes are derived
+from the submitted vertex/index data rather than a creation-order counter, and
+external draws consult the replacement material. Upstream they are neither, so
+older notes saying an API mesh cannot be captured or replaced are describing
+stock Remix. **CI-green; no capture has been taken in game yet**, so if you are
+relying on it, take one and say what happened.
+
 Notes:
 
 - **Camera / world space:** the game hands its camera matrix to the backend
@@ -257,12 +312,12 @@ Notes:
   checkpoint 3.5): the backend now keeps D3D9 texture objects stable across
   frames (content-addressed cache; per-size EFB copy targets) because Remix
   tracks textures by object and holds references across frames.
-- **Recommended: set Bloom to Off** (Settings → Bloom, or
-  `game.bloomMode` in the config) when running under Remix. The classic
-  bloom is a screen-space EFB filter chain; the path tracer replaces this
-  class of effect, and the filter quads only overlay raster-derived blur on
-  top of Remix's output. Use Remix's own bloom instead — see
-  "Dusklight bloom in Remix" below.
+- **The game's own bloom switches itself off** while the kankyo bridge is
+  active — `bloom_c::draw()` returns immediately (`src/m_Do/m_Do_graphic.cpp`)
+  whatever `game.bloomMode` says. It is a screen-space EFB filter chain; the
+  path tracer replaces that class of effect, and the filter quads would only
+  overlay raster-derived blur on top of Remix's output. Nothing to set by hand;
+  use Remix's own bloom — see "Dusklight bloom in Remix" below.
 - **Resizing the window blacks out briefly, by design.** Remix does not
   re-derive its UI overlay from a D3D9 device `Reset` — the HUD would keep the
   scale it had when the device was created — so the backend fully recreates
@@ -284,9 +339,9 @@ Notes:
 
 ## Dusklight bloom in Remix
 
-The game's own bloom has to be off under Remix (above), so the "Dusk" bloom
-mode — the one the settings menu offers as an alternative to Classic — was
-ported into our dxvk-remix fork as a post-processing option. Turn it on in
+The game's own bloom is off under Remix (above), so the "Dusk" bloom mode — the
+one the settings menu offers as an alternative to Classic — was ported into our
+dxvk-remix fork as a post-processing option. Turn it on in
 the Remix UI under **Rendering → Post-Processing → Bloom → Dusklight Bloom**,
 or in `rtx.conf`:
 

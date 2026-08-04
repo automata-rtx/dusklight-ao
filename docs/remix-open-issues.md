@@ -11,15 +11,25 @@ separate sessions have written a plausible story here as though it were a
 finding, and one of those shipped a fix that did nothing. If a cause is
 inferred rather than read, say so.
 
+**Second rule, because several entries below predate it.** The raw
+fixed-function D3D9 image is never shown to a player — it is the feed, and
+Remix's renderer is the product. So where an entry says a surface is "correct
+in raw D3D9", that is *evidence* about where a defect lives, never a
+requirement being met. Only the HUD and alpha still have to rasterize
+correctly, and where the D3D9 stream cannot carry something the answer is to
+implement it in the fork rather than to approximate it in D3D9. Full statement:
+`extern/aurora/docs/dx9/remix-material-interface.md` §0.
+
 ## State, as of 2026-08-04
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
 configs, **including everything landed on 2026-08-04**: the two-colour ramp,
 self-illumination scoring, `grp=` draw labelling, selective vertex colour, and
-API asset capture/replacement. The aurora half is additionally **syntax-checked** in both the
-d3d9-on and d3d9-off configs; the fork half has no cross-compilable harness, so
-its CI run is the only syntax check it gets.
+API asset capture/replacement. The aurora half is additionally
+**syntax-checked** in both the d3d9-on and d3d9-off configs; the fork half has
+no cross-compilable harness, so its CI run is the only syntax check it gets.
+**Nothing landed on 2026-08-04 has been tested in game.**
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -33,19 +43,20 @@ assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
 1. **Materials are coloured, and two-colour ramps are now reproduced exactly**
    (issue 8). Tested 2026-08-04: rupees, hearts and lava all carry colour, but
-   the lava read red-and-white because stock Remix cannot express a lerp between
-   two constants. The fork now evaluates the GX colour combiner directly from
-   both endpoints — exact for every ramp material, not just lava.
-   **Untested.** `extern/aurora/docs/dx9/remix-material-interface.md` §10.
+   the lava read red-and-white because no *stock* Remix texture op expresses a
+   lerp between two constants. The fork now evaluates the GX colour combiner
+   directly from both endpoints — exact for every ramp material, not just lava.
+   **CI-green, untested in game.**
+   `extern/aurora/docs/dx9/remix-material-interface.md` §10.
 2. **The fog medium dims the generated sky** (issue 4). Cause verified in the
    composite; `skyFogMode` ships two candidate treatments and one is meant to be
    deleted once they have been compared.
 
 **Also open:** the wolf-senses overlay covering the screen (issue 5), the
-world-space UI billboards (issue 6), grass shading (issue 7), the ambient grade,
-and the Controls tab.
+world-space UI billboards (issue 6), grass shading (issue 7), item drop-shadows
+as black quads (issue 11), the ambient grade, and the Controls tab.
 
-**Untested, landed 2026-08-04 alongside the ramp:**
+**Landed 2026-08-04 alongside the ramp; CI-green, untested in game:**
 
 - **Vertex colour is forwarded selectively** rather than withheld outright — GX
   says per draw whether a stream is material colour or baked lighting, and the
@@ -55,13 +66,20 @@ and the Controls tab.
 - **API-submitted assets are capturable and replaceable.** Their mesh hashes are
   content-derived instead of a creation-order counter, and external draws now
   consult the replacer. This is a fork change with no upstream equivalent; it
-  matters because the "do it in Remix" half of the new philosophy is only safe
-  if anything pushed through the API can still be authored over later.
+  matters because the "do it in Remix" half of the philosophy
+  (`extern/aurora/docs/dx9/remix-material-interface.md` §0) is only safe if
+  anything pushed through the API can still be authored over later. Supersedes
+  the old claim that API-submitted meshes and textures are not taken in captures
+  and cannot be replaced. **No capture has been taken since**, so this is the
+  one item in the list with no evidence at all behind it; the check is two
+  captures either side of a relaunch — `remix-test-playbook.md` §0f.
+- **HUD fade-in alpha** (issue 12) — the fading constant now rides TFACTOR's
+  alpha instead of being discarded.
 
 **Self-illumination (issue 9) was tested 2026-08-04 and did not catch the lava**
 — the rule required GX lighting to be off and the lava has it on. Rev 2 replaces
 the predicate with a score, and adds `grp=` to the material report so "which
-material is the lava?" stops being a guess. Untested.
+material is the lava?" stops being a guess. CI-green, untested in game.
 
 #### Confirmed working in-game
 
@@ -400,10 +418,13 @@ Added **2026-07-29**:
    the same frame, an injection boundary cannot stably separate them — so the
    flame's problem is a property of that draw rather than its frame position.
    The competing explanation is that the white circle **is** a fire sprite
-   saturated to white by aurora's compare-mode TEV approximation, the same
-   defect already suspected for the white ground. Full write-up, including the
-   two experiments that decide ownership (read the aurora `warn_once` log at a
-   torch; A/B raw D3D9 against Remix), is in
+   saturated to white by aurora's compare-mode TEV approximation — the same
+   approximation that whitens ground textures in raw D3D9. That whitening is no
+   longer itself a defect (the raw image is never shown); it is the *shared
+   mechanism* that makes it a suspect here, where the artifact does reach Remix.
+   Full write-up, including the two experiments that decide ownership (read the
+   aurora `warn_once` log at a torch; A/B raw D3D9 against Remix as a
+   diagnostic), is in
    `aurora-ao/docs/dx9/unsupported-effects.md` §"PINNED — the torch flame".
 
    The targeting-arrow half of this issue is unaffected and still belongs here.
@@ -465,7 +486,19 @@ Added **2026-07-29**:
      GX lighting *on* — `GXSetChanCtrl(GX_COLOR0, GX_TRUE, GX_SRC_VTX, …)` plus
      a per-blade `GXSetChanAmbColor` from kankyo. So a vertex colour that was
      authored as one input to a lighting equation is being consumed as finished
-     albedo. Worth checking whether grass ends up in Remix's alpha-blend
+     albedo.
+
+     **Partly addressed 2026-08-04 — CI-green, untested in game.** Lighting
+     *on* is exactly the case §7c now forwards as authored material colour, so
+     the fork should be setting `isVertexColorBakedLighting = false` for these
+     draws and Remix should stop normalising the stream away and relight it
+     instead. **Inference from the `GXSetChanCtrl` call above, not measured** —
+     `vtxUse=` on grass's `matrep.sum` line says which verdict it actually got,
+     and that is the first thing to read. Either way it does not supply the
+     per-blade ambient, which is still not translated. If grass changes
+     brightness or saturation this round, this change is why.
+
+     Worth checking whether grass ends up in Remix's alpha-blend
      transparency path rather than as an opaque cutout — a blended surface is
      lit quite differently from an opaque one, which would explain "distinct
      from the rest of the scene" on its own.
@@ -529,11 +562,28 @@ Added **2026-07-29**:
    a stage that *reads* its texture over one that merely binds it. **Untested in
    game.**
 
+   **Third attempt, same day: reproduce the ramp instead of approximating it.**
+   The two-colour ramp is now exact. No *stock* D3D9 texture op expresses
+   `lerp(colourA, colourB, texture)`, but the fork is ours: aurora ships the
+   second endpoint in the unused half of `D3DMATERIAL9` and the fork's shader
+   evaluates `mix(rampLo, rampHi, albedo)`, which is the GX combiner
+   `a·(1−c) + b·c` itself. That covers every ramp material, not just lava. The
+   op choice above (`ADD` for a coloured floor, `MODULATE` for a black one)
+   survives as the fallback for materials the ramp declines — `ramp=` in the log
+   says which applied. `rtx.dusklight.rampMaterials` (F1 → Materials →
+   *Reproduce Two-Colour Ramps*) is the A/B. **CI-green, untested in game.**
+   `extern/aurora/docs/dx9/remix-material-interface.md` §10.
+
+   The framing worth keeping from this: "Remix cannot express X" was true of
+   stock Remix and was treated as permanent for a week. Check whether a
+   constraint is real *for this fork* before designing around it — §0 of the
+   interface doc.
+
    **What to look for, since the risk changed with the fix.** Grey means it did
    not fire; the log now prints `out0`/`out1` — what the surface *should* be —
    next to what we advertised, so a mismatch is readable rather than guessable.
-   The remaining approximation is the ramp-between-two-real-colours case, where
-   no single Remix op is exact; those will be closer than grey but not perfect.
+   With the ramp on, a material that reads flat, or whose light and dark ends
+   are inverted, means the endpoints were swapped rather than approximated.
 
    Full account of the interface and the rules that follow from it:
    `extern/aurora/docs/dx9/remix-material-interface.md`.
@@ -544,7 +594,8 @@ Added **2026-07-29**:
 
 9. **Emissive surfaces.** Raised 2026-08-03 (Goron Mines lava is unlit as well
    as grey). **First attempt shipped and was tested 2026-08-04. It fired on one
-   material, and that material was not lava. Rev 2 is in the tree, untested.**
+   material, and that material was not lava. Rev 2 is in the tree, CI-green and
+   untested in game.**
 
    **The finding that matters, and it kills the original premise.** The rule
    required GX lighting to be *disabled*. In the Goron Mines every candidate
@@ -593,8 +644,9 @@ Added **2026-07-29**:
    The same flag also excludes the surface from motion blur unless
    `rtx.postfx.enableMotionBlurEmissive` is set.
 
-10. **Vertex colour carries baked lighting, and was being forwarded to Remix.**
-    **RESOLVED 2026-08-04 — and it settled a claim the docs had backwards.**
+10. **Vertex colour carries baked lighting on *some* draws, and was being
+    forwarded to Remix on all of them.** **RESOLVED IN CODE 2026-08-04, not yet
+    in game — and it settled a claim the docs had backwards, twice.**
 
     Testing `rtx.vertexColorIsBakedLighting` was decisive: turning that
     normalisation *off* made shaded areas visibly **darker**, which means the
@@ -603,13 +655,29 @@ Added **2026-07-29**:
     double-counting risk"); that line is now corrected.
 
     A path tracer relights the scene, so baked lighting in the albedo
-    double-counts. Aurora no longer advertises vertex colour to Remix at all —
-    the real D3D9 stages still use it. **Superseded 2026-08-04:** withholding it
-    always was too blunt — GX distinguishes baked lighting from authored material
-    colour per draw (lighting enabled vs disabled), and aurora now forwards the
-    material case and withholds the other. Remix's global
-    `rtx.vertexColorIsBakedLighting` is overridden per draw as a result.
-    `extern/aurora/docs/dx9/remix-material-interface.md` §7c. **Untested.**
+    double-counts. The first response was to stop advertising vertex colour to
+    Remix at all — the real D3D9 stages still used it. **Superseded the same
+    day:** withholding it always was too blunt and threw away real material
+    colour. GX states the difference per draw, in the colour channel's control:
+
+    | GX state | The stream is | What aurora does |
+    | :-- | :-- | :-- |
+    | lighting **enabled**, `CLR0` present | authored material colour, which GX would then multiply by computed lighting | **forwards it** — the path tracer supplies the lighting |
+    | lighting **disabled**, `CLR0` present | the finished channel output, where this game bakes room light and shadow | **withholds it** |
+    | no `CLR0` attribute | a constant from the channel's material colour register | **evaluates it** into the material |
+
+    Aurora ships the verdict in `D3DMATERIAL9::Specular.r` and the fork sets
+    `isVertexColorBakedLighting` per draw from it; Remix's global
+    `rtx.vertexColorIsBakedLighting` still governs draws aurora does not mark.
+    `vtxUse=` on `matrep.sum` prints which of `material`, `bakedLight` or
+    `const` applied. `extern/aurora/docs/dx9/remix-material-interface.md` §7c.
+    **CI-green, untested in game.**
+
+    **The regression signature:** a surface that gains or loses brightness and
+    saturation this round is this change. The case that remains a judgement call
+    is a draw with lighting disabled whose vertex colour is genuinely authored —
+    a per-vertex tint or fade on an effect. Those are withheld today, so a lost
+    colour gradient means `vtxUse=bakedLight` on a draw that wanted `material`.
 
     The original observation about that option, kept because it explains why the
     experiment was worth running:
@@ -621,28 +689,31 @@ Added **2026-07-29**:
     which is precisely why it could be ruled out as the cause of a defect
     affecting only three objects.
 
-    Its intent is sound for a game that bakes lighting into vertex colours. This
-    one does not: aurora never evaluates the GX light model, so a vertex colour
-    here is authored material colour, not baked light.
+    Its intent is sound for a game that bakes lighting into vertex colours.
+    **Corrected 2026-08-04:** the paragraph that stood here argued this game
+    does not — "aurora never evaluates the GX light model, so a vertex colour
+    here is authored material colour, not baked light". The first half is true
+    and the conclusion does not follow: the game bakes the light into the
+    vertices itself, which is what the test above measured. Kept because that
+    reasoning is why the global option looked safe to leave on.
 
-    **Free to test, no build required:** add `rtx.vertexColorIsBakedLighting =
-    False` to `rtx.conf` and compare. Expect vertex-coloured surfaces to gain
-    saturation and contrast.
+    **Free to test, no build required:** `rtx.vertexColorIsBakedLighting = False`
+    in `rtx.conf` still flips the *default*, but it no longer decides the whole
+    scene — draws aurora marks as material colour are already exempt from it, so
+    an A/B on this option now measures only the unmarked remainder.
 
-    The principled fix is per-draw rather than global: the flag is already a
-    per-draw field that is merely copied from the global option, and GX says
-    which draws genuinely carry baked lighting. **The signal is the pair, not
-    the lighting bit alone** — `lit=0` with `matSrc=GX_SRC_VTX` is the baked
-    shape, and it is 44 of the 117 materials measured for issue 9. An earlier
-    version of this paragraph named only the lighting bit, which would also have
-    caught every emitter.
+    The fix built for it is per-draw rather than global, as above. **The signal
+    is the pair, not the lighting bit alone** — `lit=0` with `matSrc=GX_SRC_VTX`
+    is the baked shape, and it is 44 of the 117 materials measured for issue 9.
+    An earlier version of this paragraph named only the lighting bit, which
+    would also have caught every emitter.
 
 11. **Item drop-shadows render as a black quad under Remix.** Long-standing;
     reported again 2026-08-04, and it cannot be tagged away in the dev menu.
 
     **Inference, not yet verified.** The game draws those round shadows as a
-    *projected* texture, and Remix does not support projected texture transforms
-    — `unsupported-effects.md` R6, which logs
+    *projected* texture, and stock Remix does not support projected texture
+    transforms — `unsupported-effects.md` R6, which logs
     `Use of projected texture transform detected`. With the projection dropped
     the quad samples flat, so the whole rectangle takes one dark value. That
     fits every reported property, including why no texture tag reaches it: the
@@ -657,7 +728,12 @@ Added **2026-07-29**:
     policy already applied to moya cloud shadows and sky billboards — the path
     tracer casts real shadows, so the projected fake is redundant as well as
     broken. That is a game-side switch alongside `hideVrbox` /
-    `hideSkyBillboards`.
+    `hideSkyBillboards`. Note this is *not* a case of accepting a Remix
+    limitation: teaching the fork the projected transform is available and the
+    ramp work shows it is a reasonable move. It is not worth doing here because
+    the effect being emulated is one the path tracer produces for real — if some
+    other projected-texture effect turns out to be wanted, the fork is the
+    place to put it (`remix-material-interface.md` §0).
 
 12. **HUD fade-in effects drew as opaque squares.** Reported 2026-08-04: A-button
     prompts and Epona's spur icon appeared as an expanding rectangle with the
@@ -668,7 +744,13 @@ Added **2026-07-29**:
     alpha, which is exactly how an effect fades in. Aurora's hint stage
     advertised the texture's alpha *unconditionally*, discarding the constant,
     so the quad reached Remix fully opaque. The scale now rides TFACTOR's alpha
-    channel, which the colour tint does not use. **Untested in game.**
+    channel, which the colour tint does not use. **CI-green, untested in game.**
+
+    **This is the one 2026-08-04 change that touches opacity, and opacity is one
+    of the two things that still has to rasterize correctly** — Remix reads the
+    stage's alpha to build the alpha test. Regression signature: alpha-tested
+    foliage, grates or grass going solid or vanishing. That would outrank every
+    other result in the session.
 
 #### Built and CI-green but NEVER RUN
 
@@ -723,10 +805,14 @@ the player:
    `dx9_draw.cpp:354/361/505`).
 
 Also ruled out: the clock (~0.6°/s of sun motion — visible over a minute, not
-over a lap) and baked lighting (`D3DRS_LIGHTING = FALSE`; aurora never
-evaluates the GX light model, so vanilla's Link-following light reaches
-neither the vertex colours nor the albedo). The day case is now believed
-correct; what remains is night-only and is open issue 2.
+over a lap) and vanilla's Link-following light (`D3DRS_LIGHTING = FALSE`;
+aurora never evaluates the GX light model, so a light the game sets up at
+runtime reaches neither the D3D9 albedo nor the vertex stream). **Narrowed
+2026-08-04:** that argument rules out the *runtime* light only. Vertex colours
+in this game *do* carry baked lighting where the artist put it there — issue
+10 — so it does not generalise into "nothing in the stream carries light".
+The day case is now believed correct; what remains is night-only and is open
+issue 2.
 
 **First-run checklist for the sun/moon light:** Remix's Dusklight tab should
 report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
