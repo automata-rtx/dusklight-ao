@@ -77,6 +77,30 @@ the entire atmosphere, overlay, warp and clock work. A non-zero count is the
 `Fixed-Function-dev`.** Do not delete it and do not merge it into this
 lineage without being asked.
 
+## What the D3D9 renderer is for — read this before proposing a fix
+
+**The raw fixed-function D3D9 image is never shown to a player.** It exists so
+Remix's DX9→Vulkan translation picks the scene up automatically — geometry,
+transforms, textures, most of a frame, for free. **Remix's renderer is the
+product; D3D9 is the feed.**
+
+So:
+
+- **Fixed-function limits are not the ceiling.** Where the D3D9 stream cannot
+  carry something faithfully enough to reach Remix, implement it **in Remix** —
+  Remix API or a fork change — rather than contorting D3D9 to approximate it.
+  All three repos are ours.
+- **"Raw D3D9 stays correct" is not a design goal.** It is occasionally a handy
+  safety property, never a reason to reject an approach. Documents written
+  before 2026-08-04 sometimes treat it as a requirement; they are wrong and are
+  being corrected as they are touched.
+
+**Two exceptions still have to rasterize correctly:** the **HUD** (Remix
+rasterizes UI draws rather than path-tracing them) and **alpha** (Remix reads
+the stage's alpha to build opacity and the alpha test).
+
+Full statement: `aurora-ao/docs/dx9/remix-material-interface.md` §0.
+
 ## How this project works — read before proposing a fix
 
 Five rules. They exist because each was learned the expensive way, and following

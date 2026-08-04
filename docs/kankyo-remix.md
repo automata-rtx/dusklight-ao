@@ -214,9 +214,14 @@ unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
   `rtx.vertexColorIsBakedLighting` settled it: turning that normalisation *off*
   makes shaded areas visibly darker, which means the vertex colours carry baked
   lighting and shadow. Feeding them to a renderer that then lights the scene
-  itself double-counts. Aurora therefore no longer advertises vertex colour to
-  Remix at all (the real D3D9 stages still use it, so raw D3D9 is unchanged).
-  See `extern/aurora/docs/dx9/remix-material-interface.md` §7.
+  itself double-counts.
+
+  **Corrected again 2026-08-04:** aurora briefly withheld vertex colour from
+  Remix outright, which was too blunt — it also discarded genuine material
+  colour. GX distinguishes the two per draw (colour-channel lighting enabled =
+  material colour, disabled = finished, possibly pre-lit output), so the
+  material case is forwarded and the baked case withheld.
+  See `extern/aurora/docs/dx9/remix-material-interface.md` §7c.
 
 Net: under Remix, Ordon at dusk and Ordon at noon differ only by what the
 path tracer sees — geometry and textures. The entire mood engine idles.

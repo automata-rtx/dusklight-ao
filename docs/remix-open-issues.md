@@ -44,6 +44,19 @@ assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 world-space UI billboards (issue 6), grass shading (issue 7), the ambient grade,
 and the Controls tab.
 
+**Untested, landed 2026-08-04 alongside the ramp:**
+
+- **Vertex colour is forwarded selectively** rather than withheld outright — GX
+  says per draw whether a stream is material colour or baked lighting, and the
+  fork now sets `isVertexColorBakedLighting` per draw instead of globally.
+  Materials whose "vertex colour" is a constant were losing that colour
+  entirely; they no longer are. §7c of the interface doc.
+- **API-submitted assets are capturable and replaceable.** Their mesh hashes are
+  content-derived instead of a creation-order counter, and external draws now
+  consult the replacer. This is a fork change with no upstream equivalent; it
+  matters because the "do it in Remix" half of the new philosophy is only safe
+  if anything pushed through the API can still be authored over later.
+
 **Self-illumination (issue 9) was tested 2026-08-04 and did not catch the lava**
 — the rule required GX lighting to be off and the lava has it on. Rev 2 replaces
 the predicate with a score, and adds `grp=` to the material report so "which
@@ -590,9 +603,12 @@ Added **2026-07-29**:
 
     A path tracer relights the scene, so baked lighting in the albedo
     double-counts. Aurora no longer advertises vertex colour to Remix at all —
-    the real D3D9 stages still use it, so raw D3D9 is unchanged. Remix's own
-    `rtx.vertexColorIsBakedLighting` is consequently irrelevant to the albedo;
-    leave it at its default. **Untested in game.**
+    the real D3D9 stages still use it. **Superseded 2026-08-04:** withholding it
+    always was too blunt — GX distinguishes baked lighting from authored material
+    colour per draw (lighting enabled vs disabled), and aurora now forwards the
+    material case and withholds the other. Remix's global
+    `rtx.vertexColorIsBakedLighting` is overridden per draw as a result.
+    `extern/aurora/docs/dx9/remix-material-interface.md` §7c. **Untested.**
 
     The original observation about that option, kept because it explains why the
     experiment was worth running:
