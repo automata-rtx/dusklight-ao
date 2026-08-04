@@ -208,10 +208,15 @@ unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
   (below) never fires.
 - **TEV tints**: the mono pass, bloom, vrbox TEV colours are EFB tricks —
   replaced by Remix's pipeline entirely (and our rtx.bloom.dusklight port).
-- **Vertex colours**: only static CLR0 from map data reaches Remix (used as
-  albedo tint). Since GX *lighting* isn't baked into vertices, there is
-  **no double-counting risk** when we re-apply kankyo mood Remix-side —
-  the dynamic component is currently 100 % absent.
+- **Vertex colours**: static CLR0 from map data. **Corrected 2026-08-04 — an
+  earlier revision of this line claimed GX lighting "isn't baked into vertices,
+  so there is no double-counting risk". That is false.** Testing
+  `rtx.vertexColorIsBakedLighting` settled it: turning that normalisation *off*
+  makes shaded areas visibly darker, which means the vertex colours carry baked
+  lighting and shadow. Feeding them to a renderer that then lights the scene
+  itself double-counts. Aurora therefore no longer advertises vertex colour to
+  Remix at all (the real D3D9 stages still use it, so raw D3D9 is unchanged).
+  See `extern/aurora/docs/dx9/remix-material-interface.md` §7.
 
 Net: under Remix, Ordon at dusk and Ordon at noon differ only by what the
 path tracer sees — geometry and textures. The entire mood engine idles.

@@ -563,9 +563,23 @@ Added **2026-07-29**:
    The NEE cache performs next-event estimation on emissive triangles and is on
    by default, so no fallback light farm is needed once materials emit.
 
-10. **`rtx.vertexColorIsBakedLighting` is degrading every surface in the game.**
-    Found 2026-08-03 while root-causing the greyscale defect; **not** its cause,
-    but a real and separate loss.
+10. **Vertex colour carries baked lighting, and was being forwarded to Remix.**
+    **RESOLVED 2026-08-04 — and it settled a claim the docs had backwards.**
+
+    Testing `rtx.vertexColorIsBakedLighting` was decisive: turning that
+    normalisation *off* made shaded areas visibly **darker**, which means the
+    vertex colours do carry baked lighting and shadow. `kankyo-remix.md` had
+    stated the opposite ("GX lighting isn't baked into vertices, so there is no
+    double-counting risk"); that line is now corrected.
+
+    A path tracer relights the scene, so baked lighting in the albedo
+    double-counts. Aurora no longer advertises vertex colour to Remix at all —
+    the real D3D9 stages still use it, so raw D3D9 is unchanged. Remix's own
+    `rtx.vertexColorIsBakedLighting` is consequently irrelevant to the albedo;
+    leave it at its default. **Untested in game.**
+
+    The original observation about that option, kept because it explains why the
+    experiment was worth running:
 
     The option defaults **on**, and what it does is normalise vertex colour —
     dividing each component by the largest, then mixing toward that result. The
@@ -587,6 +601,39 @@ Added **2026-07-29**:
     colour-channel lighting bit says exactly which draws have genuinely baked
     lighting. That is the same signal issue 9 needs, so the two should be built
     together.
+
+11. **Item drop-shadows render as a black quad under Remix.** Long-standing;
+    reported again 2026-08-04, and it cannot be tagged away in the dev menu.
+
+    **Inference, not yet verified.** The game draws those round shadows as a
+    *projected* texture, and Remix does not support projected texture transforms
+    — `unsupported-effects.md` R6, which logs
+    `Use of projected texture transform detected`. With the projection dropped
+    the quad samples flat, so the whole rectangle takes one dark value. That
+    fits every reported property, including why no texture tag reaches it: the
+    defect is in the transform, not the texture.
+
+    **Cheap confirmation:** the `matrep.gx` line for the shadow material will
+    show a `GX_TG_MTX3x4` texgen, and aurora already emits
+    `texgen: camera-space source without invertible world` for the related case.
+    Confirm before building anything.
+
+    **Likely fix, once confirmed:** stop drawing them under Remix, which is the
+    policy already applied to moya cloud shadows and sky billboards — the path
+    tracer casts real shadows, so the projected fake is redundant as well as
+    broken. That is a game-side switch alongside `hideVrbox` /
+    `hideSkyBillboards`.
+
+12. **HUD fade-in effects drew as opaque squares.** Reported 2026-08-04: A-button
+    prompts and Epona's spur icon appeared as an expanding rectangle with the
+    effect in the middle and no transparency around it.
+
+    **Cause found in the log and fixed 2026-08-04.** 18 of 111 materials have an
+    alpha pass of `konst × texture-alpha` — a constant fading the texture's own
+    alpha, which is exactly how an effect fades in. Aurora's hint stage
+    advertised the texture's alpha *unconditionally*, discarding the constant,
+    so the quad reached Remix fully opaque. The scale now rides TFACTOR's alpha
+    channel, which the colour tint does not use. **Untested in game.**
 
 #### Built and CI-green but NEVER RUN
 
