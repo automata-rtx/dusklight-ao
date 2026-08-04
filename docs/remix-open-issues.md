@@ -15,8 +15,9 @@ inferred rather than read, say so.
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
-configs, **including the two-colour ramp, self-illumination and `grp=` work of
-2026-08-04**. The aurora half is additionally **syntax-checked** in both the
+configs, **including everything landed on 2026-08-04**: the two-colour ramp,
+self-illumination scoring, `grp=` draw labelling, selective vertex colour, and
+API asset capture/replacement. The aurora half is additionally **syntax-checked** in both the
 d3d9-on and d3d9-off configs; the fork half has no cross-compilable harness, so
 its CI run is the only syntax check it gets.
 
