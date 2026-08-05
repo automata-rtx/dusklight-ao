@@ -669,6 +669,30 @@ Added **2026-07-29**:
      `matrep.rmx` carries `rampOther=`. "The ramp reached this surface" and
      "with the right second endpoint" were previously the same log line.
 
+   **The premise "GX has no emissive term" was too narrow, and one better
+   signal was already live.** Raised 2026-08-05. It is true of the *material*
+   format, but the game visibly has glowing things, so something produces them.
+   Three mechanisms, none of which is TEV state:
+
+   1. **Additive blending.** `GX_BM_BLEND` with `GX_BL_ONE`/`GX_BL_ONE` is the
+      hardware saying "add this draw to the framebuffer" — emission, with no
+      inference. Verified by reading both sides: aurora translates it
+      faithfully, and the fork already maps it to `BlendType::kEmissive` and
+      overrides the material **one else-if branch above the Dusklight rule**,
+      so such a draw never reaches the score. **Whether any draw in this game
+      takes that path is unknown** — no log printed blend state until now.
+      `blend=` on `matrep.sum` and `matrep.rmx` answers it from the next log.
+      If flames and halos are already arriving as `blend=additive`, the score
+      only ever had to cover opaque emitters like the lava surface.
+   2. **The game's own light lists.** `pointlight[100]` and `efplight[5]` are
+      already forwarded to Remix as sphere lights (`remix_bridge.cpp`).
+      **`dungeonlight[8]` is not** — per-room authored lights with positions and
+      palette colours, which is precisely what a dungeon like the Goron Mines
+      uses. Not built: it needs a decision about double-counting against surface
+      emission and against the ambient grade, not more research.
+   3. **Actor identity.** All three repos are ours; a draw from a known emitter
+      actor can be marked at the source. Needs no GX fact at all.
+
    **Identification is still the weak point.** `grp=` does not work — see the
    State section above — so which logged material is the geyser, the pool or the
    fire is inferred from texture size, format and ramp endpoints, not known.

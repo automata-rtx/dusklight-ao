@@ -181,6 +181,14 @@ So "which one is the lava?" is still not answered by the log directly; it is
 inferred from texture size, format and ramp endpoints. This is the main reason
 the grey geysers are still unexplained.
 
+**New this round, and it may reframe the whole feature:** every material line
+carries `blend=`. `additive` or `additiveAlpha` means the draw is *already*
+emissive by Remix's own rule, claimed before the Dusklight score is consulted —
+that is how a console-era renderer draws a flame or a glow halo, and it is the
+one thing GX says unambiguously. Nothing to press; just walk past a torch and
+the lava as usual. If the log comes back with `blend=additive` on the flames,
+the scoring work only ever had to cover opaque emitters like the lava surface.
+
 What *is* answered now, without you describing anything:
 
 - every emissive candidate's score, colour, authored flag, ramp endpoints and
@@ -189,6 +197,7 @@ What *is* answered now, without you describing anything:
   everything
 - how many colourless candidates were skipped, as a count rather than 90 lines
   that used to eat the whole log before you reached the mines
+- which draws are additive, and therefore already emissive without any of this
 
 Still worth a sentence if you notice it: **anything glowing that obviously
 should not** — roughly where is enough, since the accepted materials are all
