@@ -73,14 +73,15 @@ nothing extra since GX lighting is cheap per-vertex.
 - Missing from **both** because GX/TEV isn't PBR: real roughness/metalness/F0
   (must be *authored*), and multi-layer transparency (single opaque layer only).
 
-**Superseded 2026-08-04 on the Remix path — emitters are not a tagging
-problem.** Aurora scores GX evidence per draw (colour-channel lighting disabled
-0.50, register-sourced colour 0.25, a TEV stage scaled past displayable 0.25)
-and the fork cuts at `rtx.dusklight.emissive.threshold`, live in the F1 overlay.
-The measured counter-example is why it is a score rather than a rule: the Goron
-Mines lava has GX lighting **enabled**, so "lighting is off" alone never
-identified an emitter. `extern/aurora/docs/dx9/remix-material-interface.md` §9.
-Rev 2 of that scoring is CI-green and **untested in game**.
+**Superseded 2026-08-04/05 on the Remix path — emitters are not a tagging
+problem.** Aurora measures three facts per draw and the fork requires all of
+them: the TEV colour program never reads the rasterized channel (self-lit — the
+Goron Mines lava has GX lighting *enabled* and still never reads it, which is
+why the channel flag was the wrong test), the material has a colour of its own
+authored in TEV constants, and that colour reads as a glow. No threshold, no
+score: 6 of 77 materials in the measured scene, every lava and fire surface.
+`extern/aurora/docs/dx9/remix-material-interface.md` §9. CI-green and
+**untested in game**.
 
 ## 3. Option 2: RTX Remix (SDK path)
 
@@ -91,8 +92,9 @@ Rev 2 of that scoring is CI-green and **untested in game**.
   fatal, because the D3D9 stream only has to be a feed Remix can pick the scene
   up from; what it cannot carry is implemented in the fork instead. Two
   examples that were once written down as hard limits: two-colour TEV ramps are
-  now evaluated exactly in the fork's shader, and self-illumination is carried
-  as a GX evidence score (both CI-green, **untested in game**). The HUD and
+  now evaluated exactly in the fork's shader, and self-illumination is derived
+  per draw from what GX actually says (both CI-green, **untested in game**).
+  The HUD and
   alpha are the two things that still have to rasterize correctly.
 - **remixapi SDK path is a surprisingly good architectural match:** aurora's
   `push_gx_draw` (`aurora-ao/lib/gx/command_processor.cpp`) already centralizes

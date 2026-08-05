@@ -236,7 +236,7 @@ unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
   surface presents into `D3DMATERIAL9` and the TFACTOR/texture-op chain, and
   the fork reads it back: two-colour ramps — `lerp(colourA, colourB, texture)`,
   this game's dominant material shape — are evaluated exactly rather than
-  squeezed into one D3D9 op, and a GX evidence score rides the same transport
+  squeezed into one D3D9 op, and the self-illumination facts ride the same transport
   to drive self-illumination (`rtx.dusklight.emissive.*`). Colour reaching
   Remix was tested in game 2026-08-04; the ramp and emissive revisions are
   CI-green and **untested in game**.

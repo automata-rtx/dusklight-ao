@@ -24,12 +24,23 @@ implement it in the fork rather than to approximate it in D3D9. Full statement:
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
-configs, **including everything landed on 2026-08-04**: the two-colour ramp,
-self-illumination scoring, selective vertex colour, and API asset
-capture/replacement. The aurora half is additionally
-**syntax-checked** in both the d3d9-on and d3d9-off configs; the fork half has
-no cross-compilable harness, so its CI run is the only syntax check it gets.
-**Nothing landed on 2026-08-04 has been tested in game.**
+configs, **including everything landed on 2026-08-04 and 2026-08-05**: the
+two-colour ramp, the self-illumination rule, selective vertex colour, API asset
+capture/replacement, and the blend-class reporting. The aurora half is
+additionally **syntax-checked** in both the d3d9-on and d3d9-off configs; the
+fork half has no cross-compilable harness, so its CI run is the only syntax
+check it gets.
+
+**Tested in game so far:** the 2026-08-04 material work was run twice, and both
+runs are what produced the findings below. **Nothing landed on 2026-08-05 has
+been run** — that is the self-illumination rule, the emitted-colour default, the
+instrumentation fixes and the blend reporting.
+
+**One generated document is stale and needs a Windows run to fix:**
+`dxvk-remix/RtxOptions.md` is produced by the runtime itself and currently
+documents a subset of `rtx.dusklight.*`. This session removed four emissive
+options and added three; the header comments in
+`rtx_dusklight_emissive.h` are authoritative until it is regenerated.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
