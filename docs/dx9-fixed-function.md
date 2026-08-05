@@ -482,6 +482,27 @@ open-ended linear radiance, and none of them mean what they meant.
   **`config.json` is not rewritten**, so the same config moves between a
   modded build and a D3D9 test build with no edits either way. Remix's path
   tracer replaces the graphics mods' effects wholesale.
+- **HD texture replacement packs do not reach the screen in this mode — yet.**
+  The `<ConfigPath>/texture_replacements/` directory *is* still scanned and
+  registered on this backend (`texture_replacements::reload()` runs for every
+  backend but `BACKEND_NULL`), but Aurora's D3D9 texture path never consults the
+  registry: it builds every D3D9 texture straight from the GX source bytes.
+  Packs shipped inside a mod do not register at all, because mod discovery is
+  skipped here (see the mods bullet above).
+
+  This is worth closing rather than shrugging off, and **not** for the reason
+  the older docs gave. For path-traced surfaces Remix's own replacement system
+  genuinely does supersede a pack. For the **HUD** it does not: Remix rasterizes
+  UI draws instead of path-tracing them, and rasterized draws never go through
+  its material replacement, so the D3D9 texture is the only thing that decides
+  how sharp the HUD is. Feeding the pack through D3D9 would also hand Remix the
+  HD albedo for free, leaving only roughness/normal/metalness to author.
+
+  Feasibility, the design, and the one real cost (Remix's material hash *is* the
+  bytes we upload, so the pack's contents key every USD binding and every
+  hash-keyed `rtx.conf` entry) are written up in
+  `extern/aurora/docs/dx9/texture-replacements.md`. Investigation only — no code
+  yet.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
