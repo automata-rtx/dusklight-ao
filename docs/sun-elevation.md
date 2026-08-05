@@ -121,6 +121,7 @@ of 90 for the reason above. It is in the recommended `rtx.conf` in
 The code default stays at 59.036 so that a build with no configuration behaves
 exactly like vanilla.
 
-This is one of the few things in the Remix work that is **tested and settled**
-rather than built-and-unrun — see `kankyo-remix.md` §"Picking this up cold" for
-which side of that line everything else sits on.
+This is one of the few things in the Remix work that is **tested in game and
+settled** rather than built-and-unrun — see `remix-open-issues.md` for which
+side of that line everything else sits on, and `kankyo-remix.md` for the design
+it belongs to.

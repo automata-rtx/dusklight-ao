@@ -4510,10 +4510,9 @@ void dKyr_drawStar(Mtx drawMtx, u8** tex) {
 void drawCloudShadow(Mtx drawMtx, u8** tex) {
     ZoneScoped;
 #if TARGET_PC
-    // Moya drifting cloud-shadow overlays are intentionally not rendered on
-    // the D3D9 fixed-function backend (RTX Remix path-traces real shadows).
-    // Guarded here, at the single draw funnel, in addition to the packet-level
-    // gate (docs/dx9-fixed-function.md).
+    // Moya cloud-shadow overlays are intentionally not rendered on the D3D9 backend: Remix
+    // path-traces real shadows and these projected fakes fight them. Belt-and-braces with the
+    // packet-level gate in dKankyo_cloud_Packet::draw. docs/kankyo-fog.md §6.
     if (aurora_get_backend() == BACKEND_D3D9) {
         return;
     }

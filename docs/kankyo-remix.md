@@ -1,353 +1,59 @@
 # Kankyo → RTX Remix: environment colour driving
 
-Design doc for feeding Twilight Princess's environment/mood system (d_kankyo,
-"kankyo" = environment) into our dxvk-remix fork, so time of day, weather,
-twilight, wolf senses and per-area palettes shape the path-traced image the
-way they shaped the original TEV pipeline.
+How Twilight Princess's environment system (d_kankyo, "kankyo" = environment)
+feeds our dxvk-remix fork, so time of day, weather, twilight, wolf senses and
+per-area palettes shape the path-traced image the way they shaped the original
+TEV pipeline.
 
-Everything below is grounded in the three codebases as of this writing:
-dusklight-ao (game), aurora-ao (GX backend, `extern/aurora`), and
-automata-rtx/dxvk-remix (Remix fork). File references use repo-relative
-paths.
+**This file is the stable design reference.** It changes when the design
+changes, not when a test session happens. Everything volatile lives elsewhere.
 
 ---
 
-## Picking this up cold
+## Start here
 
-*Updated 2026-07-28. Read this and "Verification state", then stop — the rest
-is reference. §"Test session playbook" is what to do next.*
-
-**The three repos and what each holds:**
-
-| Repo | Role | Dusklight-relevant docs |
-| :-- | :-- | :-- |
-| `dusklight-ao` | the game | this file, `kankyo-fog.md`, `dx9-fixed-function.md`, `sun-elevation.md` |
-| `aurora-ao` | GX→D3D9 backend, at `extern/aurora` | `docs/dx9/` |
-| `dxvk-remix` | the Remix fork | `documentation/DusklightAtmosphere.md` (rendering), `documentation/DusklightOverlay.md` (control plane) |
-
-**All three use `Fixed-Function-dev` as the working branch.** Each repo's
-`CLAUDE.md` carries the full rule, including the standing authorization to
-mirror a session's generated `claude/*` branch to `Fixed-Function-dev` on every
-push. Do that without being asked — `claude/*` branches get deleted.
-
-**Where the work stands.**
-
-| Piece | State |
+| I want to… | Read |
 | :-- | :-- |
-| Atmosphere phases A + B — one medium driving fog, sky and sky-light from the game's palette | **tested in game, owner's verdict "a massive, frankly monumental success"** |
-| Dusklight bloom (four fidelity fixes + the 100× composite fix) | **tested, "massively improved"** |
-| Sun/moon distant light | **tested**, produces "interesting results"; day case believed correct |
-| `disableFrustumCulling`, `celestialNoonElevation` (settled at 80) | **tested** |
-| Bridge, F1 overlay, tab-drives-game | **tested end to end** |
-| Warp | **tested 2026-07-29, works exactly as intended** |
-| Time-of-day scrub + freeze | **tested 2026-07-29, "flawlessly and as expected"** |
-| Local point lights | **tested 2026-07-29, WORKING** — needs `intensity 19` / `radius 10`, see open issue 3 |
-| `hideSkyBillboards` | **tested 2026-07-29, works — and it fixes the wandering shadows** |
-| Phase C — physical Hillaire sky blended against the palette | **tested 2026-07-29, partial** — aerial perspective convincing, sky itself dimmed. Open issue 4 |
-| Ambient grade | built, off by default, **never reached** |
-| Mono overlay + base weight | built; **wolf-senses route blocked by open issue 5**, twilight route still open |
-| Controls tab | **placeholder, nothing built** |
+| Understand what is broken right now | [`remix-open-issues.md`](remix-open-issues.md) |
+| Run a test session | [`remix-test-playbook.md`](remix-test-playbook.md) |
+| Check whether something was already investigated (last resort — unmaintained archive) | [`remix-history.md`](remix-history.md) |
+| Understand the fog specifically | [`kankyo-fog.md`](kankyo-fog.md) (game side) + `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer) |
+| Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
+| Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
+| Read a log | `extern/aurora/docs/dx9/material-report.md` |
+| Change the overlay / the option wire | `dxvk-remix/documentation/DusklightOverlay.md` |
 
-**Nothing is known-broken in the bridge any more.** Local point lights, the
-last standing bug, work; the night shadow wandering is fixed; the level-entry
-crash has not recurred.
-
-**The one live rendering defect is open issue 4: the generated sky is dimmed
-by the fog medium.** It has a verified cause in the composite (the far ramp
-exempts the sky, the volumetric half does not) and it is the thing to fix next.
-
-**Also open:** the wolf-senses overlay rendering as an opaque white disc
-(issue 5), the world-space UI billboards appearing only intermittently
-(issue 6 — the torch-flame half is **pinned**, awaiting a test window), grass
-shading under Remix (issue 7), greyscale rupees and hearts (issue 8), the
-ambient grade, and the Controls tab.
-
-**Issues 7 and 8 share a root with the white-ground defect** and are the ones
-with the clearest next step: aurora hands Remix a single reconstructed material
-stage, and anything the game expressed in a *later* stage — a konst tint, a
-blend weight — is either dropped to identity or misread as the finished albedo.
-Issue 8 has a verified cause and a named fix; issue 7 needs one switch built
-before its remaining symptoms can even be measured cleanly.
-
-**Sky tagging is closed, and earlier revisions of this file were wrong about
-it.** It was carried for a while as the highest-value outstanding item, on the
-premise that tagging the game's sky as Sky would supply the missing fill light.
-It cannot: the vrbox is painted by handing the hardware a handful of vertex
-colours rather than by drawing a texture, so there is no distinctive texture
-content for Remix to hash and nothing to tag. That is precisely why
-`rtx.dusklight.atmosphere.skyEnable` generates a sky from those same palette
-colours and registers it as a dome light — **that is the fill light, and it is
-built and tested.** The only part of the old claim that survives concerns the
-sun/moon/star *billboards*, which do carry textures and so could in principle
-be tagged; `rtx.dusklight.game.hideSkyBillboards` removes them outright
-instead, and tagging them is worth revisiting only if you want to keep them
-visible. See open issue 2.
-
-### Awaiting a test window
-
-*Added 2026-07-29. The owner has no test window for a while, so work has
-continued without one and this is the single list of what is owed a run. Keep it
-here rather than scattered through the issues — the point is that one visit can
-clear several of these if they are done in the right order.*
-
-**Built since the last test session, never run:**
-
-| Thing | Where | What a test would settle |
-| :-- | :-- | :-- |
-| Per-blade grass, `rtx.dusklight.game.perBladeGrass` | `d_grass.inc`, protocol 5 | Do blade hashes hold still (check the texture categorization screen); does the delayed lighting go away; what does it cost in open field |
-| Albedo tint into Remix, greyscale rupees/hearts | aurora `dx9_tev.cpp` | Do rupees and hearts get their colour back; nothing else regressed to a wrong colour |
-| **Fog on sky, `atmosphere.skyFogMode`** — two candidate fixes plus the untreated baseline | fork composite | **Which of Exempt and Weighted to keep. The other is meant to be deleted.** Lake Hylia morning is the scene that separates them |
-| Painted moon, `atmosphere.skyMoonEnable` | fork `dusklight_sky.comp.slang` | Does it read as the moon at 5.7°, does it fade cleanly across the dawn/dusk handover, does it fire only at night |
-| Controls tab, protocol 6 | fork + `remix_bridge.cpp` | Does capture work while the overlay blocks input; does displace name the right action; does the neutral-wait stop the Rebind click being captured |
-| Local light defaults now **19 / 10** | shipped both sides | Only that nothing else assumed the old 1.0 / 4.0 |
-
-**One decision still open, needing no test:** whether
-`rtx.dusklight.game.localLights` should default **on** now that it works. The
-values are shipped; the on/off default is not.
-
-**Settled and shipped, listed so nobody re-litigates:** `localLightIntensity`
-19 and `localLightRadius` 10 are now the defaults on both sides.
-
-**Blocked on a fix rather than on a test window:**
-
-- **Phase C, the physical sky.** Cannot be judged until open issue 4 is fixed —
-  part of what you would be looking at is the fog eating the sky.
-- **The ambient grade.** Should not be tuned against a wrongly-lit sky either.
-
-**Next up, and it needs no test window — start here.** Resubmitting the
-world-space UI elements through the Remix API tagged
-`REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI`. Decided 2026-07-29 as the route for
-open issue 6: it addresses the defect directly instead of restructuring the
-frame around the injection boundary, and the mechanism is now proven to exist
-(§14.9 in `DusklightAtmosphere.md`).
-
-What it needs, in order:
-
-1. **Survey what deserves the tag**, not just the targeting arrow. The fire
-   billboards are the obvious co-suspect — they appear and vanish with it — and
-   there are likely others. `REMIXAPI_INSTANCE_CATEGORY_BIT_WORLD_UI` is one of
-   a list (`remix_c.h:454`), so the survey should ask which category each
-   candidate wants, not only which ones are broken.
-2. **Confirm the submission shape**: `CreateMesh` once per distinct geometry,
-   `DrawInstance` per frame with the transform and category flags. The bridge
-   already does exactly this shape for lights, so the lifecycle questions —
-   when to create, when to destroy, what to key identity on — have answers to
-   copy rather than invent.
-3. **Decide what happens to the original draw.** Submitting a second copy
-   without suppressing the game's own draw would double it.
-
-Two things already known that constrain the design: the arrow is a real
-perspective-projected J3D model rather than UI (`d_attention.cpp:1619`), so
-"resubmit it as UI" is a genuine change of category and not a correction of a
-misclassification; and a captured draw cannot be tagged after RTX injection, so
-the API route is what sidesteps that entirely.
-
-**Pinned, needs a specific setup:**
-
-- The torch flame (open issue 6) — read the aurora `warn_once` log at a lit
-  torch, then A/B raw D3D9 against Remix.
-- The injection boundary (open issue 6) — draw-call id at injection, with and
-  without letterbox bars.
-- Mono overlay and base weight — **in twilight, not wolf senses**, which is
-  blocked by open issue 5.
-- Goron Mines, for the near-and-dense end of the fog mapping.
+**The three repos.** `dusklight-ao` is the game; `aurora-ao` is the GX→D3D9
+backend, vendored at `extern/aurora`; `dxvk-remix` is the Remix fork. All three
+develop on `Fixed-Function-dev`. **`CLAUDE.md` at each repo root is the authority
+on branch rules** — this file deliberately does not restate them.
 
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
    commit point. Protocol is at **6**; skew in either direction has cost an
-   evening twice.
-2. **Interactive approval prompts do not work in the owner's environment** —
-   they always resolve as "no approval given". Never route anything through
-   one. See `CLAUDE.md` at the repo root for the workarounds.
+   evening twice. The Dusklight tab reports which side is old — read it before
+   debugging anything else.
+2. **Interactive approval prompts do not work in the owner's environment.**
+   Never route anything through one. See `CLAUDE.md`.
 
----
+**How this project diagnoses things.** All three codebases are ours, which most
+Remix projects cannot say. The consequence is a working rule: prefer
+*translating* game state into Remix over *tagging* assets in Remix, and prefer
+*instrumentation* over asking the owner to describe what they saw. A question we
+would have to ask is a defect in the logging.
 
-## Test session playbook
-
-*The backlog is not "what to build" — it is "what to run". This section is the
-recipe, so a session does not have to be reconstructed from scratch.*
-
-**Five of the six were run on 2026-07-29 and five passed.** Each section below
-now carries its result. They are kept rather than deleted because they are the
-re-run recipe when something regresses, and because §3 and §5 both ended with a
-setting change that the next session needs to reproduce.
-
-### Baseline `rtx.conf`
-
-One file for the whole session; every test below is a delta done live in the
-overlay. (The block in `dx9-fixed-function.md` sets `rtx.volumetrics.enable`
-twice — faithful-fog mode then atmosphere mode. Last wins, so it works, but
-this is the unambiguous version.)
-
-```ini
-rtx.useNewGuiInputMethod = False
-
-rtx.dusklight.atmosphere.enable    = True
-rtx.volumetrics.enable             = True
-rtx.dusklight.atmosphere.skyEnable = True
-rtx.dusklight.game.hideVrbox       = True
-rtx.skyAutoDetect                  = None
-
-rtx.bloom.enable    = True
-rtx.bloom.dusklight = True
-rtx.bloom.steps     = 6
-
-rtx.dusklight.game.celestialNoonElevation = 80
-rtx.dusklight.game.disableFrustumCulling  = True
-
-rtx.autoExposure.enabled = False   # every judgement below is a brightness judgement
-rtx.fallbackLightMode    = 1
-```
-
-**Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
-→ *"Device registered with the Remix API: yes"*. If it says the game build is
-older than the Remix build, the two came from different commits — rebuild both
-before testing anything, or every result is noise.
-
-### 1. Clock — do this first, it is the tool the rest want
-
-> **PASSED 2026-07-29** — slider, presets and Freeze Time all "work flawlessly
-> and as expected". The commit-counter design is validated: a preset pressed
-> twice works the second time.
-
-Warp tab → **Time of day**. No config needed.
-
-The day is **360 degrees**: 15 = an hour, 0 midnight, 90 sunrise, 180 noon,
-270 sunset. Moon/sun handover ≈ 67–75 (`dKyr_moon_arrival_check`).
-
-- Slider should track the game when released, and not fight you while held.
-- **Press Noon twice in a row** — it must work the second time. That is the
-  entire reason for the commit counter; if it fails once, the counter is not
-  crossing.
-- Tick **Freeze Time**: the sun must stop *and* the palette must stop drifting.
-
-Freeze is what makes every A/B below worth anything. Without it the sun has
-moved between the two shots.
-
-### 2. Warp
-
-> **PASSED 2026-07-29** — "works exactly as intended, no issues". The
-> game-owns-the-table design and the layer `-1` default both hold up in
-> practice.
-
-Warp tab. No config.
-
-- Region **Hyrule Field** → Level list shows **1** entry. Region **Ordon** →
-  **9**. That is the list-refresh test (a frame or two of lag is expected).
-- Level **Ordon Spring** → the text right of the button reads `-> F_SP104`.
-- Press **Warp**. Log should show
-  `warping to F_SP104 (room 1, point 0, layer -1)`.
-
-| Symptom | Meaning |
-| :-- | :-- |
-| Warp button greyed out | rooms or points list empty for that level — record which |
-| Nothing happens, no log line | commit counter not crossing |
-| Nothing happens, log line present | `dComIfGp_setNextStage` fired and the game ignored it — game-side |
-| Warps by itself on connect | commit priming failed — report immediately |
-
-### 3. Local point lights — RESOLVED
-
-> **PASSED 2026-07-29.** Forest Temple, first room:
-> `Registered by the game: 5   drawn this frame: 4   tracked: 4`.
-> The lights work. Two settings had to move off their defaults and both are
-> now recommended values rather than experiments — see open issue 3:
-> **`localLightIntensity` 19** (the minimum that gives usable light, which is
-> the *derived* alternative reading of the attenuation curve, not a guess) and
-> **`localLightRadius` 10** (no clipping through the Forest Temple light posts).
->
-> Whatever was wrong in the first report is gone, and the diagnostics are the
-> reason this took one visit instead of an evening. The `found 5 / drawn 4` gap
-> is the one loose end — see issue 3.
-
-```ini
-rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working torch is unmistakable
-```
-
-Warp to **Forest Temple → Forest Temple** (`D_MN05`). `d_a_ep` registers its
-light on actor init regardless of whether the flame is lit
-(`d_a_ep.cpp:935`), so `found` should be non-zero if the array is read at all.
-Ordon Village at night and the Kakariko bonfire are backups.
-
-**Tick "Local Lights Enabled" and leave it ticked before reading.** `found` is
-counted before the enable gate but `running` is set after it, so reading with
-the box unticked always reports "not running its light submission" — expected,
-not the bug.
-
-Then read `Registered by the game: N   drawn this frame: N   tracked: N` and
-the paragraph under it. The three outcomes and what each means are in open
-issue 0. If `drawn > 0` but the room is still dark, that is intensity rather
-than plumbing — try **Local Intensity 19** (the alternative reading of the
-attenuation curve, `remix_bridge.cpp:640-670`).
-
-### 4. `hideSkyBillboards` — night shadow wandering — RESOLVED
-
-> **PASSED 2026-07-29, and it is the fix.** Turning it on stops the wandering.
-> That **confirms the measured hypothesis** rather than merely working around
-> it: the 80 m moon quad, anchored to the camera eye 800 m away along the
-> moon's orbital direction, was occluding every shadow ray cast toward the moon
-> light. The prediction and the observation match, so open issue 2 is closed by
-> cause and not just by symptom.
->
-> Cost, as predicted: the visible moon and stars go with it. Getting the moon
-> back now has a clear route — paint it into the generated dome, where it is
-> visible, correctly placed, contributes its own light and is structurally
-> incapable of casting a shadow. Not built; see "What to do next".
-
-Freeze the clock at **~330** (night), outdoors, somewhere the wandering has
-been seen. Stand still, rotate a full circle, shoot. Toggle Geometry → *Hide
-Sky Billboards*, repeat from the same spot.
-
-Success: shadow coverage stops moving with the camera. Cost: the moon and stars
-vanish, which is fine — the generated sky paints that region and the moonlight
-comes from the distant light, not the billboard.
-
-Failure (still wanders) is a **useful** result: it kills the measured
-hypothesis in open issue 2 and points at Remix's denoiser or probe rather than
-at captured geometry.
-
-### 5. Phase C — physical sky — RAN, PARTIAL
-
-> **RAN 2026-07-29 at frozen noon. The scattering works; the sky is being
-> dimmed by something else.**
->
-> - **Aerial perspective is convincing.** Distant mountainous terrain reads
->   correctly blue. That is C3 working — the far ramp sampling the dome in the
->   view direction — and it is the part that was hardest to predict.
-> - **The sky itself comes out dim and "grimier"**, and there is an awkward
->   seam: the mountain silhouette is blue while the sky immediately above it is
->   duller and darker.
-> - **Lowering `atmosphere.densityScale` massively improves it**, which is the
->   measurement that identified the cause. The fog was overpowering the sky.
->
-> This is **not a Phase C defect** — the same seam shows in Lake Hylia morning
-> fog with `physicalSky` off (§8 of the same session), only worse. The cause is
-> in the composite and is written up as **open issue 4**. Re-run this test
-> after that is fixed; until then Phase C's own blend cannot be judged fairly,
-> because part of what you are looking at is the fog eating the sky.
-
-```ini
-rtx.dusklight.atmosphere.physicalSky = True
-```
-
-The blend is driven by **sun elevation**, not the clock: below 2° entirely the
-game's palette, above 28° entirely simulated. So freeze at **180 (noon)** and
-A/B `physicalMaxWeight` **0 ↔ 1** — 0 must be pixel-identical to Phase B.
-
-Look at **the shaded side of a wall**, not at the sky: the point of Phase C is
-shadow fill, and the sky itself barely changes at noon.
-
-| Symptom | Likely cause |
-| :-- | :-- |
-| **Inverted gradient** (bright overhead, dark at horizon) | coordinate convention — `cartesianDirectionToLatLongSphere` uses `acos(direction.z)` (+Z pole) against a Y-up world. `DusklightAtmosphere.md` §14.4 |
-| Black sky | LUT never populated, or transmittance collapsed |
-| Magenta / NaN / fireflies | type conversion in the LUT path (§14.5) |
-| Banding | LUT resolution or format |
-| Flickers frame to frame | frame-latching (§14.6) |
-| Fine, but no fill-light change | dome light not picking up the physical result |
-
-Then watch a sunset through the 28° → 2° band. A visible pop at either
-threshold means the ramp needs widening.
+**What the D3D9 renderer is for.** The raw fixed-function D3D9 image is never
+shown to a player. It exists so Remix's DX9→Vulkan translation picks the scene
+up automatically — geometry, transforms, textures, most of a frame, for free.
+**Remix's renderer is the product; D3D9 is the feed.** So fixed-function limits
+are not the ceiling: where the D3D9 stream cannot carry something faithfully
+enough to reach Remix, implement it *in Remix* — API or fork change — rather
+than contorting D3D9 to approximate it. "Raw D3D9 stays correct" is a passing
+safety property, never a design goal. The two exceptions that still have to
+rasterize correctly are the **HUD** (Remix rasterizes UI draws) and **alpha**
+(Remix reads the stage's alpha for opacity and the alpha test). Full statement:
+`extern/aurora/docs/dx9/remix-material-interface.md` §0.
 
 ---
 
@@ -499,28 +205,65 @@ Three mechanisms, all TEV/GX state:
 
 ---
 
-## Part II — What survives under Remix today: almost none of it
+## Part II — What the D3D9 stream carries on its own: almost none of it
+
+This part is about the D3D9 feed by itself. It is the *reason* for Parts III
+and IV, not a statement of what the build does today — most of what is listed
+here as lost now reaches Remix over the option wire and the Remix API instead.
 
 Aurora's D3D9 backend (`extern/aurora/lib/dx9/`) deliberately ships "v1
 unlit" (`docs/dx9/gx-to-d3d9-mapping.md` §8):
 
 - **Lighting**: `D3DRS_LIGHTING = FALSE` permanently
-  (`dx9_backend.cpp:83`); GX light state is fully decoded into
-  `g_gxState.lights[8]` but never becomes D3D9 lights. Remix sees zero
-  lights from the game. Kankyo ambients therefore never reach Remix.
-- **Fog**: `D3DRS_FOGENABLE = FALSE` (`dx9_backend.cpp:93`,
-  `dx9_draw.cpp:206`). GX fog regs *are* decoded into `g_gxState.fog`
-  (type/a/b/c/colour) and then dropped. The D3D9→Remix fog capture path
-  (below) never fires.
+  (`dx9_backend.cpp:106`); GX light state is fully decoded into
+  `g_gxState.lights[8]` but never becomes D3D9 lights, so the D3D9 stream
+  carries no light at all. **The conclusion that used to follow — "Remix
+  sees zero lights from the game" — is superseded.** Light reaches Remix,
+  just not through D3D9: the bridge creates the sun/moon distant light and
+  the game's live point lights through the Remix API (IV.7), and the kankyo
+  ambients drive the grade pass (IV.3).
+- **Fog**: **superseded 2026-07-27 — this bullet predates the implementation.**
+  `apply_fog_state()` (`extern/aurora/lib/dx9/dx9_draw.cpp:181`) translates
+  `g_gxState.fog` into `D3DRS_FOG*` per draw, so the D3D9→Remix capture path
+  does fire. What it does not buy is a stable frame fog: Remix keeps the first
+  non-`NONE` state of the frame and TP sets fog per tevstr, so the bridge
+  pushes the global `g_env_light` fog instead — `kankyo-fog.md` §4, and IV.4
+  below.
 - **TEV tints**: the mono pass, bloom, vrbox TEV colours are EFB tricks —
   replaced by Remix's pipeline entirely (and our rtx.bloom.dusklight port).
-- **Vertex colours**: only static CLR0 from map data reaches Remix (used as
-  albedo tint). Since GX *lighting* isn't baked into vertices, there is
-  **no double-counting risk** when we re-apply kankyo mood Remix-side —
-  the dynamic component is currently 100 % absent.
+- **Material colour**: this one *does* travel, and it is where the stream was
+  extended rather than accepted as it stood. Aurora encodes the colour a
+  surface presents into `D3DMATERIAL9` and the TFACTOR/texture-op chain, and
+  the fork reads it back: two-colour ramps — `lerp(colourA, colourB, texture)`,
+  this game's dominant material shape — are evaluated exactly rather than
+  squeezed into one D3D9 op, and the self-illumination facts ride the same transport
+  to drive self-illumination (`rtx.dusklight.emissive.*`). Colour reaching
+  Remix was tested in game 2026-08-04; the ramp and emissive revisions are
+  CI-green and **untested in game**.
+  `extern/aurora/docs/dx9/remix-material-interface.md` §9–§10.
+- **Vertex colours**: static CLR0 from map data. **Corrected 2026-08-04 — an
+  earlier revision of this line claimed GX lighting "isn't baked into vertices,
+  so there is no double-counting risk". That is false.** Testing
+  `rtx.vertexColorIsBakedLighting` settled it: turning that normalisation *off*
+  makes shaded areas visibly darker, which means the vertex colours carry baked
+  lighting and shadow. Feeding them to a renderer that then lights the scene
+  itself double-counts.
 
-Net: under Remix, Ordon at dusk and Ordon at noon differ only by what the
-path tracer sees — geometry and textures. The entire mood engine idles.
+  **Corrected again 2026-08-04:** aurora briefly withheld vertex colour from
+  Remix outright, which was too blunt — it also discarded genuine material
+  colour. GX distinguishes the two per draw (colour-channel lighting enabled =
+  material colour, disabled = finished, possibly pre-lit output), so the
+  material case is forwarded and the baked case withheld.
+  See `extern/aurora/docs/dx9/remix-material-interface.md` §7c.
+
+Net, **for the D3D9 stream alone**: Ordon at dusk and Ordon at noon would
+differ only by what the path tracer sees — geometry and textures, with the
+whole mood engine idling. **Superseded 2026-08-04 as a statement about the
+build**: that is what Parts III and IV exist to fix, and the bridge, the
+atmosphere, the generated sky and the local lights have since closed most of
+it. The mood engine travels over the option wire and the Remix API rather than
+over D3D9. What is built and what is actually tested:
+[`remix-open-issues.md`](remix-open-issues.md).
 
 ---
 
@@ -650,10 +393,11 @@ Outside palette transitions almost all values are stable frame-to-frame (and
 quantized to the game's 8-bit parameters), so the steady-state push count is
 ~0–3 strings.
 
-Game-side gating: when the bridge is active, force `game.bloomMode = Off`
-behaviour for the EFB bloom (skip `bloom_c::draw()` under Remix) so the
-raster filter quads stop overdrawing the path-traced image — this replaces
-the "please set Bloom to Off" advice in `docs/dx9-fixed-function.md`.
+Game-side gating (implemented): when the bridge is active, `bloom_c::draw()`
+returns immediately (`src/m_Do/m_Do_graphic.cpp`), so the EFB filter quads stop
+overdrawing the path-traced image whatever `game.bloomMode` says. This replaced
+the "please set Bloom to Off" advice in `docs/dx9-fixed-function.md`; nobody has
+to set it by hand.
 
 ### IV.3 Remix fork: the grade stage (mono + ambient tint + base weight)
 
@@ -747,10 +491,16 @@ if exposure is pinned.
 >    keeps the first non-`NONE` fog state of the frame and discards the rest,
 >    and TP sets fog *per tevstr*. Plan B (a pushed fog override) is now the
 >    plan, not the fallback.
-> 2. **Volumetrics is not a drop-in "user preference".** With stock options it
+> 2. **Volumetrics is not a drop-in "user preference".** With *stock* options it
 >    cannot express the game's fog at all: the froxel grid is 20 m, fog remap
 >    is off by default, and the remap's endpoints are unclamped and calibrated
 >    for a different game.
+>
+>    **Note the word "stock".** The fork has since removed that constraint —
+>    `rtx.dusklight.atmosphere.*` derives one medium from the game's own palette
+>    and sizes the froxel grid from the game's fog range, and Remix's own fog
+>    remap is bypassed entirely while it is on. "Remix cannot express X" is a
+>    claim about the runtime we were handed, and this one is ours.
 >
 > The fog design now lives in `docs/kankyo-fog.md` (game side) and
 > `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer side), where fog
@@ -790,8 +540,10 @@ refinement of the composite fog term.
 > **Superseded.** This section was written from the first reading of
 > `bloom_c::draw2()` and is wrong in two places — the threshold and the
 > colour space. The corrected account, derived from the TEV stages, is in
-> "Bloom fidelity: four errors in the port" below. Kept for the history of
-> how the port got here.
+> [`dx9-fixed-function.md`](dx9-fixed-function.md) §"Dusklight bloom options"
+> (its origin is "Bloom fidelity: four errors in the port" in
+> [`remix-history.md`](remix-history.md), which is unmaintained). Kept for the
+> history of how the port got here.
 
 Already 1:1 (deliberately, same 0–255 units): threshold, blur size, blur
 ratio, tint, screen-blend. Missing pieces this plan adds (IV.3): mono
@@ -827,7 +579,12 @@ colour/amount, base weight. One calibration knob is needed:
 
 ### IV.7 Phase 4+ (out of first scope, designed for)
 
-- **Sun/moon distant light.** `setSunpos`/`SetBaseLight` give direction;
+**All three of these have since been built.** The design below is kept because
+it is still the shape of what shipped; where the built thing diverged, the
+bullet says so.
+
+- **Sun/moon distant light** (implemented, `game.remixSunMoonLight` default
+  true). `setSunpos`/`SetBaseLight` give direction;
   colour is constant warm white (I.4). Aurora calls
   `dxvk_RegisterD3D9Device` after device creation; the bridge then does
   `CreateLight`(same hash, DistantEXT, updated direction) when the sun
@@ -835,14 +592,16 @@ colour/amount, base weight. One calibration knob is needed:
   `game.remixSunMoonLight` and let users pick it *or* hand-placed RTX
   lights. Twilight/interiors: skip drawing the light (interiors detect via
   `dKy_SunMoon_Light_Check()`.)
-- **Sky/vrbox tint** (note: `env.skyColor`/`env.hazeColor` were designed
-  here but Phase 1 shipped only the bloom set, so nothing pushes them
-  today; adding them is a two-line change once there is a consumer):
-  investigate whether the vrbox raster draws reach Remix's sky probe with
-  TEV tint applied (TFACTOR path in `dx9_tev.cpp`); if yes, nothing to do;
-  if no, drive a low-intensity dome light or sky brightness from the
-  pushed colours.
-- **Local point lights** (implemented — see the status log). The design
+- **Sky/vrbox tint** (implemented, and the answer was neither branch the draft
+  offered). The sky colours are pushed every frame — `skyColor`,
+  `kasumiInner`/`kasumiOuter` and the kumo set, `kankyo-fog.md` §5 — and Remix
+  builds its own lat-long dome from them and registers it as a **dome light**,
+  with the game's vrbox hidden (`rtx.dusklight.game.hideVrbox`) so there is
+  only one sky. Tested good 2026-07-28. Probing the vrbox raster draws was
+  dropped rather than investigated to a conclusion: a generated dome is exact
+  and is a light source, which a captured LDR probe is not.
+- **Local point lights** (implemented — see
+  [`remix-open-issues.md`](remix-open-issues.md)). The design
   originally scoped this to the dungeon lights; the right list turned out
   to be `g_env_light.pointlight[100]`, which the dungeon lights register
   into along with every torch, brazier, lantern, campfire, Midna glow and
@@ -850,1276 +609,9 @@ colour/amount, base weight. One calibration knob is needed:
 
 ---
 
-## Part V — Implementation plan
 
-### Verification state (read this first)
+## Where the implementation lives
 
-As of **2026-07-29**. CI baselines: dusklight/aurora green on all 8 targets
-(Windows MSVC x86_64 + arm64, macOS x3, Linux x2, Android); the Remix fork
-green on its 3 Windows configs. Aurora is unchanged since `a7b47ac` and the
-submodule pin still points there.
-
-**2026-07-29 was the session that cleared the backlog.** Five of the six
-never-run features were run; five passed. Local point lights and the wandering
-night shadows — the two standing bugs — are both closed, the second by
-confirming its measured cause rather than by working around it. What came back
-in their place is one rendering defect with a verified cause (issue 4) and two
-new observations (issues 5 and 6).
-
-**One standing rule:** the game and the Remix DLL are a single protocol and
-must be built from the same point. Both directions of skew have already cost
-an evening — see "Two protocol bugs" below. The Dusklight tab reports which
-is which. **Protocol is now 6**; when you bump it, bump `kRequiredProtocol` in
-the fork's `showDusklightRemixTab` in the same commit.
-
-**The one live rendering defect:** the fog medium dims the generated sky
-(open issue 4). Cause verified in the composite shader; fix not yet written.
-
-#### Confirmed working in-game
-
-- **The bridge connects.** Owner log: `RTX Remix detected; kankyo bridge
-  active (remixapi 0.6.4)` and `registered D3D9 device with the Remix API`,
-  with no missing-export warning, which also proves the `getRtxOptionValue`
-  export mechanism works.
-- **Dusklight bloom — "massively improved"** after the four fidelity fixes
-  and the 100× composite fix. This is the one part of the look that is now
-  confirmed close to the real thing.
-- The kankyo feed is live and its colour tracks time of day.
-- GX→D3D9 fog reaches Remix. Faithful mode consistent; volumetric mode
-  over-reactive to kankyo's near/far.
-- Vanilla Remix post FX work once their strengths are raised well above the
-  near-invisible defaults. No Remix bug.
-- The sun/moon distant light runs and produces "interesting results". No
-  report of inverted shadows, so the handedness is *probably* right — Flip
-  Direction remains in the tab if that turns out wrong.
-
-Added **2026-07-29**:
-
-- **The clock — slider, presets and Freeze Time.** "Flawlessly and as
-  expected." Freeze is now available to every A/B from here on, which is what
-  made the Phase C reading below trustworthy.
-- **Warp.** "Exactly as intended, no issues."
-- **Local point lights.** Forest Temple first room, `found 5 / drawn 4 /
-  tracked 4`. Needs `localLightIntensity` 19 and `localLightRadius` 10.
-- **`hideSkyBillboards`, and with it the night shadow wandering.** Works, and
-  confirms the moon-quad cause.
-- **Aerial perspective under the physical sky.** Distant terrain reads
-  correctly blue — the C3 dome-sampled far-fog colour doing exactly its job.
-- **Dense fog.** Lake Hylia morning fog is "suitably intense", which is the
-  first evidence from the dense end of the σ mapping. See the note in
-  `DusklightAtmosphere.md` §13 about what this does and does not close.
-- **No further crashes on level entry** across a long session that included
-  many warps and room transitions.
-
-#### Open issues
-
-0. **CLOSED 2026-07-29 — local point lights work.** Forest Temple, first room:
-   `Registered by the game: 5   drawn this frame: 4   tracked: 4`.
-
-   No single change is identifiable as "the fix" — the diagnostics pass that was
-   supposed to *narrow* the bug appears to have carried it, most plausibly the
-   `efplight[0..4]` array that the first implementation never read at all, or
-   the NaN guards added at the same time. Recorded honestly: this closed without
-   a proven root cause, so if local lights ever regress, start by re-reading
-   both arrays rather than assuming the old diagnosis.
-
-   **What the visit settled that matters more than the bug:**
-
-   - **`localLightIntensity` must be 19, not 1.** That is the minimum giving
-     usable light, and it is *exactly* the derived alternative reading of the
-     attenuation curve — `reach = mPow·√((maxColorByte − 1)/10)`, ~4.3× further
-     for a torch and therefore ~19× the radiance. A number derived from the
-     game's own `dKy_GXInitLightDistAttn` call landed on the value testing
-     picked independently. The conservative default was the wrong bet.
-   - **`localLightRadius` 10 is safe**, not just 4. No clipping through the
-     Forest Temple light posts, and a larger emitter softens the falloff.
-
-   Both are still non-default. See issue 3.
-
-   **The loose end:** `found 5` but `drawn 4`. One light was seen and then
-   rejected on the way through. Candidates, in order of likelihood: a light with
-   zero `mPow` or a black colour failing the brightness/reach test (benign and
-   correct), a NaN caught by the new guard (worth knowing about), or an
-   `efplight` slot holding a stale pointer. Not urgent — four working lights lit
-   the room — but it is a one-line logging change to find out, and "benign" is
-   currently an assumption rather than a finding.
-
-1. **Crash entering some levels.** `EXCEPTION_ACCESS_VIOLATION` reading
-   `0x10`, entirely inside `d3d9.dll` on a Remix-owned worker thread (the
-   outermost frames are `BaseThreadInitThunk` / `RtlUserThreadStart`), during
-   a cutscene transition right after a camera cut. Local lights were off in
-   that run. **Bisect not yet run**: `rtx.dusklight.game.bridgeEnable = False`
-   settles whether any of this is ours; if it still crashes, the
-   NRC-on-camera-cut path is next (`rtx.neuralRadianceCache.enable = False`).
-   NaN guards were added to both light paths regardless — plausible as the
-   fix, not demonstrated.
-
-   **Downgraded 2026-07-29.** A long session with many warps and room
-   transitions produced no crash at all, including with local lights on — the
-   configuration the original crash did *not* have. That is real evidence for
-   the NaN guards having been the fix, but it is not proof: the original crash
-   was intermittent and tied to a cutscene camera cut, so absence over one
-   session is weak. **Do not close this.** If it recurs, the bisect is still
-   the first move (`bridgeEnable = False`, then
-   `rtx.neuralRadianceCache.enable = False`).
-2. **CLOSED 2026-07-29 — the night shadow wandering was the moon billboard.**
-   `hideSkyBillboards` stops it. The measured hypothesis below predicted
-   exactly this, so the cause is confirmed rather than merely worked around,
-   and the analysis is kept in full because it is the reasoning that found it.
-
-   Eliminated earlier: the light direction (locking it changes nothing), NRC
-   (persists under ReSTIR), and brightness (persists with moon intensity
-   raised).
-
-   **The numbers that identified it**, read out of `d_kankyo_rain.cpp` and
-   `d_kankyo.cpp` on 2026-07-28:
-
-   | Fact | Value | Source |
-   | :-- | :-- | :-- |
-   | Moon quad edge | **8000 units = 80 m** | `d_kankyo_rain.cpp:2614` (`f32 size = 8000.0f`) |
-   | Distance from the eye | **80000 units = 800 m** | `d_kankyo.cpp:1770-1784`, orbit radius |
-   | Anchored to | **the camera eye** | `d_kankyo_rain.cpp:2431`, `spB4 = camera->view.lookat.eye + envlight->moon_pos` |
-   | Direction it sits in | **the moon's orbital direction** | same, `moon_pos` from `setSunpos` |
-   | Blend | `GX_BM_BLEND`, SRCALPHA / INVSRCALPHA, alpha test `> 0` | `d_kankyo_rain.cpp:2567-2568` |
-   | Moon drawn when | `daytime > 285 || daytime < 67.5` | `dKyr_moon_arrival_check`, `:2284` |
-
-   The direction it sits in is the same direction the distant light comes
-   from — `distant_light.slangh:78` samples at `position - direction·100000`.
-   So every shadow ray cast toward the moon light sets off straight at an
-   80 m quad hanging 800 m away that travels with the player. The set of
-   world points whose moon-direction ray passes through it is a prism of the
-   quad's cross section, offset from the camera: an ~80 m band of "shadow"
-   that slides across the world as you walk. That is the reported symptom
-   almost exactly.
-
-   **Why it is night-only is geometric, not a matter of degree.** There is no
-   equivalent sun quad. `dKyr_drawSun` sets `draw_sun` but the visible sun is
-   the lens-flare system (`dKyr_sun_move`, `lenz_packet`), whose sprites are
-   **250–850 units** and sit near the camera — two orders of magnitude less
-   area, and not planted out along the light direction. So the mechanism
-   simply is not present by day.
-
-   `rtx.dusklight.game.hideSkyBillboards` both tests and fixes this in one
-   click, and costs only the visible moon and stars — the generated sky
-   already paints that part of the image, and the moonlight comes from our own
-   distant light, not from the billboard.
-
-   **Keeping the moon visible is possible.** Unlike the vrbox dome, these
-   billboards are textured, so `rtx.skyBoxTextures` can categorise them, and
-   `InstanceCategories::Sky` is explicitly excluded from visibility rays —
-   `instance_definitions.h:93`, *"Sky excluded as often it should not be traced
-   against when calculating visibility"*. Tagging by hash works independently
-   of `rtx.skyAutoDetect` (`rtx_types.cpp:409` is the explicit path,
-   `:594` the auto one), so `skyAutoDetect = None` does not block it.
-   **Untested caveat:** whether a Sky-tagged draw still renders visibly while
-   our generated dome light has replaced the sky probe is not established —
-   check before relying on it.
-
-   The third option, if the moon is wanted back: draw it into the generated
-   sky texture. It already knows the celestial direction, and a moon painted
-   into the dome is visible, correctly placed, contributes its own light, and
-   is structurally incapable of casting a shadow. Not built — **and now that
-   the billboard is confirmed guilty, this is the way to get the moon back,
-   not the Sky-tagging route above.** Tagging keeps a real quad in the world
-   and depends on the untested caveat; painting into the dome removes the
-   object entirely.
-
-3. **Local light defaults are wrong in the shipped build.** Testing settled
-   `localLightIntensity` at **19** (from 1.0) and `localLightRadius` at **10**
-   (from 4.0), and neither is the default, so a fresh install still comes up
-   with lights too dim to be worth having. The intensity value is not a taste
-   call — it is the derived reading of the game's own attenuation curve, and it
-   is now the one with evidence behind it.
-
-   Note the two interact: the radiance is solved so the light still reaches the
-   same distance, so a larger radius needs *less* radiance. 19 and 10 were
-   tested together and should ship together rather than being applied one at a
-   time.
-
-   Open question alongside it: whether `localLights` should now default **on**.
-   It is proven working and it is the only thing lighting interiors and night,
-   but it is also the newest of the light paths.
-
-4. **The fog medium dims the generated sky.** Reported 2026-07-29 at frozen
-   noon with `physicalSky` on, and again — worse — in Lake Hylia morning fog
-   with it off. The visible sky reads dim and "grimier" than it should, and
-   there is a seam where distant terrain is convincingly blue but the sky
-   immediately above the silhouette is duller. Lowering
-   `atmosphere.densityScale` improves it markedly, which is what identified the
-   mechanism.
-
-   **The cause is verified in the composite, and it is an asymmetry between the
-   two halves of our own fog:**
-
-   | Half | What it does to a sky pixel |
-   | :-- | :-- |
-   | The far ramp, `applyFog` (`composite.comp.slang:625`) | **Exempts it.** `if (primaryMiss) return;`, with a comment saying running the ramp on the sky "would drive it to full fog and replace the sky with a flat colour" |
-   | The volumetric half, `applySkyContribution` (`:585`) | **Fogs it.** `domeLightArgs.radiance * sampleDomeLightTexture(...) * volumeAttenuation`, where `volumeAttenuation` is the froxel transmittance over the *whole* grid — and the froxel in-scatter is already in `radianceOutput` before the sky is added |
-
-   So a sky pixel comes out as *(in-scatter over the full grid depth)* +
-   *(dome radiance × transmittance over the full grid depth)*. Someone thought
-   carefully about not fogging the sky in one path; the other path does it
-   anyway, by a different route.
-
-   **Why it is much worse for us than for stock Remix:** §14.2 — our medium is
-   deliberately *far* denser than air, because the game's fog is an artistic
-   device that reaches full opacity in tens of metres. `exp(-σ · gridDepth)`
-   with that σ is a large number, and all of it lands on the sky. Stock Remix's
-   near-clear default medium would barely show it.
-
-   It also explains the seam exactly. Distant terrain fades toward the far
-   ramp's colour, which per C3 samples the dome *in the view direction* — the
-   right colour, hence "convincing". The sky beside it is attenuated dome plus
-   `fog_col`-tinted in-scatter — a different treatment of the same far field.
-   Two descriptions of one day, which is precisely what §0 exists to prevent.
-
-   **The owner's instinct was right and the mechanism was not.** The report
-   suspected the sky needed tagging as Sky in Remix and that the lack of a
-   texture forced it API-side. The first half is correct — the sky is not being
-   treated as "at infinity, exempt from fog". But `InstanceCategories::Sky`
-   cannot reach this: the generated sky is not captured geometry at all, it is
-   a dome light sampled on ray miss. There is nothing to tag even in principle.
-   The exemption has to happen in the composite, where half of it already does.
-
-   Fix shape, not yet written: bound the sky's volume attenuation instead of
-   applying the full grid depth. Exempting `primaryMiss` outright matches the
-   far ramp and is the smallest change; a `skyFogWeight` scalar is better,
-   because a genuinely foggy day *should* veil the sky — just not by the amount
-   a 100 m-opacity artistic medium implies. Either is one guarded branch, in
-   the style §11 requires.
-
-5. **Wolf senses renders as an opaque overlay.** Entering senses puts up a
-   heavy black surround with a pure white centre where the see-through region
-   should be — the screen is effectively covered. Not investigated yet.
-
-   Consequence for the backlog: **this blocks the wolf-senses route to testing
-   the mono overlay and composite base weight, but not the twilight route.**
-   Those two effects are reached by bloom tables 1/2 (twilight) as well as 3
-   (senses), so that test should be done in a twilight zone instead and is not
-   gated on this.
-
-6. **World-space UI billboards appear only intermittently.** The targeting
-   arrow and the fire billboards in torch-lit areas appear to share a fate:
-   they show up at the same times, and the fire billboards were seen appearing
-   during room transitions in the Forest Temple. The targeting arrow looked
-   correct only while actively targeting, and not always even then — it
-   depended on player and camera position. Under shadow it goes dim and reads
-   wrongly, which suggests it is being lit as ordinary world geometry when it
-   is meant to be unlit UI.
-
-   **Neither is visible in Remix's texture categorization screen.**
-
-   **Investigated 2026-07-29. The mechanism is Remix's RTX injection boundary,
-   and it is not an aurora bug.** A further clue narrowed it: this only ever
-   happens **while the letterbox black bars are up** — Z-targeting or a dungeon
-   door transition — though bars do not guarantee it.
-
-   **The boundary, verified in the fork:**
-
-   | Step | Code |
-   | :-- | :-- |
-   | The first **orthographic, z-write-disabled** draw on the primary RT is classified UI | `isRenderingUI()`, `d3d9_rtx.cpp:559` |
-   | That classification returns `Rasterized` **and sets `triggerRtxInjection`** | `makeDrawCallType`, `:519` |
-   | From then on, `internalPrepareDraw` early-returns for **every remaining draw in the frame** — `Ignore` if `rtx.skipDrawCallsPostRTXInjection`, else `PreserveDrawCallAndItsState` | `:576-591` |
-
-   A post-injection draw never enters the raytraced scene, so **its textures are
-   never categorised**. That is precisely the "not in the categorization screen"
-   symptom, and it means **no dev-menu tagging can ever reach these draws** —
-   the same shape of trap as the vrbox sky, arrived at by a different route.
-   `rtx.uiTextures` is checked inside `isRenderingUI()`, which is only reached
-   *before* injection, so tagging is unavailable exactly when it would be needed.
-
-   **Where these two draws sit in the frame** (`m_Do/m_Do_graphic.cpp`):
-
-   | Line | Draw | Projection |
-   | :-- | :-- | :-- |
-   | 2257 | `drawCopy2D` | 2D |
-   | 2642 | `drawXluList2DScreen` | perspective (explicitly re-set) |
-   | **2689** | **`drawOpaList3Dlast` — the targeting cursor** | **perspective** |
-   | **2714** | **`particle_draw2Dgame`** (JPA group 14) | **ortho** |
-   | 2717 | `trimming()` — the letterbox bars | **ortho + `GXSetZMode(GX_FALSE, …)`** |
-   | 2722 | `calcFade` | ortho |
-   | 2824+ | HUD — `draw2DOpa` / `OpaTop` / `Xlu` | ortho |
-
-   `trimming()` at 2717 is a textbook `isRenderingUI()` trigger: ortho, z-write
-   off, on the primary RT. It is also **where the letterbox is defined** — the
-   bars are sized from `view_port->scissor` against the viewport, and on PC the
-   guard around it is compiled out, so "bars visible" is exactly "the D3D9
-   scissor is smaller than the viewport".
-
-   **Two things this settles.**
-
-   1. **The targeting cursor is not UI, and never was.** `d_attention.cpp:1619`
-      creates a real J3D model (`NoticeCursor`, yellow and red variants with
-      BCK/BPK/BRK/BTK animations) and submits it with `dComIfGd_setList3Dlast()`
-      under a perspective projection. So "it goes dim under shadow" is the
-      *correct and expected* result of path-tracing it — a game-side fact, not a
-      Remix misclassification. `DB_LIST_3D_LAST` has exactly one producer in the
-      whole game and one draw site.
-   2. **The cursor and the flames are not one system.** The flames are JPA
-      "simple" particles (`dComIfGp_particle_setSimple` — `d_a_ep.cpp:495`; the
-      Forest Temple's are `d_a_obj_lv1Candle00`), and they are *not* in the
-      group-14 2D pass. So "they appear together" is not a shared code path; it
-      is a shared *position relative to the injection boundary*.
-
-   **Ruled out, each with evidence:**
-
-   - **2D draw list overflow.** `dDlst_list_c::set` silently drops when full
-     (`d_drawlist.cpp:1989`, `if (p_start >= p_end) return 0;`) and the lists are
-     fixed-size (`mp2DXlu[32]`, `mp2DOpa[64]`, `mp2DOpaTop[16]`, `mpCopy2D[4]`).
-     A real hazard, and worth remembering — but every caller is HUD, menu or
-     message code, not these two.
-   - **`GXPeekZ`.** Aurora implements it via a depth-snapshot path
-     (`lib/dolphin/gx/GXCpu2Efb.cpp`). Neither element uses it; the sun lens
-     flare and the insects do.
-   - **`GX_DEBUG_GROUP`.** Calls through in both configurations
-     (`include/helpers/gx_helper.h:24`) — it is not swallowing the draws.
-
-   **What is still open, stated plainly:** the boundary explains the
-   intermittency, the "appear together", and the categorization absence. It does
-   **not** yet explain why the letterbox specifically helps — `trimming()` sits
-   *after* both draws, so the bars cannot themselves be the trigger that saves
-   them. Something else that correlates with letterbox must be issuing an ortho
-   z-write-off draw *earlier* in those frames. The transition wipe
-   (`dDlst_list_c::wipeIn` / `calcWipe`), the fade, and `drawCopy2D` at 2257 are
-   the candidates.
-
-   **Also worth flipping around before assuming which way is the bug.** For a UI
-   arrow, "correct" probably means flat and unlit — which is the *rasterized*,
-   post-injection path. "Dim under shadow" is the *path-traced*, pre-injection
-   one. So the arrow may be behaving correctly precisely when it lands **after**
-   injection, and the goal is to get it there reliably rather than to rescue it
-   into the raytraced scene.
-
-   **Three experiments that would settle it, cheapest first:**
-
-   1. Log `m_drawCallID` at the moment injection triggers, with and without
-      bars. Two numbers, and it is settled completely.
-   2. `rtx.skipDrawCallsPostRTXInjection = False` — post-injection draws still
-      rasterize. If the arrow and flames become reliably visible but flat, the
-      boundary is confirmed and the question becomes which look is wanted.
-   3. `rtx.drawCallRange` to bisect the frame and find the injection index
-      directly from the dev menu, with no rebuild.
-
-   **PINNED 2026-07-29 — the flame half is parked, and it probably is not this
-   issue.** The owner corrected a load-bearing detail: the "bright white circle"
-   at a lit torch is **not** the animated fire, it is a separate circular
-   sprite. The torch emits three named resources at one position —
-   `ZI_J_O_fire_a.jpa` (`0x100`), `ZI_J_O_fire_b.jpa` (`0x101`) and
-   `ZI_J_O_kagerou.jpa` (`0x103`, heat haze), `d_a_ep.cpp:423-431`.
-
-   Since `fire_a` and `fire_b` are emitted back to back at the same position in
-   the same frame, an injection boundary cannot stably separate them — so the
-   flame's problem is a property of that draw rather than its frame position.
-   The competing explanation is that the white circle **is** a fire sprite
-   saturated to white by aurora's compare-mode TEV approximation, the same
-   defect already suspected for the white ground. Full write-up, including the
-   two experiments that decide ownership (read the aurora `warn_once` log at a
-   torch; A/B raw D3D9 against Remix), is in
-   `aurora-ao/docs/dx9/unsupported-effects.md` §"PINNED — the torch flame".
-
-   The targeting-arrow half of this issue is unaffected and still belongs here.
-
-7. **Grass patches shade wrongly under Remix; fine in raw D3D9.** Reported
-   2026-07-29: blades glow in the dark, or come out too dark, with a very
-   delayed lighting response, generally reading as a different material from the
-   rest of the scene. Replacing the billboard blades with real geometry is
-   blocked because their hashes are unstable.
-
-   **The hash instability has a specific cause and an existing fix path.**
-   `dGrass_packet_c::draw` (`src/d/actor/d_grass.inc`) has two paths. The
-   **batched** one — the default for standing grass — merges every blade into
-   four buckets and emits them as a single immediate-mode
-   `GXBegin(GX_TRIANGLES, GX_VTXFMT1, GX_AUTO)` stream under
-   `GXLoadPosMtxImm(identity)`, i.e. all blades pre-transformed into world space
-   in one dynamic vertex stream. Its positions change whenever *any* blade
-   moves, is cut, regrows or changes bucket, and Remix's
-   `rtx.geometryAssetHashRuleString` defaults to
-   `positions,indices,geometrydescriptor` — so the asset hash churns constantly
-   and the whole patch is one unidentifiable instance.
-
-   The **per-blade** path, currently used only for regrowing blades, calls
-   `GXCallDisplayList(mp_Mkusa_9q_DL, …)` with a per-blade
-   `GXLoadPosMtxImm(get_model_mtx(...))`: static geometry plus a transform,
-   which gives a **stable hash and one instance per blade**. The Remix-friendly
-   path already exists in the same function; the batching optimisation is what
-   takes it away.
-
-   **BUILT 2026-07-29 — `rtx.dusklight.game.perBladeGrass`, protocol 5.** Off by
-   default, because it costs exactly what the batching saves. Turning it on
-   draws each blade from its display list with its own position matrix, so every
-   blade is a separate instance with a hash that holds still. That is the
-   prerequisite for everything else wanted here — tagging, replacement, and
-   denoiser history — and it addresses the delayed lighting directly, since an
-   instance whose identity churns every frame cannot carry history at all.
-
-   Regrowing blades still go through the existing per-blade block below the
-   batch loop, which owns their TEVREG2 alpha ramp; the new path skips them
-   rather than duplicating it. **Untested in game.**
-
-   **The other two symptoms are separate and worth testing independently:**
-
-   - **Glow in the dark.** First suspect is emissive blend translation.
-     `rtx.enableEmissiveBlendModeTranslation` defaults **true**, and
-     `rtx_instance_manager.cpp:718-760` promotes several blend factor pairs to
-     `kAlphaEmissive` — notably `SRC_ALPHA / ONE` and premultiplied
-     `ONE / ONE_MINUS_SRC_ALPHA`. Plain `SRC_ALPHA / ONE_MINUS_SRC_ALPHA` is
-     *not* promoted, so this hinges on the blend mode in grass's material
-     display list, which is a binary blob and has to be read at runtime rather
-     than from source. **One-click test:** toggle
-     `rtx.enableEmissiveBlendModeTranslation = False` and see whether the glow
-     stops; if it does, the fix is to tag grass rather than to disable the
-     feature globally, since real particles want it.
-   - **Too dark / distinct shading.** Aurora's Remix hint stage advertises
-     `colour = TEXTURE * DIFFUSE`, `alpha = TEXTURE` (`dx9_tev.cpp:928-960`), so
-     grass albedo becomes texture × raw vertex colour. Aurora never evaluates
-     the GX light model (`D3DRS_LIGHTING = FALSE`), while grass is drawn with
-     GX lighting *on* — `GXSetChanCtrl(GX_COLOR0, GX_TRUE, GX_SRC_VTX, …)` plus
-     a per-blade `GXSetChanAmbColor` from kankyo. So a vertex colour that was
-     authored as one input to a lighting equation is being consumed as finished
-     albedo. Worth checking whether grass ends up in Remix's alpha-blend
-     transparency path rather than as an opaque cutout — a blended surface is
-     lit quite differently from an opaque one, which would explain "distinct
-     from the rest of the scene" on its own.
-
-8. **Rupees and hearts render greyscale under Remix; correct in raw D3D9.**
-   Reported 2026-07-29. **Cause identified, verified by reading both sides.**
-
-   Remix rebuilds a material from one texture stage plus a small set of
-   decodable args. It understands `D3DTA_TFACTOR`; it **never reads
-   `D3DTSS_CONSTANT` / `D3DTA_CONSTANT` anywhere in its capture path**. Args it
-   cannot decode become `RtTextureArgSource::None`, which the shader resolves to
-   **identity — `vec3(1.0)` for colour**. So a dropped tint does not darken or
-   error; it turns white, leaving the luminance texture showing through. That is
-   precisely "greyscale rupee".
-
-   Two aurora behaviours feed it, both in `dx9_tev.cpp`:
-
-   - `materialize()` (`:296-322`) spends the per-draw `TFACTOR` first and then
-     routes further konsts to the per-stage `D3DTSS_CONSTANT` — the slot Remix
-     cannot see.
-   - The **Remix hint stage** (`:928-960`) advertises `TEXTURE * DIFFUSE` with
-     **no konst term at all**, so a colour that comes from a konst rather than
-     from vertex colour is discarded by the hint itself. This is the likelier of
-     the two for a rupee.
-
-   **FIXED 2026-07-29 in aurora** (`dx9_tev.cpp`), by the second of the two
-   routes considered. A new `albedo_tint()` reports the konst that modulates the
-   albedo stage's texture; `apply_tev` claims **TFACTOR** for it before any other
-   constant can take the slot, which also makes the real stage reuse it for free
-   since `materialize()` already returns TFACTOR for a matching value. The hint
-   then emits one extra stage — `MODULATE(TEMP|CURRENT, TFACTOR)` — immediately
-   after itself, which is exactly the shape Remix decodes
-   (`isTextureFactorBlendingEnabled`, `d3d9_rtx.cpp:944-980`;
-   `rtx.enableMultiStageTextureFactorBlending` defaults **true**).
-
-   Deliberate choices worth keeping: only a plain `texture × constant` lead
-   counts as a tint, because advertising a guess would trade a missing colour
-   for a wrong one, which is far harder to spot; white tints are skipped as the
-   identity they are; the extra stage is emitted only when a tint exists and the
-   stage budget allows; and **opacity is left alone** — tinting alpha would eat
-   alpha-tested cutout shapes, which is the failure this same hint exists to
-   prevent for foliage. **Untested in game.**
-
-   The general rule this leaves behind: when a material tint can go to either
-   constant slot, prefer TFACTOR, because only one of the two survives into
-   Remix.
-
-   This is the same root as the white-ground defect seen from the other side —
-   both are "Remix reads one stage and aurora's later stages carry meaning" —
-   and it is worth fixing before any texture-replacement work, since a greyscale
-   albedo would get baked into replacements.
-
-#### Built and CI-green but NEVER RUN
-
-*This list was five items long on 2026-07-28 and is two on 2026-07-29. It had
-also accumulated a duplicated "promoted out" block, which has been folded away —
-everything tested now lives in "Confirmed working in-game" above.*
-
-- **The ambient grade** — off by default, still never reached. Unproven that the
-  ambients arrive sane (watch the tab's readout and the grade's "Resolved tint"
-  line) and whether 0.65 strength reads as mood or as a cast. Deliberately
-  skipped on 2026-07-29.
-
-  One caution that has grown teeth since it was written: the grade
-  double-counts against the dome light's fill, so it must be tested *alone*, and
-  ideally not until open issue 4 is fixed — the sky's contribution to the image
-  is currently wrong, so grading on top of it would be tuning against a moving
-  target.
-- **The Controls tab** — a placeholder with no functionality at all. Needs live
-  key capture, binds crossing the bridge in both directions (the game owns the
-  current binds, so the overlay has to read them before it can show them), and
-  a decision on who owns conflict resolution — doing it in both places means
-  two different answers.
-
-**Partly reached:**
-
-- **Mono overlay and composite base weight** — the wolf-senses route is blocked
-  by open issue 5 (the senses overlay covers the screen). The **twilight route
-  is not blocked** and is how this should be tested: bloom tables 1/2 drive the
-  same golden tint, 37.5 % desaturation and 0xD2 base dim.
-
-**Remaining unknowns for local lights**, now that they work (open issue 3
-carries the settings): the churn cost in a busy room is still unmeasured, and
-`mFluctuation` — the per-light flicker amount, 1.0 on every torch and 100 on
-bombs — is still ignored, because applying it would mean a re-create every frame
-for every flickering light.
-
-**"The sun seems tied to Link" — investigated 2026-07-26, no tie found, and
-since narrowed.** Four things were checked and none can carry a dependency on
-the player:
-
-1. `setSunpos` (`d_kankyo.cpp:1666`) has **no rotation term at all** — the
-   orbit is a function of `daytime` and an eye translation that cancels in
-   the direction. (An earlier numerical check varied camera *position* over
-   720 times and would not have caught an orientation dependency, so this was
-   re-read rather than re-run.)
-2. `dKy_SunMoon_Light_Check()` (`d_kankyo.cpp:10974`) keys on stage name and
-   darkworld state only.
-3. Remix's `direction` convention is the one we push:
-   `distant_light.slangh:78` samples at `position - direction·100000`, so it
-   is the direction light *travels*, and our `-toBody` is correct.
-4. Aurora hands Remix true world space (`world = modelView · viewInv`,
-   `dx9_draw.cpp:354/361/505`).
-
-Also ruled out: the clock (~0.6°/s of sun motion — visible over a minute, not
-over a lap) and baked lighting (`D3DRS_LIGHTING = FALSE`; aurora never
-evaluates the GX light model, so vanilla's Link-following light reaches
-neither the vertex colours nor the albedo). The day case is now believed
-correct; what remains is night-only and is open issue 2.
-
-**First-run checklist for the sun/moon light:** Remix's Dusklight tab should
-report the device registered and `Drawing: SUN`. Walk past a lantern — the sun direction
-must not move (that is the whole point of deriving it from the orbit
-rather than the game's shadow-light selection). Watch a dawn (daytime
-~67.5–75) for the moon→sun crossfade. If shadows fall from the wrong side,
-tick Flip Direction; if that fixes it, the sign belongs in the code.
-
-### Status log
-
-- **2026-07-29 — the backlog session. Five features run, five passed, two bugs
-  closed, one real defect found.** No code changed; this entry is the results.
-
-  **Passed:** the clock ("flawlessly and as expected"), warp ("exactly as
-  intended"), local point lights (`found 5 / drawn 4 / tracked 4` in the Forest
-  Temple), `hideSkyBillboards`, and aerial perspective under the physical sky.
-  Lake Hylia's morning fog came out "suitably intense", the first look at the
-  dense end of the σ mapping. No crashes across the whole session.
-
-  **Two bugs closed.** Local point lights work; no single change is identifiable
-  as the fix, which is recorded rather than glossed. The night shadow wandering
-  is fixed by `hideSkyBillboards`, and because the 2026-07-28 measurement
-  predicted exactly that, the cause is confirmed rather than worked around —
-  the 80 m camera-anchored moon quad really was eating the shadow rays.
-
-  **Two numbers settled, neither of them a default yet.**
-  `localLightIntensity` **19** and `localLightRadius` **10**. The 19 is the more
-  interesting result: it is precisely the *derived* alternative reading of the
-  game's attenuation curve that was written down on 2026-07-28 as "arguably more
-  faithful" and then not shipped, because a too-dim scene is easier to diagnose
-  than a blown-out one. Testing picked the derived number independently. The
-  conservative default was the wrong bet and open issue 3 says so.
-
-  **The defect that came back in their place is open issue 4**, and it is worth
-  the entry on its own. The sky is being dimmed by our own fog, and the reason is
-  an asymmetry inside the composite: `applyFog` exempts sky pixels *explicitly*,
-  with a comment about not driving the sky to a flat colour — and then
-  `applySkyContribution` multiplies the dome by the full-grid volume attenuation
-  anyway, with the froxel in-scatter already added on top. One half of the fog
-  was taught the lesson and the other was not.
-
-  Two things follow that are easy to miss. First, this is **not** a Phase C
-  problem, even though Phase C is where it was noticed — it shows without
-  `physicalSky` and it is worse in Lake Hylia. Phase C's blend cannot be judged
-  until it is fixed. Second, the reported instinct — "the sky must be tagged as
-  Sky in Remix, and there is no texture, so it has to be done API-side" —
-  identified the right *symptom class* (the sky is not being treated as exempt
-  from fog) and the wrong *mechanism*: the generated sky is a dome light sampled
-  on ray miss, not captured geometry, so there is nothing to tag even in
-  principle. The fix belongs in the composite.
-
-  **Also logged:** the wolf-senses overlay renders as an opaque white disc
-  (issue 5), and the world-space UI billboards — targeting arrow and torch
-  fires — appear only intermittently and are absent from Remix's texture
-  categorization screen entirely (issue 6).
-
-- **2026-07-28 — the clock is reachable, and it can be stopped.** Bridge
-  protocol **3 → 4**. Warp tab gains a time-of-day slider, four presets
-  (Midnight 0, Sunrise 90, Noon 180, Sunset 270 — the day is 360 degrees, so
-  15 is an hour) and **Freeze Time**.
-
-  Freeze is the one that matters. Every comparison shot taken so far has had a
-  moving sun in it, so part of every measured difference has been the clock
-  rather than the setting under test. There was no way to reach the time of day
-  at all: `timeScale` (`d_kankyo.cpp:2370`) is a frame-delta normalizer, not a
-  speed control, and the game's settings screen is not drawn in this mode.
-
-  Three implementation notes worth keeping, because each replaced a version
-  that would have been subtly wrong:
-
-  1. **Freeze reuses the game's own mechanism.** `using_time_control_tag` is
-     what `d_a_kytag11` sets for a stage whose sky must not move, and
-     `setDaytime` already tests it (`d_kankyo.cpp:1577`). Setting it ourselves
-     means the freeze takes a branch the game exercises every frame rather than
-     a second one beside it that would have to be kept in step. **Consequence
-     to know:** it also holds `dark_daytime` and skips the `daytime = 0` the
-     darkworld branch applies, so a freeze carried into the Twilight Realm
-     keeps the light-world time instead of snapping to midnight. Right for a
-     comparison, not a description of the game.
-  2. **The request is a value plus a counter, not a bare value.** Acting on the
-     value alone pins the clock there every frame and it can never run on;
-     acting on the value *changing* makes asking twice for the same time do
-     nothing the second time — which is exactly what pressing a preset button
-     twice is. Same shape as the warp commit, including latching the first
-     count seen without acting on it.
-  3. **The counter is incremented in the UI, not read off the option.** The
-     warp button does read-modify-write, which is fine for something pressed at
-     most once a frame. A slider fires on many consecutive frames, and
-     read-modify-write only stays monotonic if every deferred set lands before
-     the next read. The slider also only syncs from the game while it is *not*
-     held, or the value coming back over the bridge a frame or two late fights
-     the hand holding it.
-
-- **2026-07-28 — the control plane: a separate F1 overlay, and warp.** Bridge
-  protocol **2 → 3**. Full write-up in
-  `dxvk-remix/documentation/DusklightOverlay.md`; only the game-side facts are
-  repeated here.
-
-  The game never draws its own UI in fixed-function D3D9 mode, so everything the
-  game owns had to be reachable from somewhere that *is* drawn. Remix now hosts
-  a **separate overlay on F1**, independent of Remix's own menu — either can be
-  open without the other, both can be open at once.
-
-  - **Input blocking finally works.** `rtx.blockInputToGameInUI` never could
-    have worked here: it sends a window message across the **32-bit bridge**,
-    and a 64-bit game loading `d3d9.dll` directly never receives it. That is
-    why input has always fallen through to the game with a menu open. Remix now
-    publishes `rtx.dusklight.uiActive` and the game calls
-    `PADBlockInput(...)`, which suppresses the held state on release so nothing
-    sticks down. Gated by `rtx.dusklight.blockGameInput` (default on).
-  - **Warp** (`updateWarp()` in `remix_bridge.cpp`). The overlay sends indices;
-    the game resolves them against `src/dusk/map_loader_definitions.h` and
-    pushes back plain-English names pipe-delimited. The table stays in one
-    place, so the list the overlay shows is by construction the list the warp
-    travels on. Fires `dComIfGp_setNextStage` when
-    `rtx.dusklight.warp.commit` **changes**, and latches the first value seen
-    without acting, so a game restarting under a still-running Remix does not
-    teleport on connect.
-  - **Layer `-1`, not `0`.** `dComIfGp_setNextStage` folds `>= 15` to `-1` but
-    **nothing folds 0 to -1** — 0 is a real layer. Ours initially defaulted to
-    0, which would have landed in the wrong version of any stage whose default
-    layer is not 0. Fixed; bounds `[-1, 14]` on both sides.
-
-    Re-checked 2026-07-28 after the default was questioned: the game's own warp
-    menu uses -1 in **all four** places it touches the layer — the
-    `WarpSelectionState` initializer (`src/dusk/ui/warp.cpp:20`),
-    `reset_selection` (`:109`), the picker list (`:292`) and every
-    `clamp_indices` path — with `kMinLayer = -1`, `kMaxLayer = 14` (`:12-13`).
-    There is no site where Dusklight defaults the warp layer to 0, so matching
-    the game means -1.
-  - **Recording mode** is now a live toggle. It is a game setting whose only
-    other route was editing `config.json` and restarting — and only in one
-    direction, since a value set there could not be turned back off while
-    running.
-
-  Also landed: the Dusklight settings moved out of Remix's post-processing
-  section into their own tab with collapsible sections; a **Requirements**
-  section naming every Remix option these features depend on but do not own
-  (with buttons); and a **What this overrides** section naming the Remix
-  options that will appear to do nothing while the atmosphere is on. Both exist
-  because "I changed it and nothing happened" has cost this project real time
-  more than once.
-
-  Removed from CI: the **Remix x86 bridge** component. Dusklight is 64-bit and
-  never used it.
-
-- **2026-07-28 — Phase 0 run, Phase C landed.** Phase A and B tested in game
-  and reported as *"a massive, frankly monumental success"*: fog range, shape
-  and per-area scaling all confirmed. One fix came out of it — `skyIntensity`
-  1.0 → **6.0**, because the anchor arithmetic forgot the palette is
-  sRGB-decoded before scaling, which takes a mid blue from 0.5 to about 0.2.
-  Phase C (physical Hillaire sky blended against the palette) is implemented
-  and CI-green but **has never been seen running**.
-
-  Settled by testing: `celestialNoonElevation` = **80** (short of 90 on
-  purpose — at exactly 90 the azimuth flips instantaneously at noon), and
-  `disableFrustumCulling` **works and visibly helps light leakage**.
-
-- **2026-07-27 — atmosphere Phase A + B landed. Untested, and the calibration
-  pass that should have preceded them was skipped.** One participating medium
-  derived from the game's palette now drives the volumetrics, the fog and a
-  generated sky together, instead of three systems deriving their own and
-  disagreeing. Bridge protocol **1 → 2**. Design and the full compromise ledger:
-  `dxvk-remix/documentation/DusklightAtmosphere.md`; the game-side data in
-  `docs/kankyo-fog.md`. Everything defaults off.
-
-  Three things found on the way in that are worth not rediscovering:
-  - **Remix keeps only the first fog state it sees each frame**
-    (`rtx_scene_manager.cpp:609`), and this game sets fog *per object* — so
-    which of a room's states won was decided by submission order. That was
-    listed here as a hypothetical risk under IV.4; it is real, and the pushed
-    override is now the mechanism rather than the fallback.
-  - **`g_env_light.hide_vrbox` is not a usable "no sky" signal.** Only the
-    vrbox actor writes it, so in stages without one — every interior, which is
-    where the question matters — it holds whatever the last outdoor area left.
-    The bridge recomputes the test instead.
-  - **The moya haze billboards were already disabled on this backend**
-    (`dKankyo_cloud_Packet::draw`, `d_kankyo_wether.cpp:119`), so the
-    double-count they were expected to cause cannot happen. A switch for it was
-    written and then removed rather than ship a control that does nothing.
-
-  **Phase 0 was never run**, so `zHalfMin`, `froxelRangeScale` and
-  `skyIntensity` are analytic first guesses. Before concluding a result is
-  wrong, read `DusklightAtmosphere.md` §13 — it explains how to run that
-  calibration on a build that already has this change, and how to tell a
-  mis-set constant (wrong everywhere) from a bad mapping (wrong per area).
-- **2026-07-27 — bloom fidelity pass (confirmed good in-game).** Four errors
-  in the port plus a fifth in the composite; owner reports the result
-  "massively improved". Details in "Bloom fidelity" below. The composite one
-  is worth repeating here because it explains everything that came before it:
-  the Dusklight path inherited Remix's fixed `0.01` attenuation, which is
-  calibrated for Remix's own broadly-gathering pyramid. Ours was 100× too
-  faint, so every brightness knob had to be pinned to compensate and it still
-  read as a weak wash — which is why turning it *off* looked closer to the
-  original.
-- **2026-07-27 — sun/moon elevation cap lifted** (`game.celestialNoonElevation`,
-  default = vanilla). **Untested.** Write-up in `docs/sun-elevation.md`.
-- **2026-07-27 — geometry switches added** (`game.disableFrustumCulling`,
-  `game.remixHideSkyBillboards`). Both **untested**, both off by default. The
-  first is for occlusion the path tracer needs and the game throws away; the
-  second is the one-click test for open issue 2.
-- **2026-07-26/27 — controls moved into Remix's Dusklight tab.** The game's
-  ImGui is never drawn in D3D9 mode, so every setting built for this work was
-  behind a window that cannot appear. See "Where the controls live" below.
-
-- **Phase 0 + Phase 1: implemented** (game: `src/dusk/remix_bridge.{cpp,hpp}`,
-  vendored `include/remix/remix_c.h` @ 0.6.4, `game.remixKankyoBridge`
-  config var, Remix Bridge debug window, `bloom_c::draw()` skipped while the
-  bridge is active; fork: `rtx.dusklight.env.*` group (NoSave — verified the
-  save path filters NoSave at `RtxOptionImpl::writeOption`, so game-fed
-  values never reach user.conf), mono prepass shader, composite base
-  weight, `rtx.bloom.dusklightFollowGame` + `dusklightThresholdScale` +
-  manual mono/base-weight knobs).
-- **Phase 2: implemented** (aurora checkpoint 3.17: `apply_fog_state()` in
-  `lib/dx9/dx9_draw.cpp` forwards GX fog to `D3DRS_FOG*` per draw; ortho/UI
-  draws stay fog-off). **Fog fidelity evaluation — read before testing:**
-  - Remix has *two* consumers for captured D3D9 fog, and with Remix's
-    **default settings neither fires**: composite's depth fog early-outs
-    whenever volumetrics are enabled (`rtx.volumetrics.enable` defaults to
-    True), and the volumetric fog remap defaults to off. Fog silently does
-    nothing until a mode is chosen:
-  - **Faithful mode** — `rtx.volumetrics.enable = False` (composite depth
-    fog, on via `rtx.enableFog` by default). Reproduces the exact
-    `D3DFOG_LINEAR` ramp `(end−d)/(end−start)` — identical maths to
-    `GX_FOG_PERSP_LIN` — and it fogs by **radial distance**, which matches
-    vanilla better than plain view-Z because TP keeps `GXSetFogRangeAdj`
-    (the radial correction) enabled. Two knobs: `rtx.fogColorScale`
-    (default 0.25; the captured gamma colour is used as linear pre-tonemap
-    radiance, so with auto exposure off start near 1.0 and calibrate once)
-    and `rtx.maxFogDistance` (default 65504 — raise it; TP fog ends exceed
-    it and geometry past the cutoff gets no fog at all).
-  - **Volumetric mode** — keep volumetrics on and set
-    `rtx.volumetrics.enableFogRemap = True` +
-    `rtx.volumetrics.enableFogColorRemap = True`. Kankyo's fog colour
-    becomes the participating medium's transmittance colour (light shafts,
-    real scattering); the distance mapping is *not* the linear ramp
-    (fog end remapped through `rtx.volumetrics.fogRemap*Meters`, which
-    interact with `rtx.sceneScale`). Prettier, physically consistent,
-    less literal.
-  - Expected weak points to watch on first test: fog colour shifting with
-    exposure/tonemap (calibrate `fogColorScale`, or disable auto
-    exposure), the first-fog-wins capture picking a stray draw (watch the
-    Remix dev menu fog panel), and underwater palettes (very dense fog)
-    tripping `rtx.volumetrics.waterFogDensityThreshold` and flipping modes.
-- **Phase 3: implemented, untested** (fork: `DxvkDusklightGrade`, its own
-  `RtxPass` dispatched immediately before the bloom rather than folded into
-  it, so `rtx.bloom.enable = False` does not silently take the grade with
-  it; `rtx.dusklight.grade.*` response options; a CPU-resolved constant
-  tint, so the shader is one multiply and the pass skips itself when the
-  tint is neutral. Bridge: `actorAmbient`/`bgAmbient` pushed from
-  `g_env_light`). Two design points that changed from the draft during
-  implementation are written up in IV.3: the grade runs *before* the mono
-  overlay (that is the order the GC had — ambient at shading time, mono in
-  the post pass), and the response rails act on the tint's level before
-  they act per channel (a per-channel-only floor flattens a night ambient
-  to grey). Defaults ship with `enable = False`.
-- **Phase 4 (partial): sun/moon distant light implemented.** The bridge now
-  drives one Remix distant light through the light API
-  (`CreateLight`/`DrawLightInstance` each frame; device registered via a new
-  `aurora_dx9_get_device()` accessor, re-registered after resize-recreation).
-  It is a true `remixapi_LightInfoDistantEXT` (Remix's dedicated sun/moon
-  light type, mapping to `RtDistantLight`) — that struct carries only a
-  direction, angular diameter and radiance, with no position, so the light
-  is infinitely far by construction rather than "very far away".
-
-  The direction is derived **analytically from time of day**, not from any
-  world position. `setSunpos` places the body on an ellipse around the
-  camera eye (`offset = (sin a · 80000, −cos a · 80000, −cos a · 48000)`,
-  `sun_pos = eye + offset`); the eye cancels in the offset and the radii
-  cancel under normalization, leaving `normalize(sin a, −cos a, −0.6 cos a)`
-  — verified identical to differencing `sun_pos` against the camera to
-  4.4e-16 across the full day at several camera positions. So no arc, no
-  position and no camera enter the code path, and it keeps working in the
-  stages where `setSunpos` declines to update `sun_pos`.
-
-  Sun while 67.5 < daytime < 292.5, moon otherwise (same orbit, half a day
-  out of phase), crossfaded over ±7.5 daytime units — the window edges
-  coincide with the body dipping below the horizon, so the fade completes
-  as it sets. Deliberately **not** driven by the game's shadow-light
-  selection, which snaps to nearby lanterns. Gated on `dKy_SunMoon_Light_Check()`
-  (outdoor stages only; false in twilight/interiors). Tuning:
-  `game.remixSunMoonLight` (on), `game.remixSunIntensity` (5),
-  `game.remixMoonIntensity` (0.3), `game.remixCelestialAngle` (2°), all
-  live-editable in Remix's Dusklight tab, plus a debug direction-flip
-  checkbox in case game→Remix handedness needs the sign. Sun tint is
-  vanilla's constant actor sun diffuse (126,110,89 normalized); moon is a
-  cool counterpart. With `rtx.fallbackLightMode = 1` (NoLightsPresent) the
-  fallback light yields automatically once this light exists.
-- **Phase 4 (local lights): implemented, untested.**
-  > **Superseded — this is now open issue 0, a known bug, not merely
-  > untested.** Two things also changed after this entry was written: the
-  > bridge reads `efplight[0..4]` as well (the game keeps local lights in
-  > **two** arrays, and reading only the first quietly loses lights in exactly
-  > the rooms that have fewest), and three diagnostics were added that name
-  > which failure mode is in play. Read open issue 0, not this paragraph.
-
-  The bridge mirrors
-  `g_env_light.pointlight[0..99]` — everything registered through
-  `dKy_plight_set`: torches, braziers, lanterns, campfires, Midna, bomb
-  flashes, and the dungeon lights — into Remix sphere lights, created and
-  destroyed as their actors come and go.
-
-  **Why this matters more than it sounds.** Aurora deliberately does not
-  forward GX lights to D3D9 (unsupported-effects #16: "Remix relights
-  everything"), so Remix sees *no* game light at all. Outdoors the
-  sun/moon distant light now covers that. Indoors and at night nothing
-  did: the scene fell through to Remix's fallback light. These are the
-  lights those scenes were lit by.
-
-  **Intensity is not a tuning constant.** It reuses Remix's own
-  legacy-light conversion (`LightUtils::calculateIntensity`): work out how
-  far the original light was meant to reach, then solve for the radiance a
-  sphere light of fixed radius needs to still be perceptible there —
-  `radiance = reach² · 0.01 / (π · radius²)`. The game hands us the reach
-  directly, because `LIGHT_INFLUENCE::mPow` *is* that distance
-  (`dKy_light_influence_id` treats "closer than mPow" as "inside this
-  light"). So these lights land in the same intensity range as the lights
-  of any other Remix title rather than in a range we invented. A torch
-  (`mPow` 500, colour AF5D00) resolves to radiance ≈ 49.7, 26.4, 0 at the
-  default 4-unit radius — which is also Remix's own default radius for
-  converted point lights.
-
-  **The one real judgement call, and it is worth ~19×.** `mPow` is not
-  where the light ends, it is where it reaches 1/11 of peak. The game loads
-  these as `dKy_GXInitLightDistAttn(info, mPow·0.001, 0.99999, GX_DA_STEEP)`
-  → `k0 = 1, k1 = 0, k2 = (1−b)/(d²b)` → `attenuation(D) = 1/(1 + 10D²/mPow²)`.
-  Applying Remix's own end threshold (1/255 of the light's brightness) to
-  that curve instead gives `reach = mPow·√((maxColorByte − 1)/10)`, which is
-  4.3× further for a torch and therefore ~19× the radiance.
-
-  That second reading is arguably *more* faithful, and it is the one Remix's
-  philosophy points at: it deliberately ignores a legacy light's `Range` in
-  favour of its attenuation curve, because `Range` was usually an
-  optimization rather than the light's real extent — and `mPow` is exactly
-  that kind of optimization. It is not the default for two reasons: the game
-  never applied a point light beyond its influence radius anyway (each
-  tevstr gets *one* light, chosen by proximity, so the long tail was rarely
-  realized), and a scene that comes up too dim is far easier to diagnose
-  than one that comes up blown out. **If the lights read as weak, set
-  `game.remixLocalLightIntensity` to about 19** — that is a derived number,
-  not a guess, and the slider reaches it.
-
-  Identity is the `LIGHT_INFLUENCE`'s address, mixed into a 64-bit hash: it
-  lives inside its actor, so it holds still exactly as long as the light
-  does. Re-creates are epsilon-gated on position and radiance (0.5 world
-  units, ~6mm at TP's scale) so a carried torch does not cross the API lock
-  every frame. Lights whose actor is gone are destroyed, which is what
-  keeps Remix's external-light map from growing all session as rooms load.
-  On resize the handles are dropped without destroying — they belonged to
-  the device that went away with them.
-
-  Settings: `game.remixLocalLights` (**off** by default — third unverified
-  system, same reasoning as the grade), `game.remixLocalLightIntensity`
-  (1.0), `game.remixLocalLightRadius` (4.0), all live in Remix's Dusklight
-  tab with drawn/tracked counters.
-
-  Not done: `mFluctuation` (the flicker amount; every torch sets 1.0, bombs
-  100) is ignored for now — applying it would mean a re-create every frame
-  for every flickering light. Worth revisiting once the base look is
-  calibrated.
-- **Sky (Phase 4 remainder): SUPERSEDED — this paragraph described tagging,
-  which turned out to be impossible.** Left in place, struck through, because
-  it was the plan of record for a while and its failure is the reason the
-  generated sky exists.
-
-  > ~~Manual tagging is the right mechanism, and it now fixes two things.
-  > Besides being the missing fill light, it is the proper fix for the
-  > night-only wandering shadows… One-time setup in the Remix dev menu
-  > (texture categories → Sky): tag the vrbox sky dome, both cloud layers
-  > (kumo), the horizon haze (kasumi) and sun/moon billboard textures. Once
-  > tagged, the sky raster draws land in Remix's sky probe *with their TEV
-  > tints*… scale with `rtx.skyBrightness`.~~
-
-  **Why it cannot work — CORRECTED 2026-07-29, this reasoning was wrong.** The
-  claim was: Remix categorises by hashing *texture content*; the vrbox is
-  painted with vertex colours and has no texture; therefore no hash, therefore
-  no category, therefore neither dev-menu nor programmatic tagging can reach it.
-
-  The premise is true and the conclusion does not follow. Texture hashing is one
-  of **three** routes to a category, and the other two need no texture:
-  `rtx.skyBoxGeometries` tags a captured draw by its **geometry** hash
-  (`rtx_types.cpp:416`), and `REMIXAPI_INSTANCE_CATEGORY_BIT_SKY` declares the
-  category outright on geometry submitted through the Remix API
-  (`remix_c.h:457`). Full write-up and the evidence in
-  `dxvk-remix/documentation/DusklightAtmosphere.md` §14.9.
-
-  **This does not undo Phase B1.** The generated dome light was the right answer
-  for a different reason than the one recorded — it gives HDR sky radiance that
-  feeds GI, which a rasterized sky probe does not — and it is tested and working.
-  What is retired is the *argument*, not the architecture. Anyone reaching for
-  "we cannot tag that, it has no texture" should check §14.9 first.
-
-  **What replaced it:** Phase B1. The same palette colours cross the bridge as
-  numbers, Remix builds a lat-long dome from them and registers it as a dome
-  light (`rtx.dusklight.atmosphere.skyEnable`), and the game's own dome is
-  switched off (`rtx.dusklight.game.hideVrbox`). That is the fill light, it is
-  tested, and it gets kankyo's colours into reflections and GI by a route that
-  never depended on hashing anything. `rtx.skyBrightness` is irrelevant under
-  it — use `atmosphere.skyIntensity`.
-
-  The one live remnant is the sun/moon/star billboards, which *are* textured
-  and so could be tagged. `hideSkyBillboards` removes them instead; see open
-  issue 2.
-- **Owner test feedback (first bloom/fog session), to address:**
-  - Dusklight bloom renders and tracks time of day, but doesn't yet look
-    like the game's — calibration pass pending (threshold scale vs. the
-    scene's HDR range, gain distribution, and the burnIntensity=5 +
-    blurRatio=255 test values need re-baselining once the sun light lands).
-  - Volumetric fog mode reacts more strongly to kankyo's fog near/far than
-    expected; faithful mode is consistent.
-    `rtx.volumetrics.enableFogMaxDistanceRemap = False` (owner already set
-    it) is the intended lever — it pins the medium's density and leaves
-    only the colour game-driven. Revisit defaults after the light exists.
-- **Owner tuning note:** auto exposure may simply be disabled for reference
-  (`rtx.autoExposure.enabled = False`) instead of clamping it — with AE off
-  the pre-tonemap range is fixed, which makes `dusklightThresholdScale`
-  calibration straightforward and makes the base-weight dimming read
-  exactly as authored. The chroma-only default for the Phase 3 grade
-  matters less in that configuration but remains the right default for
-  AE-on setups.
-
-### Where the controls live (and why they are not in the game)
-
-The game's ImGui is **never drawn in D3D9 mode** — its overlay renders
-through WebGPU, which is not initialized here
-(`docs/dx9-fixed-function.md`, limitations). So the "Remix Bridge" debug
-window built in Phase 0 is invisible in the one mode the whole feature
-exists for, and every instruction to open it was unfollowable. That was a
-real design error, caught by the owner rather than by us.
-
-The controls therefore live in **Remix's own ImGui overlay**, in a
-`Dusklight` tab, as ordinary `rtx.dusklight.game.*` options. The game reads
-them back every frame through a `getRtxOptionValue` export on the Remix DLL
-— the Remix API only *writes* config variables, and extending
-`remixapi_Interface` with a getter would break its ABI (its size is
-asserted), so this rides the same plain `__declspec(dllexport)` mechanism
-the fork already uses for `writeMarkdownDocumentation`.
-
-Direction of travel:
-
-- **Remix → game**: the settings (`rtx.dusklight.game.*`), polled each frame.
-  The game's own `game.remix*` config values remain as the fallback for a
-  Remix build without the export, and for backends where the bridge is inert.
-- **Game → Remix**: state (`rtx.dusklight.env.*`), pushed as before. Light
-  status — azimuth, elevation, day/night, fade, device registration, local
-  light counts — is pushed too, purely so the tab can display it.
-
-The game-side Remix Bridge window is kept: it still works on the WebGPU
-backends, where it is the only way to edit the fallback values.
-
-### Two protocol bugs found on first contact (2026-07-26)
-
-Both surfaced the moment the owner ran the new Remix build against an older
-game build, and both were mine.
-
-1. **The diff cache assumed exclusive ownership.** `push()` only calls
-   `SetConfigVariable` when a value changes, which is right for cost and
-   wrong for correctness: `rtx.dusklight.env.*` are **NoSave**, so anything
-   that rebuilds Remix's user layer — saving settings from its UI, a config
-   reload — drops them back to their defaults. The cache then never pushes
-   them again, and Remix reports the bridge as disconnected *forever* while
-   the game is convinced it is connected. Fixed by verifying instead of
-   assuming: the bridge reads its own heartbeat back each frame and clears
-   the cache if it is missing (one getter call, recovers next frame), with a
-   blind full re-push every 120 frames as the fallback for a Remix build
-   without the getter.
-2. **Build skew was indistinguishable from breakage.** The tab's only state
-   was "is the game reporting anything", which is false in every failure
-   mode. A game that connects but predates `rtx.dusklight.game.*` looks
-   identical to one that never connected — except its controls silently do
-   nothing. The game now stamps `rtx.dusklight.env.protocol`, and the tab
-   distinguishes connected-and-current, connected-but-too-old, and absent.
-
-Standing rule this leaves behind: **the game and the Remix DLL are one
-protocol and have to be updated together.** The tab says so when they are
-not.
-
-### Crash on entering some levels (2026-07-26) — evidence, not yet a cause
-
-Owner logs (`dusklight20260726214829`, `remixdxvk`). What the logs establish:
-
-- **The bridge is connected**: `RTX Remix detected; kankyo bridge active
-  (remixapi 0.6.4)` and `registered D3D9 device with the Remix API`. The
-  `getRtxOptionValue` export resolved — there is no warning about it, which
-  also proves the export mechanism works.
-- **Build skew, reversed**: game `8b89e4f` against Remix
-  `remix-main+4779899c`. `SetConfigVariable(rtx.dusklight.env.protocol)
-  failed (1)` — error 1 is `GENERAL_FAILURE`, which
-  `remixapi_SetConfigVariable` returns when the option does not exist, and
-  `protocol` landed one Remix commit later. Harmless in itself.
-- **Local lights were off** (`rtx.dusklight.game.localLights` defaults false
-  and is not in the owner's rtx.conf), so that subsystem is not implicated.
-  The sun/moon distant light *was* running.
-- **The crash is entirely inside `d3d9.dll` on a Remix-owned worker thread**:
-  all frames are in `d3d9.dll` and the outermost two are KERNEL32
-  `BaseThreadInitThunk` / ntdll `RtlUserThreadStart`, i.e. a thread whose
-  entry point is in Remix, not the game. `EXCEPTION_ACCESS_VIOLATION`
-  reading address `0x10` — a null pointer plus a small member offset. No
-  game frames at all.
-- **Context**: a cutscene transition (`ZEV event [BSPTRANS]`,
-  `entering_event=true`, Midna's `s_md` models loading), immediately after a
-  Remix camera cut, which re-initializes the Neural Radiance Cache
-  (`NRC SDK: Loading the default network config data`) — on a worker thread.
-
-Ruled out along the way: aurora's view inverse is guarded by a determinant
-check and would have logged `camera view matrix not invertible`, which it
-did not. Remix's own `Attempted invert a non-invertible matrix` fired 19
-seconds earlier and is not adjacent to the crash.
-
-Hardened regardless, because both were real defects:
-
-- `getRtxOptionValue` took no lock while Remix resolves options on its own
-  thread at frame end. Now takes the same update mutex those writes do.
-- The bridge fed positions and radiances to Remix without checking them for
-  NaN. Remix validates radius and radiance for sign and range but **not**
-  for NaN, and a NaN reaching its acceleration structures takes the renderer
-  down on a worker thread with a backtrace that says nothing about where it
-  came from — which is the shape of crash we are looking at. Both light
-  paths now skip a light whose values are not finite.
-
-*Next step is a bisect, not more analysis*: `rtx.dusklight.game.bridgeEnable
-= False` turns off every push and both lights. If it still crashes, nothing
-of ours is involved and the NRC-on-camera-cut path is the next suspect
-(`rtx.neuralRadianceCache.enable = False`).
-
-### Bloom fidelity: four errors in the port (2026-07-26)
-
-The owner compared against vanilla Dusklight and reported the bloom simply
-does not look like it. Re-derived the effect from the TEV setup in
-`bloom_c::draw2()` (`m_Do_graphic.cpp:1456`) rather than from the earlier
-reading, and found four things wrong, one of them fundamental.
-
-**1. Wrong colour space — the fundamental one.** The effect was authored
-against the EFB: an 8-bit framebuffer holding *finished display colours*.
-Every part of it is defined against that. The threshold is a fraction of
-display white. The intermediate buffers clip at white, and that clipping is
-what gives bright cores their washed-out look. The screen blend asks "how
-close to white is this pixel already", and the composite's base weight is a
-blend alpha against a 0..1 image. We were running the whole thing on
-open-ended **linear pre-tonemap radiance**, where none of those four mean
-what they meant — and where blurring concentrates halos far more tightly,
-because blurring linear radiance weights bright pixels enormously more than
-blurring display values does. Fixed by moving the Dusklight pyramid to run
-**after tone mapping**, in gamma space (`rtx.bloom.dusklightDisplaySpace`,
-default on). This also makes the whole effect exposure-independent, which
-is why `dusklightThresholdScale` existed at all.
-
-**2. The threshold was the wrong operation entirely.** Decoding the three
-TEV stages, with swap tables `R,R,R,G` and `B,B,B,A` mixed by `HALF`:
-
-```
-key    = 0.25*R + 0.25*G + 0.5*B
-source = colour * saturate(key - mPoint)
-```
-
-It is a **luminance-keyed mask multiplied by the original colour**, not a
-per-channel subtraction. The port did the latter, which is close to the
-opposite in character: it shifts every bloomed highlight towards its
-dominant channel, where the original preserves hue exactly. It also blooms
-things the original refuses to — saturated red at full intensity has a key
-of 0.25 and never clears the default 0.5 threshold, but the port bloomed it
-at half strength. Note the weights: **blue counts double**, which is a real
-and distinctive part of the look.
-
-**3. `rtx.bloom.steps` should be 6, not 5.** The game runs five blur passes
-over six levels (`divStart` 2 → `divNum` 6). Our default of 5 gives four,
-which narrows the halo a level *and* changes the per-pass gain, since the
-total is distributed as its N-th root.
-
-**4. The upsample exponent was off by one.** The original is
-`falloff^(1/(i - divStart + 1))` with `divStart = 2`, i.e. `1/(i-1)`; we
-used `1/i`, leaving every level slightly too faint.
-
-Deliberately kept: the 13-tap downsample on the threshold step, instead of
-the original's point sample. A single bright pixel with a box filter makes
-the bloom crawl frame to frame, and that trade is worth more than the
-exactness.
-
-### Phase 0 — plumbing (dusklight)
-1. Vendor `remix_c.h` from the fork into `include/remix/` (pin 0.6.4;
-   comment the exact-minor rule).
-2. `src/dusk/remix_bridge.{cpp,hpp}`: init/availability, diff-cached
-   `setVar`, `tick()` wired into the main loop after kankyo draw; config
-   var `game.remixKankyoBridge`; log lines on init/degrade.
-3. ImGui "Remix Bridge" debug window (values, per-key override, push
-   counter). Files added to `files.cmake`.
-   - *Acceptance*: under Remix, heartbeat visible in Remix's dev menu
-     (`rtx.dusklight.env.enable = True`); on stock D3D9/other backends the
-     module logs "not under Remix" and goes dormant; zero calls when values
-     are static.
-
-### Phase 1 — bloom + mono (fork + bridge)
-1. Fork: add `dusklightMonoColor/MonoAmount/MonoLumaMode/BaseWeight`
-   options; new grade stage in `DxvkBloom::dispatch` (IV.3, mono +
-   baseWeight only at this phase); RtxOptions.md rows; UI rows under
-   Post-Processing → Bloom.
-2. Fork: add `rtx.dusklight.env.*` option group (NoSave) + verify NoSave
-   exclusion in `RtxOptionLayer::save()`; fix if needed.
-3. Bridge: push the bloom block (IV.2 table); skip `bloom_c::draw()` when
-   bridge active; update `docs/dx9-fixed-function.md` (drop the manual
-   bloom table — it's now automatic).
-   - *Acceptance*: walking Ordon dawn→noon→dusk visibly re-tunes Remix
-     bloom continuously; entering twilight snaps the golden bloom + 37.5 %
-     desat + base dim without touching the UI.
-
-### Phase 2 — fog (aurora)
-1. Implement GX→D3D9 fog in `dx9_draw.cpp` per the mapping doc (LIN first;
-   EXP/EXP2 if any stage uses them — audit says PERSP_LIN only).
-2. Verify capture in Remix dev menu (fog states panel); calibrate
-   `rtx.fogColorScale` starting point; ship rtx.conf template values.
-3. MinGW syntax harness both configs; aurora submodule bump dance per
-   CLAUDE.md (aurora dev → dusklight dev, pin SHA).
-   - *Acceptance*: Faron morning haze and Lanayru evening fog reappear with
-     palette-correct colour, fading over distance pre-tonemap; toggling
-     `rtx.enableFog` kills it.
-
-### Phase 3 — ambient grade (fork + bridge)  — implemented, untested
-
-Steps 1 and 2 are done; step 3 needs the game running.
-
-1. ✅ Fork: `DxvkDusklightGrade` (`rtx_render/rtx_dusklight_grade.{h,cpp}`,
-   `shaders/rtx/pass/dusklight/dusklight_grade.{h,comp.slang}`), dispatched
-   from `RtxContext` immediately before the bloom. Response options
-   `rtx.dusklight.grade.{enable,strength,chromaOnly,actorAmbientWeight,
-   maxDarkening,maxBrightening}`, UI under Rendering → Post-Processing →
-   Dusklight Ambient Grade (which also prints the resolved tint live).
-2. ✅ Bridge: `rtx.dusklight.env.actorAmbient` / `bgAmbient` pushed from
-   `g_env_light.actor_amb_col` / `bg_amb_col[0]` — the fully blended
-   per-frame values, after the four-way palette blend, event add-colours
-   and global ratios. BG layer 0 is the main room layer, the one the game
-   itself reuses when it needs "the" background ambient (`d_a_mirror`).
-3. ⬜ Tune defaults on the four canonical test scenes: Ordon noon (should
-   be ≈ neutral), Ordon dusk (warm shift), Faron rain (cool desat), any
-   twilight zone (full look together with Phase 1).
-   - *Acceptance*: time-of-day/weather grade the path-traced frame; bridge
-     off ⇒ image identical to pre-phase baseline.
-
-**Shipped off by default.** `rtx.dusklight.grade.enable` defaults to
-false. Phase 3 changes scene *tint* and the Phase 4 sun/moon light changes
-scene *lighting*; both are unverified at runtime, and turning them on one
-at a time is the difference between a five-minute bisect and an afternoon.
-
-**What the defaults do**, from a simulation of `resolveGrade()` (the
-ambients are illustrative, not measured from stage data — TP's palettes
-live in `.dzs` files, not in the repo):
-
-| ambient (actor / bg) | `chromaOnly` on (default) | `chromaOnly` off |
-| :-- | :-- | :-- |
-| neutral grey 180,180,180 | 1.000 1.000 1.000 *(pass skipped)* | 0.809 0.809 0.809 |
-| noon, faint cool | 0.982 1.001 1.039 | 0.841 0.855 0.885 |
-| dusk, warm | 1.228 0.954 0.779 | 0.841 0.688 0.590 |
-| night, cool dark | 0.876 1.003 1.332 | 0.578 0.579 0.694 |
-| rain, desaturated cool | 0.943 1.009 1.076 | 0.611 0.641 0.670 |
-| twilight, gold | 1.127 1.007 0.578 | 0.845 0.769 0.578 |
-| pure red (a real debug state) | 1.650 0.578 0.578 | 1.420 0.578 0.578 |
-| black ambient | 1.000 1.000 1.000 *(pass skipped)* | 0.578 0.578 0.578 |
-
-Two properties to hold on to: a neutral ambient resolves to exactly white
-and skips the dispatch (so noon costs nothing and changes nothing), and the
-rails contain the pathological red case that would otherwise resolve to a
-4.7× red multiplier.
-
-### Phase 4 — sun/moon light + sky (aurora + fork + bridge)
-As designed in IV.7: `dxvk_RegisterD3D9Device` hook in aurora, distant
-light lifecycle in the bridge, vrbox tint investigation, dungeon lights
-stretch goal.
-
-### Phase 5 — polish
-
-- ✅ **XFog evaluation — nothing to do, and forwarding it would be wrong.**
-  GX fog is computed from projected depth (planar); `GXSetFogRangeAdj`
-  adds a per-column correction table whose whole purpose is to make that
-  planar depth behave like *radial* distance, so fog does not thin out at
-  the screen edges. Remix's composite fog already measures radial
-  distance — `viewDistance = length(viewPosition)`
-  (`composite.comp.slang:700`), fed straight into the `D3DFOG_LINEAR`
-  ramp. So the correction is already applied by construction; forwarding
-  the table would double-correct.
-
-  TP does keep it on: `mFogAdjEnable = true` at kankyo init
-  (`d_kankyo.cpp:1257`) and `GxXFog_set()` runs immediately after every
-  scene `GFSetFog(GX_FOG_PERSP_LIN, …)` (`d_kankyo.cpp:9459`). Every
-  `GXSetFogRangeAdj(GX_DISABLE, …)` in the game is on a 2D/UI/menu/movie
-  path where fog is off anyway. Aurora records the same conclusion at
-  `lib/dx9/dx9_draw.cpp:178`.
-- ✅ **rtx.conf template + documentation pass** — `dx9-fixed-function.md`
-  carries both fog modes, the bloom table, the ambient grade table and the
-  local light notes; this doc's status log and verification section are
-  current.
-- ✅ **Re-baseline the owner's bloom values** — superseded by the fidelity
-  pass. With the composite fix in, `burnIntensity` belongs at **1.0** (it is
-  no longer attenuated 100×), `steps` at **6**, and threshold/blur/ratio come
-  from the game feed. `dusklightThresholdScale` should stay at 1.0 now that
-  the pass runs in display space.
-- ⬜ **HDR threshold calibration table per area** — largely obviated by the
-  move to display space, since the threshold now has a fixed meaning. Revisit
-  only if areas still disagree.
-- ✅ **Sky tagging** — closed as impossible, and replaced. The game's sky dome
-  carries no texture for Remix to hash, so it can never be categorised; the
-  generated dome light (Phase B1) supplies the fill light instead, and it is
-  tested. See the superseded Phase 4 bullet above for why this was carried as
-  the top item for as long as it was.
-
-### CI coverage note
-The fork's workflow only built `main` and `release/**`, so a `claude/**`
-branch got no build until its PR opened. `claude/**` is now in the push
-triggers, which is what gives the Phase 3 grade a compile check without
-opening a pull request for it.
-
-**The x86 bridge steps were removed from the fork's workflow on 2026-07-28.**
-Dusklight is 64-bit and loads `d3d9.dll` directly, so it never used the bridge.
-Nothing in this project needs it, and building it was pure CI time. (This is
-also the reason `rtx.blockInputToGameInUI` never worked here — see the input
-note in `docs/dx9-fixed-function.md`.)
-
-### Test/verification strategy
-- Owner tests via the GitHub Actions "Build Windows (MSVC x86_64)"
-  artifact (game/aurora) and the fork's Actions build (Remix DLL) — keep
-  both CI green per phase; land in `Fixed-Function-dev` at checkpoints.
-- Every phase has a hard off-switch (`game.remixKankyoBridge`,
-  `rtx.dusklight.grade.enable`, `rtx.enableFog`) so regressions bisect in
-  minutes.
-- Debug affordances: game-side bridge window (Phase 0), Remix dev menu
-  option inspection, and `rtx.dusklight.env.*` visible in RtxOptions UI.
-
-### Risks / open questions
-1. `remixapi_InitializeLibrary` export presence in *our* built DLL —
-   sanity-check exports once (it rides `__declspec(dllexport)`, not the
-   .def file).
-2. NoSave behaviour of `RtxOptionLayer::save()` — verify before Phase 1.3.
-3. First-fog-wins capture robustness — plan B documented (IV.4).
-4. HDR calibration of threshold/tint responses is taste work — the knobs
-   exist precisely so it can be done live in the Remix UI.
-5. Quality-preset layer outranks the User layer for `UserSetting`-flagged
-   options — none of our target options carry that flag today; keep it
-   that way for `rtx.dusklight.*`.
+Superseded phase plans and old session notes are archived in
+[`remix-history.md`](remix-history.md) — unmaintained, and not a source of fact.
+What is currently broken or untested: [`remix-open-issues.md`](remix-open-issues.md).

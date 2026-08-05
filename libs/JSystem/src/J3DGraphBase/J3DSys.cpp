@@ -382,10 +382,10 @@ void J3DSys::setViewMtx(const Mtx m) {
         m = patched;
     }
     MTXCopy(m, mViewMtx);
-    // Aurora extension: hand the camera matrix to backends that split
-    // WORLD/VIEW (D3D9 for RTX Remix). Rendering is unchanged; the wgpu
-    // backend ignores it. Every view change in the game funnels through
-    // this setter, so per-view passes (item previews, mirrors) stay correct.
+    // Aurora extension: hand the camera matrix to backends that split WORLD/VIEW, which D3D9
+    // does and Remix needs in order to see a real camera rather than pre-transformed geometry.
+    // The wgpu backend ignores the call. Every view change funnels through this setter, so
+    // per-view passes (item previews, mirrors) stay correct.
     GXSetViewMtx(mViewMtx);
 }
 #endif

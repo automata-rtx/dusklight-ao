@@ -1012,16 +1012,11 @@ void dKy_change_colpat(u8 colpat);
 int dKy_BossLight_set(cXyz* pos_p, GXColor* color_p, f32 ref_dist, u8 param_3);
 void dKy_custom_colset(u8 prevGather, u8 curGather, f32 blend);
 void dKy_setLight();
-// Ratio of the sun/moon orbit's Z radius to its XY radius, which is what decides how high the
-// arc climbs: the path is a great circle tilted off vertical by exactly this, so peak elevation
-// is atan(1/ratio). Vanilla's 48000/80000 = 0.6 puts noon at 59 degrees and never higher, which
-// reads fine against baked lighting but leaves a path tracer without a usable overhead sun -
-// shadows at midday stretch as far as they do mid-afternoon.
-//
-// Derived from game.celestialNoonElevation so the knob is the angle rather than the ratio. Used
-// by setSunpos for the visible body and by the Remix bridge for the light direction, so the two
-// cannot disagree. Nothing here touches daytime, the palette schedule, or any dawn/dusk state -
-// those run off dComIfGs_getTime() and l_time_attribute and never look at the orbit.
+// Tilt of the sun/moon orbit: Z radius over XY radius, so peak elevation is atan(1/ratio).
+// Vanilla's 48000/80000 = 0.6 caps noon at 59 degrees, which is fine against baked lighting but
+// leaves a path tracer without an overhead sun. Derived from game.celestialNoonElevation.
+// Called by both setSunpos (visible body) and the Remix bridge (light direction) so the two
+// cannot disagree; it touches nothing else in the day cycle. docs/sun-elevation.md.
 f32 dKy_celestial_orbit_z_ratio();
 
 cXyz dKy_plight_near_pos();

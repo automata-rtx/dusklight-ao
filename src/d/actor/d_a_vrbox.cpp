@@ -21,10 +21,14 @@ static int daVrbox_Draw(vrbox_class* i_this) {
     daVrbox_color_set(i_this);
 
 #if TARGET_PC
-    // Under Remix the sky is generated from these same colours and handed over as a dome light,
-    // because the dome carries no texture for Remix to identify it by - it is painted by setting a
-    // few colours per frame - so it can never be tagged as sky. Drawing it as well would put the
-    // game's own dome in front of the generated one.
+    // Under Remix the sky is generated from these same colours and handed over as a dome light -
+    // the direct translation of a dome that is painted by setting a few colours per frame rather
+    // than drawn from a texture. Drawing it as well would put the game's own dome in front of the
+    // generated one.
+    //
+    // NOT because the dome is untaggable: that claim was checked and is false. Texture hashing is
+    // only one of three category routes - rtx.skyBoxGeometries tags by geometry hash and needs no
+    // texture. dxvk-remix documentation/DusklightAtmosphere.md §14.9.
     //
     // Deliberately below daVrbox_color_set: that call is the only per-frame writer of the colours
     // this actor exists to set, and of g_env_light.hide_vrbox, which the weather system reads for

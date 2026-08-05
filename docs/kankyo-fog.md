@@ -175,8 +175,9 @@ Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
 All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
-protocol **2**; the wire has since advanced to **4** (3 = overlay + warp, 4 = the clock) and gained more keys. The
-authoritative list is `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
+protocol **2**; the wire has since advanced to **6** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
+6 = the Controls tab) and gained more keys. The authoritative list is
+`dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 
 | Key | Source |
 | :-- | :-- |
@@ -232,8 +233,18 @@ Separate from GX fog — billboard particles driven by
 
 **They are already not drawn on the D3D9 backend.** `mMoyaCount` feeds
 `mpCloudPacket->mCount` in `cloud_shadow_move` (`d_kankyo_rain.cpp:1616`), and
-that packet's `draw()` returns early under D3D9 (`d_kankyo_wether.cpp:119-126`,
-disabled because its projected fake shadows fought Remix's path-traced ones).
+that packet's `draw()` returns early under D3D9 (`d_kankyo_wether.cpp`,
+`dKankyo_cloud_Packet::draw`, disabled because its projected fake shadows fought
+Remix's path-traced ones). There is a second gate at the same rank inside
+`drawCloudShadow` itself (`d_kankyo_rain.cpp:4510`) — belt-and-braces, so
+neither one is load-bearing alone.
+
+*Naming, so the next reader is not misled:* "haze particles" is the label this
+document and the fork's `rtx.dusklight.env.moyaMode` description both use, but
+the only draw path `mMoyaCount` actually reaches is `drawCloudShadow` — a
+projected cloud-shadow overlay. Whether moya also has a separate billboard
+particle path is **unverified**; nothing in `src/` was found that reads
+`mMoyaCount` for one.
 
 So the double-count this section was written to warn about does not arise here,
 and no suppression switch was needed — one was written and then removed rather

@@ -17,15 +17,24 @@ int fpcDw_Execute(base_process_class* i_proc) {
         layer_class* save_layer;
         int ret;
         process_method_func draw_func;
-    
+
         save_layer = fpcLy_CurrentLayer();
         if (fpcBs_Is_JustOfType(g_fpcLf_type, i_proc->subtype)) {
             draw_func = ((leafdraw_method_class*)i_proc->methods)->draw_method;
         } else {
             draw_func = ((nodedraw_method_class*)i_proc->methods)->draw_method;
         }
-    
+
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
+        // NOTE: a GXPushDebugGroup here does NOT label the draw. Verified
+        // 2026-08-04: every material in a Goron Mines session reported grp=-.
+        // This is the funnel every process draw is *scheduled* through, not the
+        // one GX commands are *issued* through - actor draw methods call
+        // mDoExt_modelEntryDL, which enters the model into a J3D draw buffer,
+        // and the FIFO writes happen later when dDlst_list_c walks that buffer.
+        // By then the group has been popped. Labelling has to happen where the
+        // draw buffer is executed, and the label has to reach there with it.
+        // extern/aurora/docs/dx9/material-report.md.
         ret = draw_func(i_proc);
         fpcLy_SetCurrentLayer(save_layer);
         return ret;

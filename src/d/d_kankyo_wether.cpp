@@ -93,17 +93,15 @@ STAR_EFF::STAR_EFF() {}
 
 void dKankyo_star_Packet::draw() {
 #if TARGET_PC
-    // Stars and the moon billboard are placed at a fixed offset from the camera eye
-    // (dKyr_drawStar: moon_pos = camera->view.lookat.eye + envlight->moon_pos), so as world
-    // geometry they translate with the player. Under a rasterizer that is invisible and correct.
-    // Under a path tracer, any of it that Remix captures as ordinary geometry becomes an occluder
-    // that follows the camera around - which is a candidate for shadowed areas appearing to
-    // wander as you move, and it only happens at night because stars and the moon are the only
-    // sky billboards drawn then.
+    // Confirmed in game 2026-07-29: the moon billboard was the night shadow wandering.
+    // dKyr_drawStar anchors it to the camera eye (moon_pos = eye + envlight->moon_pos), so an
+    // 8000-unit quad hangs 80000 units away in the moon light's own direction and travels with
+    // the player - every shadow ray toward the moon starts by hitting it.
     //
-    // The real fix is to tag these textures as Sky so they land in the sky probe instead of the
-    // world. This exists to test that theory in one click, and as a workaround if tagging proves
-    // awkward - it does remove the visible stars and moon, so it is off by default.
+    // Costs only the visible moon and stars; the generated sky already paints that part of the
+    // image and the moonlight comes from our distant light, not the billboard. If the moon is
+    // wanted back, paint it into the generated sky dome - NOT Sky-texture tagging, which keeps a
+    // real quad in the world. docs/remix-open-issues.md issue 2.
     if (aurora_get_backend() == BACKEND_D3D9 &&
         dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
         return;
@@ -118,9 +116,9 @@ CLOUD_EFF::CLOUD_EFF() {}
 
 void dKankyo_cloud_Packet::draw() {
 #if TARGET_PC
-    // The moya drifting cloud-shadow projection is intentionally disabled on
-    // the D3D9 fixed-function backend: RTX Remix path-traces real shadows and
-    // the projected fake ones would fight them (docs/dx9-fixed-function.md).
+    // The moya drifting cloud-shadow projection is intentionally disabled on the D3D9 backend:
+    // Remix path-traces real shadows and the projected fake ones fight them. mMoyaCount still
+    // reaches Remix as haze density, so nothing is lost. docs/kankyo-fog.md §6.
     if (aurora_get_backend() == BACKEND_D3D9) {
         return;
     }
@@ -170,8 +168,10 @@ void dKankyo_evil_Packet::draw() {
 
 static void dKyw_drawSun(int i_type) {
 #if TARGET_PC
-    // Same reasoning as the star packet: setSunpos places the body at eye + offset, so the
-    // billboard rides the camera.
+    // Gated by the same switch so "hide sky billboards" means all of them. Note this is NOT the
+    // shadow-wander case the star packet is: the visible sun is the lens-flare sprites, 250-850
+    // units and sitting near the camera rather than out along the light direction, so that
+    // mechanism is measurably absent by day. docs/remix-open-issues.md issue 2.
     if (aurora_get_backend() == BACKEND_D3D9 &&
         dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
         return;

@@ -30,7 +30,8 @@ struct mDoLib_clipper {
     // image: a wall culled because the camera turned away stops occluding, and its light spills
     // into rooms it should never reach. The cost is that everything in the room is submitted
     // every frame, which is exactly what the game spends this machinery avoiding - so it stays
-    // off by default. Set through mDoLib_clipper::setDisableCulling from the graphics settings.
+    // off by default. mDisableCulling is refreshed once per frame in setup() from
+    // game.disableFrustumCulling, which the Remix overlay drives through the bridge.
     static int clip(const Mtx m, const Vec* param_1, const Vec* param_2) {
         if (mDisableCulling) {
             return 0;

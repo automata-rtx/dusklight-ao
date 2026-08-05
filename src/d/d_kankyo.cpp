@@ -1533,21 +1533,18 @@ void dScnKy_env_light_c::setDaytime() {
     mDate = dComIfGs_getDate();
     daytime = dComIfGs_getTime();
 
-    // dusk: the Remix overlay can scrub the clock and pin it, so the same shot can be taken
-    // twice with the sun in exactly the same place. Both go through the game's own machinery
-    // rather than beside it: a requested time is written into daytime like any other
-    // assignment, and the freeze reuses using_time_control_tag, which is what a stage sets
-    // when its sky must not move. That means the freeze takes a branch the game already
-    // tests every frame rather than a second one that would have to be kept in step with it.
+    // dusk: the Remix overlay can scrub and pin the clock, so the same shot can be taken twice
+    // with the sun in exactly the same place. Both ride the game's own machinery - the freeze
+    // reuses using_time_control_tag, the flag a stage sets when its sky must not move - so it
+    // takes a branch the game already tests rather than a second one to keep in step.
     {
         const auto& game = dusk::getSettings().game;
 
-        // The requested time and the request to apply it are separate: acting on the value alone
-        // would pin the clock there every frame, and acting on the value *changing* would make
-        // asking twice for the same time silently do nothing the second time. So a counter says
-        // when, exactly as the warp does. The first count seen is latched without acting on it,
-        // so a value left in a config file - or one still sitting in a Remix that outlived a
-        // game restart - never moves the clock by itself.
+        // Value and commit are separate: the value alone would re-pin the clock every frame, and
+        // acting on the value *changing* would silently ignore the same time asked for twice.
+        // The first count seen is latched without acting, so a value left in a config file - or
+        // one still in a Remix that outlived a game restart - never moves the clock by itself.
+        // Same transport rule as the warp; DusklightOverlay.md §1.1 in the fork.
         static s32 s_lastTimeCommit = 0;
         static bool s_timeCommitPrimed = false;
         const s32 timeCommit = game.timeCommit.getValue();
@@ -1705,8 +1702,8 @@ void dScnKy_env_light_c::setDaytime() {
 
 f32 dKy_celestial_orbit_z_ratio() {
     // ratio = cot(elevation): peak elevation is atan(1/ratio), so inverting gives the tilt that
-    // lands the arc at the requested height. 59.036 degrees reproduces vanilla's 48000/80000
-    // exactly, which is why that is the default rather than a round number.
+    // lands the arc at the requested height. The 59.036 default is not a round number because it
+    // reproduces vanilla's 48000/80000 to six decimals (0.600006). docs/sun-elevation.md.
     const f32 elevation = std::clamp(
         dusk::getSettings().game.celestialNoonElevation.getValue(), 1.0f, 90.0f);
     const f32 radians = elevation * (M_PI / 180.0f);

@@ -18,15 +18,27 @@ authorization flow looping back to "there was no approval").
 
 ## Read this first if you have no context
 
-This is a **three-repo** project. Start at
-**`docs/kankyo-remix.md` → "Picking this up cold"** — it is written for
-exactly this situation and links everything else.
+This is a **three-repo** project. Start at **`docs/kankyo-remix.md`** — its
+"Start here" table routes to everything else.
 
 | Repo | Role | Its docs |
 | :-- | :-- | :-- |
-| `automata-rtx/dusklight-ao` | the game (Twilight Princess decomp/port) | `docs/kankyo-remix.md`, `docs/dx9-fixed-function.md`, `docs/kankyo-fog.md`, `docs/sun-elevation.md` |
-| `automata-rtx/aurora-ao` | GX→D3D9 backend, vendored at `extern/aurora` | `docs/dx9/` (README first, then `progress.md`) |
+| `automata-rtx/dusklight-ao` | the game (Twilight Princess decomp/port) | see the table below |
+| `automata-rtx/aurora-ao` | GX→D3D9 backend, vendored at `extern/aurora` | `docs/dx9/` (README first; `remix-material-interface.md` for anything about materials or colour) |
 | `automata-rtx/dxvk-remix` | the RTX Remix fork | `documentation/DusklightAtmosphere.md`, `documentation/DusklightOverlay.md` |
+
+This repo's Remix documents are split by volatility, so a session loads only
+what it needs:
+
+| File | Contents | Changes when |
+| :-- | :-- | :-- |
+| `docs/kankyo-remix.md` | the design: how kankyo works and what we drive with it | the design changes |
+| `docs/remix-open-issues.md` | what is broken, what is untested | every session |
+| `docs/remix-test-playbook.md` | how to run a test session | a test is added |
+| `docs/remix-history.md` | **unmaintained archive.** Last resort only — stale status, superseded plans, one wrong diagnosis | never |
+| `docs/kankyo-fog.md` | fog, game side | rarely |
+| `docs/dx9-fixed-function.md` | how to set the game up under Remix, and the `rtx.conf` | settings change |
+| `docs/sun-elevation.md` | the sun/moon orbit | rarely |
 
 ## Branches — ALL THREE repos use the same structure
 
@@ -41,39 +53,113 @@ exactly this situation and links everything else.
   by merging/cherry-picking **into** `Fixed-Function-dev`. Neither is otherwise
   related to the FF DX9 work.
 
-**The auto-mirror authorization was REVOKED by the owner on 2026-07-29.**
-Earlier revisions of this file told a session to push its `claude/*` branch and
-then immediately mirror it to `Fixed-Function-dev` without being asked. **Do not
-do that any more.** The owner merges to `Fixed-Function-dev` themselves, at
-milestones they choose:
+**Push only to your session branch.** The owner merges to `Fixed-Function-dev`
+themselves, at milestones they choose. (An auto-mirror rule existed until
+2026-07-29 and was revoked.)
 
 ```
 git push -u origin <session-branch>        # yes
 git push origin HEAD:Fixed-Function-dev    # NO - the owner does this
 ```
 
-Push only to the session branch. If a session branch is about to be deleted and
-its work is not yet merged, **say so and stop** rather than mirroring it.
-
-**The containment check survives the revocation, and matters more because of
-it.** Before anyone deletes a branch:
-`git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
-This has already caught a near-miss: dxvk-remix's `Fixed-Function-dev` was
-**19 commits behind** its `claude/*` branch, so deleting that branch would have
-destroyed the entire atmosphere, overlay, warp and clock work. With auto-mirror
-off, that gap is now the *normal* state between milestones rather than an
-anomaly — so the check is no longer a formality.
+If a session branch is about to be deleted and its work is not yet merged,
+**say so and stop** rather than mirroring it.
 
 **Before anyone deletes a branch, verify it is contained:**
 `git rev-list --count origin/Fixed-Function-dev..origin/<branch>` must be `0`.
 This has already caught a near-miss: dxvk-remix's `Fixed-Function-dev` was
-**19 commits behind** its `claude/*` branch, so deleting that branch would
-have destroyed the entire atmosphere, overlay, warp and clock work.
+**19 commits behind** its `claude/*` branch, so deleting it would have destroyed
+the entire atmosphere, overlay, warp and clock work. A non-zero count is the
+*normal* state between milestones, so this is not a formality.
 
 **`claude/thin-gbuffer-authored-normals-wgqupt`** (dusklight + aurora) is
 **unrelated, unmerged work — 15 commits in neither `main` nor
 `Fixed-Function-dev`.** Do not delete it and do not merge it into this
 lineage without being asked.
+
+## What the D3D9 renderer is for — read this before proposing a fix
+
+**The raw fixed-function D3D9 image is never shown to a player.** It exists so
+Remix's DX9→Vulkan translation picks the scene up automatically — geometry,
+transforms, textures, most of a frame, for free. **Remix's renderer is the
+product; D3D9 is the feed.**
+
+So:
+
+- **Fixed-function limits are not the ceiling.** Where the D3D9 stream cannot
+  carry something faithfully enough to reach Remix, implement it **in Remix** —
+  Remix API or a fork change — rather than contorting D3D9 to approximate it.
+  All three repos are ours.
+- **"Raw D3D9 stays correct" is not a design goal.** It is occasionally a handy
+  safety property, never a reason to reject an approach. Documents written
+  before 2026-08-04 sometimes treat it as a requirement; they are wrong and are
+  being corrected as they are touched.
+
+**Two exceptions still have to rasterize correctly:** the **HUD** (Remix
+rasterizes UI draws rather than path-tracing them) and **alpha** (Remix reads
+the stage's alpha to build opacity and the alpha test).
+
+Full statement: `aurora-ao/docs/dx9/remix-material-interface.md` §0.
+
+## How this project works — read before proposing a fix
+
+Five rules. They exist because each was learned the expensive way, and following
+them is worth more than any individual fix.
+
+### 1. Translate, don't tag
+
+Every Remix project the world over works by hashing textures and hand-authoring
+replacements, because the game is a closed box. **All three of our repos are
+ours.** We can read the game's intent at the source and hand it to the renderer
+directly.
+
+So the default answer to "how do we make Remix understand X" is *translate the
+game state*, not *tag the asset*. Tagging gives one answer per texture; this
+game reuses textures across contexts constantly, so a tag is wrong somewhere
+almost by construction. Translation is per-draw and is right everywhere.
+
+### 2. A question we would have to ask the owner is a defect in the logging
+
+The owner should not be the diagnostic instrument. Asking them to describe a
+colour, count an artifact, or judge whether something looks "too dark" produces
+answers that are honest and unusable — and it wastes a scarce test window.
+
+**The target loop is: they play, they send a log, we know.** If a question
+cannot be answered from a log, the correct response is to add the log line, not
+to ask the question. Design instrumentation before designing the fix.
+
+Corollary: **logs must be bounded and self-describing.** One line per distinct
+thing, capped, with a truncation notice when the cap is hit, and enum names
+spelled out so a reader without the source can follow. A log nobody can read is
+the same as no log; a log that fills a disk is worse.
+
+### 3. Do not write inference as finding
+
+This project has three times recorded a plausible mechanism as a verified cause.
+One of those shipped and turned out to be a no-op, and the documents kept saying
+"FIXED" for a week.
+
+State what you read, cite where, and mark inference as inference. A document
+that says "unknown" is more valuable than one that says something confident and
+wrong, because the second one stops the next person looking.
+
+### 4. A fix that cannot be observed is a guess
+
+Before shipping a change to a system with no instrumentation, add the
+instrumentation. A change that alters behaviour *and* reports on itself is
+fine — bundling saves a test window — but a change that alters behaviour and
+stays silent cannot be evaluated except by looking at pixels, which is how this
+project lost three rounds.
+
+Say plainly what the regression signature of a change is, so it can be
+recognised rather than discovered.
+
+### 5. Say what was verified and what was not
+
+"Compiles" and "is correct" are different claims. So are "CI green" and "tested
+in game". Every doc entry and every hand-off should make clear which one it is.
+There is no penalty here for saying a thing is untested; there is a real cost to
+implying it was tested.
 
 ## The one coupling that has cost evenings
 
@@ -94,9 +180,12 @@ git add extern/aurora          # from the dusklight root
 git submodule status           # verify before committing
 ```
 
-Merge aurora dev → `Fixed-Function` **before** dusklight dev →
-`Fixed-Function`, so the pinned aurora SHA is reachable from aurora's
-`Fixed-Function`.
+**Aurora is always merged first.** Whenever a merge carries a submodule bump,
+merge aurora into the target branch **before** dusklight, so the pinned aurora
+SHA is reachable from that branch rather than only from a session branch that
+may later be deleted. This applies to `Fixed-Function-dev` and `Fixed-Function`
+alike — a dusklight branch pinning a SHA that lives only on a `claude/*` branch
+still builds today and breaks the moment that branch is cleaned up.
 
 ## Other standing facts
 

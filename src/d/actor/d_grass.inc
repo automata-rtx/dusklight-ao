@@ -771,7 +771,7 @@ void dGrass_packet_c::draw() {
         // Drawing each blade from its display list with its own position matrix gives static
         // geometry plus a transform, so the hash is stable and every blade is its own instance.
         // It costs exactly what the batching saves, which is why it is a switch and not the
-        // default.
+        // default. Current status: docs/remix-open-issues.md issue 7.
         const bool perBlade = dusk::getSettings().game.remixPerBladeGrass.getValue();
         if (perBlade) {
             GXSetVtxDescv(l_vtxDescList);
