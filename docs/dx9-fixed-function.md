@@ -154,23 +154,23 @@ rtx.dusklight.game.hideSkyBillboards = True
 # red-to-orange). CI-green, untested in game as of 2026-08-04.
 #rtx.dusklight.rampMaterials = False
 
-# Self-illumination. GX has no emissive term, so aurora scores three weak
-# signals per draw - lighting disabled (0.50), colour from a register rather
-# than per-vertex (0.25), a TEV stage scaled past what the console could
-# display (0.25). Do NOT expect the score to identify emitters: the Goron Mines
-# lava is lit=1 AND scores 0.00 on all three, measured twice. So the threshold
-# defaults to 0 and three colour gates are the real rule - requireAuthoredColor
-# (colour came entirely from TEV constants, not the vertex stream), minLuma and
-# minChroma. Raise the threshold toward 0.50 if too much of the world glows.
-# colorSource decides what an accepted surface glows: 0 reconstructed albedo,
-# 1 albedo texture through its own op (default), 2 flat presented colour.
-# All live in the F1 overlay, and every candidate is logged (dusklight.emis)
-# accepted or rejected. Rev 3 is CI-green and untested in game as of 2026-08-05.
-#rtx.dusklight.emissive.enable              = True
-#rtx.dusklight.emissive.colorSource         = 1
-#rtx.dusklight.emissive.threshold           = 0.0
-#rtx.dusklight.emissive.requireAuthoredColor = True
-#rtx.dusklight.emissive.intensity           = 2.0
+# Self-illumination. GX has no emissive term and no single GX fact identifies an
+# emitter, so this is a conjunction rather than a score. A surface emits when
+# its TEV colour program never reads the rasterized channel (self-lit - which is
+# NOT the same as the channel's lighting flag being off; the Goron Mines lava
+# has lighting on and never reads it), AND it has a colour of its own authored
+# in GX constants rather than being a bare texture pass-through, AND that colour
+# reads as a glow - saturated OR near-white-hot. Replayed over a measured Goron
+# Mines session that is 6 materials of 77, every lava and fire surface, nothing
+# else. Nothing here needs tuning; intensity is the one dial. colorSource picks
+# what an emitter glows: 0 reconstructed albedo (default - the two-colour ramp,
+# so the texture drives the colour), 1 albedo texture through its own op,
+# 2 flat presented colour. All live in the F1 overlay, and every candidate is
+# logged (dusklight.emis) accepted or rejected with the fact that decided it.
+# Rev 4 is CI-green and untested in game as of 2026-08-05.
+#rtx.dusklight.emissive.enable      = True
+#rtx.dusklight.emissive.colorSource = 0
+#rtx.dusklight.emissive.intensity   = 2.0
 
 # Material translation report (Remix half; aurora's half is always on). Turn it
 # on for any session where a surface is the wrong colour - it prints what each

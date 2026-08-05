@@ -63,13 +63,10 @@ rtx.dusklight.matrep = True
 
 # Self-illumination. On by default with its own bounded log; these are here so
 # a session can start from a known state rather than whatever was last saved.
-# colorSource is the one to move this session (1 = albedo texture, the look you
-# reported as right; 0 = reconstructed albedo, the untested one). threshold is 0
-# because the main lava scores 0.00 - raise it if too much of the world glows.
-rtx.dusklight.emissive.enable      = True
-rtx.dusklight.emissive.log         = True
-rtx.dusklight.emissive.colorSource = 1
-rtx.dusklight.emissive.threshold   = 0.0
+# Nothing else needs setting: the rule is structural and the defaults are the
+# intended configuration. Emissive Intensity in the overlay is the one dial.
+rtx.dusklight.emissive.enable = True
+rtx.dusklight.emissive.log    = True
 
 # Two-colour ramps, reproduced exactly in the fork's shader. On by default;
 # stated here so the session starts on rather than on whatever was last saved.
@@ -139,39 +136,34 @@ a coloured floor gets `texture + colour`, a black floor keeps `texture × colour
 | Surfaces washed out or too bright | The `add` branch overshoots on that material — expected direction if the choice is wrong. |
 | Foliage becomes solid quads, or grass vanishes | Nothing in the colour path touches opacity, so this should be impossible *here* — but 0e does change alpha this round, so it is the suspect. Most important thing in the session if it happens. |
 
-#### 0b. Self-illumination — third attempt, and the first one aimed at the right surface
+#### 0b. Self-illumination — now a rule with nothing to dial
 
-Two sessions of evidence, and the second disproved the design rather than
-mistuning it: **the main lava pool scores 0.00 on every GX signal we have.** It
-was never an emitter at any threshold, which is exactly why intensity did
-nothing and why the toggle that used to help had stopped applying.
+Three revisions of this cut on a weighted score and a threshold. All three
+missed the Goron Mines lava, which scores 0.00 on every signal that score is
+built from. The rule is now structural instead:
 
-So the threshold now defaults to **0** and three colour gates are the rule.
-There is also a control back for what a glowing surface actually glows — GX
-records nothing about that, so it is a choice, and the previous build made it
-for you and made it wrong.
+> A surface emits when its GX colour program **never reads the lit channel**,
+> it has a **colour of its own** (authored in GX constants — not the vertex
+> stream, not a bare texture pass-through), and that colour **reads as a glow**.
 
-Controls are live in **F1 → Dusklight Remix → Materials**:
+Replayed over your last log that is **6 materials of 77** — every lava and fire
+surface in the room, plus one warm glow texture, and nothing else.
+
+**So there is nothing to set up. Walk into the mines and look.**
 
 | Control | Do this |
 | :-- | :-- |
-| **Emitted Colour** | **This is the one that matters.** It defaults to *Albedo Texture*, which is what "Emit The Texture" did last session and what you said looked right. Try *Reconstructed Albedo* against it on the lava — that is the untested one, and it is the one that should carry the ramp's red-to-orange into the glow. *Presented Colour* is the flat look you disliked; it is there as a baseline, not a candidate. |
-| Evidence Needed | Leave at 0. If too much of the world glows, raise it — 0.25 and 0.50 are the meaningful steps. |
-| Emissive Intensity | Should now do something. If it does not, the surface you are looking at is not emissive, and the log says so. |
-| Require Authored Colour | Leave on. Turn it off only if something that clearly glows still does not, to see whether this is what is holding it back. |
-| Minimum Brightness / Saturation | Lower if something that should glow does not. |
-
-**One useful property this round:** moving any control on that page makes every
-candidate report to the log again. So a pass at each Emitted Colour setting
-leaves a complete record of what each one decided — you do not have to describe
-the difference, only say which you preferred.
+| Nothing | Default is the intended configuration. Just look at the lava. |
+| Emissive Intensity | The one dial. If the lava glows but does not light the room, raise it; if it blows out, lower it. |
+| Emitted Colour | Leave on *Reconstructed Albedo*. It is the two-colour ramp — `lerp(FF0000, FFFE63, texture)` — so the texture drives the colour. The other two are there to compare against, not to use. |
+| Emissive Surfaces Enabled | Untick for an A/B against no emission at all. |
 
 | What you see | Reading |
 | :-- | :-- |
-| Lava glows red-to-orange with visible crust | Worked. Say which Emitted Colour setting you had. |
-| Lava glows one flat colour | The ramp is not reaching it; `ramp=` and `rampOther=` on the `dusklight.emis` line say so directly this time. |
-| Lava still not glowing at all | The gates rejected it. The line carries `authored=`, `luma`, `chroma` and the thresholds, so it says which gate and by how much. |
-| Too much of the world glowing | Expected direction for threshold 0. Raise Evidence Needed; it is one slider. |
+| Lava glows red-to-orange with visible crust, and lights the room | Worked. |
+| Lava glows but looks flat, one colour | The ramp is not reaching it — `ramp=` and `rampOther=` on the `dusklight.emis` line say so directly. |
+| Lava does not glow | The line carries `selfLit=`, `authored=` and the colour numbers, so it says which of the three facts failed. |
+| Something obviously wrong glowing | Roughly where is enough; every accepted material is named in the log. |
 
 #### 0c. What the logs answer by themselves, and what they still do not
 
