@@ -63,10 +63,13 @@ rtx.dusklight.matrep = True
 
 # Self-illumination. On by default with its own bounded log; these are here so
 # a session can start from a known state rather than whatever was last saved.
-# threshold is the one to move: 0.70 is conservative, 0.20 is wide.
-rtx.dusklight.emissive.enable    = True
-rtx.dusklight.emissive.log       = True
-rtx.dusklight.emissive.threshold = 0.70
+# colorSource is the one to move this session (1 = albedo texture, the look you
+# reported as right; 0 = reconstructed albedo, the untested one). threshold is 0
+# because the main lava scores 0.00 - raise it if too much of the world glows.
+rtx.dusklight.emissive.enable      = True
+rtx.dusklight.emissive.log         = True
+rtx.dusklight.emissive.colorSource = 1
+rtx.dusklight.emissive.threshold   = 0.0
 
 # Two-colour ramps, reproduced exactly in the fork's shader. On by default;
 # stated here so the session starts on rather than on whatever was last saved.
@@ -79,7 +82,7 @@ rtx.dusklight.rampMaterials = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
-### 0. Materials — colour, emission, vertex colour (2026-08-04, UNTESTED IN GAME)
+### 0. Materials — colour, emission, vertex colour (2026-08-05, UNTESTED IN GAME)
 
 **This is the section to run.** Everything below it has already been run. Four
 changes land together in the material path, so one walk covers all of them:
@@ -136,37 +139,60 @@ a coloured floor gets `texture + colour`, a black floor keeps `texture × colour
 | Surfaces washed out or too bright | The `add` branch overshoots on that material — expected direction if the choice is wrong. |
 | Foliage becomes solid quads, or grass vanishes | Nothing in the colour path touches opacity, so this should be impossible *here* — but 0e does change alpha this round, so it is the suspect. Most important thing in the session if it happens. |
 
-#### 0b. Self-illumination — second attempt
+#### 0b. Self-illumination — third attempt, and the first one aimed at the right surface
 
-The first attempt was tested in the Goron Mines and caught **one** material,
-which was not lava. The rule required GX lighting to be off; the lava has it on.
-It now scores evidence instead, and the cut is a slider.
+Two sessions of evidence, and the second disproved the design rather than
+mistuning it: **the main lava pool scores 0.00 on every GX signal we have.** It
+was never an emitter at any threshold, which is exactly why intensity did
+nothing and why the toggle that used to help had stopped applying.
+
+So the threshold now defaults to **0** and three colour gates are the rule.
+There is also a control back for what a glowing surface actually glows — GX
+records nothing about that, so it is a choice, and the previous build made it
+for you and made it wrong.
 
 Controls are live in **F1 → Dusklight Remix → Materials**:
 
 | Control | Do this |
 | :-- | :-- |
-| Evidence Needed | **Start at the 0.70 default, then try 0.20.** That admits the "brighter than the console could display" materials on their own, which is the most promising signal for lava. |
-| Emissive Intensity | Raise it if something glows but does not light the room. |
+| **Emitted Colour** | **This is the one that matters.** It defaults to *Albedo Texture*, which is what "Emit The Texture" did last session and what you said looked right. Try *Reconstructed Albedo* against it on the lava — that is the untested one, and it is the one that should carry the ramp's red-to-orange into the glow. *Presented Colour* is the flat look you disliked; it is there as a baseline, not a candidate. |
+| Evidence Needed | Leave at 0. If too much of the world glows, raise it — 0.25 and 0.50 are the meaningful steps. |
+| Emissive Intensity | Should now do something. If it does not, the surface you are looking at is not emissive, and the log says so. |
+| Require Authored Colour | Leave on. Turn it off only if something that clearly glows still does not, to see whether this is what is holding it back. |
 | Minimum Brightness / Saturation | Lower if something that should glow does not. |
 
-A pass at each of 0.70 and 0.20, looking at the lava and the geysers, is worth
-more than anything else in this section — the two logs will then bracket the
-answer.
+**One useful property this round:** moving any control on that page makes every
+candidate report to the log again. So a pass at each Emitted Colour setting
+leaves a complete record of what each one decided — you do not have to describe
+the difference, only say which you preferred.
 
-#### 0c. What the logs now answer by themselves
+| What you see | Reading |
+| :-- | :-- |
+| Lava glows red-to-orange with visible crust | Worked. Say which Emitted Colour setting you had. |
+| Lava glows one flat colour | The ramp is not reaching it; `ramp=` and `rampOther=` on the `dusklight.emis` line say so directly this time. |
+| Lava still not glowing at all | The gates rejected it. The line carries `authored=`, `luma`, `chroma` and the thresholds, so it says which gate and by how much. |
+| Too much of the world glowing | Expected direction for threshold 0. Raise Evidence Needed; it is one slider. |
 
-Every material line carries `grp=`, the name of the game code that drew it. That
-means **"which one is the lava?" no longer needs you to describe anything** —
-it is in the log. Nothing to do here; it is noted so you know that question is
-retired.
+#### 0c. What the logs answer by themselves, and what they still do not
 
-Two things still worth a sentence if you notice them:
+**`grp=` does not work and has been removed.** It printed `-` for every material
+in every session — `fpcDw_Execute` is where a draw is *scheduled*, not issued.
+So "which one is the lava?" is still not answered by the log directly; it is
+inferred from texture size, format and ramp endpoints. This is the main reason
+the grey geysers are still unexplained.
 
-- **Frame time noticeably worse than last session.** The `grp=` labelling costs
-  a small amount per draw and is the first suspect.
-- **Anything glowing that obviously should not.** The accepted materials are all
-  named in the log, so "roughly where" is enough.
+What *is* answered now, without you describing anything:
+
+- every emissive candidate's score, colour, authored flag, ramp endpoints and
+  which gate rejected it
+- what changed when you moved a control, because moving one re-reports
+  everything
+- how many colourless candidates were skipped, as a count rather than 90 lines
+  that used to eat the whole log before you reached the mines
+
+Still worth a sentence if you notice it: **anything glowing that obviously
+should not** — roughly where is enough, since the accepted materials are all
+named in the log.
 
 #### 0d. Vertex colour — now forwarded selectively, and worth watching
 

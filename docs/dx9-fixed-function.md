@@ -157,23 +157,28 @@ rtx.dusklight.game.hideSkyBillboards = True
 # Self-illumination. GX has no emissive term, so aurora scores three weak
 # signals per draw - lighting disabled (0.50), colour from a register rather
 # than per-vertex (0.25), a TEV stage scaled past what the console could
-# display (0.25) - and the fork cuts at a threshold. 0.70 admits anything unlit
-# plus one other fact; drop to 0.20 to admit the over-range materials on their
-# own, which is the setting to try when something that clearly glows does not.
-# Do NOT expect "unlit" to identify emitters on its own: the Goron Mines lava
-# is lit=1, which is why the first attempt missed it. Live in the F1 overlay,
-# and every candidate is logged (dusklight.emis) accepted or rejected.
-# Rev 2 is CI-green and untested in game as of 2026-08-04.
-#rtx.dusklight.emissive.enable    = True
-#rtx.dusklight.emissive.threshold = 0.70
-#rtx.dusklight.emissive.intensity = 2.0
+# display (0.25). Do NOT expect the score to identify emitters: the Goron Mines
+# lava is lit=1 AND scores 0.00 on all three, measured twice. So the threshold
+# defaults to 0 and three colour gates are the real rule - requireAuthoredColor
+# (colour came entirely from TEV constants, not the vertex stream), minLuma and
+# minChroma. Raise the threshold toward 0.50 if too much of the world glows.
+# colorSource decides what an accepted surface glows: 0 reconstructed albedo,
+# 1 albedo texture through its own op (default), 2 flat presented colour.
+# All live in the F1 overlay, and every candidate is logged (dusklight.emis)
+# accepted or rejected. Rev 3 is CI-green and untested in game as of 2026-08-05.
+#rtx.dusklight.emissive.enable              = True
+#rtx.dusklight.emissive.colorSource         = 1
+#rtx.dusklight.emissive.threshold           = 0.0
+#rtx.dusklight.emissive.requireAuthoredColor = True
+#rtx.dusklight.emissive.intensity           = 2.0
 
 # Material translation report (Remix half; aurora's half is always on). Turn it
 # on for any session where a surface is the wrong colour - it prints what each
 # material became on the way through D3D9, so a log answers the question instead
-# of someone describing pixels. Every line carries grp=, the name of the game
-# code that drew the material, so "which of these is the thing on screen" is a
-# question a log now answers. Bounded, and free when off.
+# of someone describing pixels. Bounded, and free when off. Note that grp= does
+# NOT work - it prints "-" for every material, because the hook was at a draw
+# scheduling point rather than an issuing one - so identifying a material still
+# means reading its texture size, format and ramp endpoints.
 # Format: extern/aurora/docs/dx9/material-report.md
 #rtx.dusklight.matrep = True
 
