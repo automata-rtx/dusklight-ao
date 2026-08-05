@@ -8,11 +8,9 @@
 #include "f_pc/f_pc_leaf.h"
 #include "f_pc/f_pc_node.h"
 #include "f_pc/f_pc_pause.h"
-#include "f_pc/f_pc_name.h"
 #include "dusk/frame_interpolation.h"
 #include <cstdio>
 #include "dusk/logging.h"
-#include <dolphin/gx/GXAurora.h>
 
 int fpcDw_Execute(base_process_class* i_proc) {
     if (!fpcPause_IsEnable(i_proc, 2)) {
@@ -28,18 +26,16 @@ int fpcDw_Execute(base_process_class* i_proc) {
         }
 
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
-        // Name the draw for the renderer. This is the single funnel every process draw passes
-        // through, so labelling it here is what puts grp=<proc> on every material in the report -
-        // the field that makes "which of these is the lava?" a log question instead of a guess.
+        // NOTE: a GXPushDebugGroup here does NOT label the draw. Verified
+        // 2026-08-04: every material in a Goron Mines session reported grp=-.
+        // This is the funnel every process draw is *scheduled* through, not the
+        // one GX commands are *issued* through - actor draw methods call
+        // mDoExt_modelEntryDL, which enters the model into a J3D draw buffer,
+        // and the FIFO writes happen later when dDlst_list_c walks that buffer.
+        // By then the group has been popped. Labelling has to happen where the
+        // draw buffer is executed, and the label has to reach there with it.
         // extern/aurora/docs/dx9/material-report.md.
-        // GetProcName returns null for an id outside its table, so never pass it straight
-        // through; push/pop must stay balanced either way.
-        IF_DUSK({
-            const char* procName = GetProcName(i_proc->profname);
-            GXPushDebugGroup(procName != nullptr ? procName : "proc?");
-        });
         ret = draw_func(i_proc);
-        IF_DUSK(GXPopDebugGroup());
         fpcLy_SetCurrentLayer(save_layer);
         return ret;
     }
