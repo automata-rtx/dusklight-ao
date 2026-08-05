@@ -79,6 +79,7 @@ UserSettings g_userSettings = {
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
+        .remixTextureReplacements {"game.remixTextureReplacements", true},
         .freezeTime {"game.freezeTime", false},
         // Where the clock would go if asked; timeCommit is what asks. Splitting the two means a
         // value sitting in a config file is inert, and that requesting the same time twice works
@@ -306,6 +307,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
+    Register(g_userSettings.game.remixTextureReplacements);
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
     Register(g_userSettings.game.timeCommit);

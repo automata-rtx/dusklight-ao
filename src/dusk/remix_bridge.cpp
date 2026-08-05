@@ -22,8 +22,15 @@
 
 #include <iterator>
 #include <string>
+#include <vector>
 
+#include <cctype>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <system_error>
+
+#include <aurora/texture.hpp>
 
 #if defined(_WIN32)
 #define DUSK_REMIX_BRIDGE_SUPPORTED 1
@@ -356,6 +363,158 @@ bool ensureDeviceRegistered() {
 
     s_celestial.deviceRegistered = true;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// HD texture replacements
+//
+// The pack is handed to Remix as materials rather than being uploaded through D3D9, so the
+// game's own textures stay what Remix hashes - which is what keeps texture tagging, rtx.conf
+// categories and USD bindings working unchanged whether or not a pack is installed. Aurora
+// tags each draw with the replacement's index; the fork joins the two.
+//
+// remixapi_CreateMaterial is used purely as a file loader here. Its material is never bound.
+// ---------------------------------------------------------------------------
+
+// Shared with the fork (rtx_dusklight_texrep.h). The low bits are aurora's 1-based index.
+constexpr uint64_t kTexRepHandleBase = 0xD05C000000000000ull;
+
+// Creating a material reads the DDS header synchronously on Remix's CS thread, so a large pack
+// created in one frame is a visible hitch at launch. Spread it out instead; the fork falls back
+// to the game's own texture for anything not resident yet, so a slow ramp costs fidelity for a
+// moment rather than correctness.
+constexpr size_t kTexRepCreationsPerFrame = 16;
+
+std::vector<aurora::texture::ReplacementDescriptor> s_texRepQueue;
+size_t s_texRepNext = 0;
+bool s_texRepEnumerated = false;
+uint32_t s_texRepCreated = 0;
+uint32_t s_texRepSkipped = 0;
+uint32_t s_texRepSkipLogged = 0;
+void* s_texRepDevice = nullptr;
+std::vector<remixapi_MaterialHandle> s_texRepHandles;
+
+bool endsWithNoCase(const std::string& value, const char* suffix) {
+    const size_t n = std::strlen(suffix);
+    if (value.size() < n) {
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        const unsigned char a = static_cast<unsigned char>(value[value.size() - n + i]);
+        const unsigned char b = static_cast<unsigned char>(suffix[i]);
+        if (std::tolower(a) != std::tolower(b)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void destroyTextureReplacements() {
+    if (s_interface.DestroyMaterial != nullptr) {
+        for (remixapi_MaterialHandle handle : s_texRepHandles) {
+            s_interface.DestroyMaterial(handle);
+        }
+    }
+    s_texRepHandles.clear();
+    s_texRepQueue.clear();
+    s_texRepNext = 0;
+    s_texRepEnumerated = false;
+    s_texRepCreated = 0;
+    s_texRepSkipped = 0;
+    s_texRepSkipLogged = 0;
+}
+
+// Called every frame once the device is registered. Does nothing after the queue drains.
+void updateTextureReplacements() {
+    if (!getSettings().game.remixTextureReplacements.getValue() ||
+        s_interface.CreateMaterial == nullptr) {
+        return;
+    }
+
+    // Aurora recreates the D3D9 device on window resize rather than resetting it, and external
+    // materials belong to the device's scene state. Nothing in the fork establishes that they
+    // survive a swap, so re-create them rather than assume - the lights code makes the same
+    // assumption for the same reason.
+    void* device = aurora_dx9_get_device();
+    if (device != s_texRepDevice) {
+        if (s_texRepDevice != nullptr) {
+            BridgeLog.info("texrep: D3D9 device changed, re-creating {} material(s)", s_texRepCreated);
+        }
+        destroyTextureReplacements();
+        s_texRepDevice = device;
+    }
+
+    if (!s_texRepEnumerated) {
+        s_texRepQueue = aurora::texture::enumerate_selected_replacements();
+        s_texRepEnumerated = true;
+        BridgeLog.info("texrep: {} replacement(s) selected by the registry", s_texRepQueue.size());
+    }
+
+    size_t createdThisFrame = 0;
+    while (s_texRepNext < s_texRepQueue.size() && createdThisFrame < kTexRepCreationsPerFrame) {
+        const auto& entry = s_texRepQueue[s_texRepNext++];
+
+        // Remix's asset loader accepts .dds only, while aurora's registry also accepts .png.
+        // Skipping loudly here beats letting the fork log a per-draw failure for each one.
+        if (entry.path.empty() || !endsWithNoCase(entry.path, ".dds")) {
+            ++s_texRepSkipped;
+            if (s_texRepSkipLogged < 32) {
+                ++s_texRepSkipLogged;
+                BridgeLog.warn("texrep: skipping {} - Remix loads .dds only", entry.path);
+                if (s_texRepSkipLogged == 32) {
+                    BridgeLog.warn("texrep: further skip messages suppressed");
+                }
+            }
+            continue;
+        }
+
+        // The fork uses the path verbatim with no search-path resolution, so a relative path
+        // would resolve against the process working directory.
+        std::error_code ec;
+        const std::filesystem::path absolute = std::filesystem::absolute(
+            std::filesystem::path(reinterpret_cast<const char8_t*>(entry.path.c_str())), ec);
+        if (ec) {
+            ++s_texRepSkipped;
+            continue;
+        }
+        const std::wstring widePath = absolute.wstring();
+
+        // albedoTexture is on the base struct, but the OpaqueEXT chain is still required: the
+        // fork's makePreloadSource only collects texture paths inside an "is one of the three
+        // material extensions chained" branch and returns an empty set otherwise, so with no
+        // pNext the material is created with no textures at all. Chaining it also selects the
+        // Opaque MaterialData the fork then looks for. Its constants are left zeroed on
+        // purpose - this material is never bound, only read for its loaded albedo.
+        remixapi_MaterialInfoOpaqueEXT opaque = {};
+        opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+
+        remixapi_MaterialInfo info = {};
+        info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        info.pNext = &opaque;
+        info.hash = kTexRepHandleBase | static_cast<uint64_t>(entry.remixIndex);
+        info.albedoTexture = widePath.c_str();
+
+        remixapi_MaterialHandle handle = nullptr;
+        const remixapi_ErrorCode err = s_interface.CreateMaterial(&info, &handle);
+        if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
+            ++s_texRepSkipped;
+            if (s_texRepSkipLogged < 32) {
+                ++s_texRepSkipLogged;
+                BridgeLog.warn("texrep: CreateMaterial failed ({}) for {}", static_cast<int>(err),
+                               entry.path);
+            }
+            continue;
+        }
+
+        s_texRepHandles.push_back(handle);
+        ++s_texRepCreated;
+        ++createdThisFrame;
+    }
+
+    if (createdThisFrame > 0 && s_texRepNext >= s_texRepQueue.size()) {
+        BridgeLog.info("texrep: {} material(s) created, {} skipped, from {} selected",
+                       s_texRepCreated, s_texRepSkipped, s_texRepQueue.size());
+    }
 }
 
 // 0..1 ramp over `width` daytime units inside the window [begin, end].
@@ -1314,7 +1473,16 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "6");
+    push("rtx.dusklight.env.protocol", "7");
+    // HD texture pack state. Reported separately from the fork's own counters so "the game
+    // never handed it over" and "the fork ignored it" stay distinguishable - they look
+    // identical from the overlay otherwise.
+    push("rtx.dusklight.env.texrepEnabled",
+         formatBool(getSettings().game.remixTextureReplacements.getValue()));
+    push("rtx.dusklight.env.texrepEntries", std::to_string(s_texRepQueue.size()));
+    push("rtx.dusklight.env.texrepCreated", std::to_string(s_texRepCreated));
+    push("rtx.dusklight.env.texrepSkipped", std::to_string(s_texRepSkipped));
+
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1477,6 +1645,14 @@ void tick() {
 
     if (s_status != BridgeStatus::Active) {
         return;
+    }
+
+    // Hoisted out of the light features. It used to be called only from inside the sun and
+    // local-light blocks, so with both of those off - indoors, or with the options disabled -
+    // the device was never registered and every other API call failed with
+    // REMIX_DEVICE_WAS_NOT_REGISTERED. Texture replacements need it independently of lights.
+    if (ensureDeviceRegistered()) {
+        updateTextureReplacements();
     }
 
     // Settings that are not part of a light but still have to be reachable from Remix's tab,
