@@ -624,6 +624,11 @@ Added **2026-07-29**:
    op to it, so the glow was coming out as `colour + tFactor`, roughly double.
    The fork now sets the pre-image, and declines rather than glowing a wrong
    colour when the op cannot be inverted (`invertible=0` in the log).
+   **Superseded 2026-08-04 by testing:** a flat constant at any useful intensity
+   swamps the albedo — the lava read as "an almost solid red" with no crust — so
+   the glow is now the reconstructed albedo and the constant, the inversion and
+   the `useTextureColor` toggle are all gone. The lava also scores **0.25, on the
+   over-range signal alone**; `unlit` cannot catch it.
 
    **The instrument that ends the guessing: `grp=`.** The recurring blocker was
    never the rule, it was that nobody could tell which logged material was the
