@@ -626,6 +626,26 @@ Added **2026-07-29**:
    `FF0000` / `FF6432` / `FF6B00`) are the smaller pools and fire, not the main
    surface.
 
+   **The signal itself was wrong, and that is the actual root cause.** Rev 2
+   scored `colorChannelConfig[GX_COLOR0].lightingEnabled == false` — a statement
+   about the *channel*, not about whether the TEV program consumes it. The
+   lava's colour program is `cc=[C2, C1, TEXC, ZERO]` then a pass-through, with
+   **no raster input anywhere in it**: its colour is fixed regardless of the
+   lights, which is what self-lit means. Measured over 77 materials in the
+   2026-08-05 session — 45 have the channel flag off, 36 never read `RASC`, and
+   **10 have lighting on and still never read it**, the lava among them. It was
+   also wrong the other way: lighting off *with* `RASC` read and
+   `matSrc=GX_SRC_VTX` is baked room lighting (§7c) and scored the full 0.50.
+   Rev 3 scores "no TEV colour stage reads `GX_CC_RASC`/`RASA`" and reports
+   `ras=` next to `lit=` so the two can never again be read for each other.
+
+   **Replayed over that log, the shipped defaults accept 9 of 77 materials** —
+   all four lava and fire surfaces (`D572C706`, `1C95BA4B`, `9866CEA2`,
+   `40D45477`, `7E31CACC`) plus three browns. The one accepted material that
+   *does* read the raster channel is the likeliest false positive, so raising
+   the threshold to 0.50 drops exactly it. Rejections: 30 never evaluated, 21
+   too grey, 15 vertex-stream colour, 2 too dark.
+
    **Rev 3 — the score is no longer the rule.**
 
    - `isCandidate` used to test `score > 0`, a hidden second threshold no
@@ -639,10 +659,13 @@ Added **2026-07-29**:
      room lighting), `minLuma` 0.25, `minChroma` 0.20.
    - **`rtx.dusklight.emissive.colorSource`** decides what an accepted surface
      glows, because GX records nothing about it and rev 2 hard-coded the wrong
-     answer. Reconstructed albedo / **albedo texture through its own op
-     (default)** / flat presented colour. The middle one is what the owner
-     reported as right for both the lava and the heart pickup on 2026-08-04,
-     and rev 2 deleted it.
+     answer. **Reconstructed albedo (default)** / albedo texture through its own
+     op / flat presented colour. The default is the ramp: on the lava that is
+     `lerp(FF0000, FFFE63, texture)`, so the texture drives the colour and
+     neither overpowers the other. "Emit The Texture" was preferred on
+     2026-08-04 only because the albedo *was* that same single-op approximation
+     then — with the exact combiner in place it emits `texture + red`, which
+     pins the red channel and washes the bright end to white.
 
    **What rev 2 got wrong.** It removed the `useTextureColor` toggle on the
    argument that a flat constant swamps the albedo so the reconstructed albedo
