@@ -25,8 +25,8 @@ implement it in the fork rather than to approximate it in D3D9. Full statement:
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
 configs, **including everything landed on 2026-08-04**: the two-colour ramp,
-self-illumination scoring, `grp=` draw labelling, selective vertex colour, and
-API asset capture/replacement. The aurora half is additionally
+self-illumination scoring, selective vertex colour, and API asset
+capture/replacement. The aurora half is additionally
 **syntax-checked** in both the d3d9-on and d3d9-off configs; the fork half has
 no cross-compilable harness, so its CI run is the only syntax check it gets.
 **Nothing landed on 2026-08-04 has been tested in game.**
@@ -76,10 +76,20 @@ as black quads (issue 11), the ambient grade, and the Controls tab.
 - **HUD fade-in alpha** (issue 12) — the fading constant now rides TFACTOR's
   alpha instead of being discarded.
 
-**Self-illumination (issue 9) was tested 2026-08-04 and did not catch the lava**
-— the rule required GX lighting to be off and the lava has it on. Rev 2 replaces
-the predicate with a score, and adds `grp=` to the material report so "which
-material is the lava?" stops being a guess. CI-green, untested in game.
+**Self-illumination (issue 9): rev 2 was tested 2026-08-04 and works, at a
+threshold of 0.25.** The lava scores 0.25 on the over-range signal alone — GX
+lighting is *on*, so `unlit` can never catch it. Rev 3 then fixed what the same
+session exposed: a flat glow colour swamps the albedo ("an almost solid red"),
+so emission now takes the reconstructed albedo. CI-green, untested in game.
+
+**`grp=` does not work and has been removed.** It was meant to end "which of
+these logged materials is the thing on screen?", and every material in that
+session reported `grp=-`. The push was in `fpcDw_Execute`, which is where a
+process draw is *scheduled*, not where GX commands are *issued* — actor draw
+methods enter models into a J3D draw buffer and `dDlst_list_c` walks it later.
+Doing it properly needs the label carried to the draw buffer's execution.
+**So identifying a material is still a guess**, which is why the lava geysers
+remain unexplained.
 
 #### Confirmed working in-game
 
