@@ -363,8 +363,15 @@ void emitReport() {
 
     if (s_reportOverflowed) {
         Log.info("  report capped at {} entries; earlier effects are listed, later ones were "
-                 "dropped", kMaxReportEntries);
+                 "dropped. Ask again - the memory is cleared below, so the next report covers "
+                 "what is seen from now on", kMaxReportEntries);
     }
+
+    // Start the memory again. Without this the table fills once and then caps for the rest of
+    // the session, so the effect you walked up to specifically to ask about is the one missing
+    // from the answer. Each request now covers everything seen since the last one.
+    s_reportCount = 0;
+    s_reportOverflowed = false;
 }
 
 float classOffset(Class cls, const Params& params) {
@@ -482,10 +489,6 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             const uint16_t effectId = sweptId;
             const Class cls = cachedClass(effectId);
 
-            if (cls == Class::Burst && !params.bursts) {
-                continue;
-            }
-
             GXColor prmByte;
             GXColor envByte;
             GXColor globalPrm;
@@ -516,6 +519,14 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             noteForReport(effectId, shape, prm, env, cls, additive, glow, false);
 
             if (!additive || !glow) {
+                continue;
+            }
+
+            // AFTER the report, deliberately. This exclusion is the one the report exists to
+            // settle - "is a two frame flash right for this game's bombs" - and excluding
+            // bursts before recording them meant the default hid every explosion from the log
+            // that was supposed to decide it.
+            if (cls == Class::Burst && !params.bursts) {
                 continue;
             }
 
@@ -551,9 +562,6 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         s_stats.considered++;
 
         const Class cls = cachedClass(rec.effectId);
-        if (cls == Class::Burst && !params.bursts) {
-            continue;
-        }
 
         const JPABaseShape* shape =
             (rec.emitter != nullptr && rec.emitter->pRes != nullptr) ? rec.emitter->pRes->getBsp()
@@ -567,6 +575,10 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         noteForReport(rec.effectId, shape, rec.prm, rec.env, cls, additive, glow, true);
 
         if (!additive || !glow) {
+            continue;
+        }
+
+        if (cls == Class::Burst && !params.bursts) {
             continue;
         }
 
@@ -1060,8 +1072,26 @@ const std::vector<Site>& collect(const Params& params) {
         }
     }
 
+    // Sites this frame refreshed, then sites the grace period is holding - and the budget
+    // applies to the total, not just to the refresh.
+    //
+    // Reporting every tracked site regardless was the bug: a site dropped by the budget or the
+    // distance cull is also "not seen", so it went into the grace period and kept being
+    // returned. The counters said culled while the caller was handed the light anyway, which is
+    // the worst combination - a budget that does not bound anything and a readout that says it
+    // does.
+    const size_t cap = params.maxLights > 0 ? static_cast<size_t>(params.maxLights)
+                                            : s_tracked.size();
+
     for (const TrackedSite& t : s_tracked) {
-        s_sites.push_back(t.site);
+        if (t.seen && s_sites.size() < cap) {
+            s_sites.push_back(t.site);
+        }
+    }
+    for (const TrackedSite& t : s_tracked) {
+        if (!t.seen && s_sites.size() < cap) {
+            s_sites.push_back(t.site);
+        }
     }
 
     s_stats.sites = static_cast<int>(s_sites.size());

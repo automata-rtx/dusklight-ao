@@ -318,7 +318,11 @@ void* s_registeredDevice = nullptr;
 // Set when the D3D9 device is replaced (aurora recreates it on resize). Every
 // light handle belongs to the old device's scene, so they must be re-created
 // rather than destroyed - the object that owned them is already gone.
-bool s_lightsNeedRecreate = false;
+// One per consumer. These are cleared by whoever reads them, and there is more than one
+// reader: a single flag meant whichever light system ran first in tick() swallowed the
+// notification and the other kept handles bound to a device that no longer exists.
+bool s_lightsNeedRecreate = false;        // the local light mirror
+bool s_effectLightsNeedRecreate = false;  // the effect lights
 bool s_celestialLightExists = false;
 remixapi_LightHandle s_celestialHandle = nullptr;
 float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
@@ -353,6 +357,7 @@ bool ensureDeviceRegistered() {
         // against the new device.
         s_celestialLightExists = false;
         s_lightsNeedRecreate = true;
+        s_effectLightsNeedRecreate = true;
         BridgeLog.info("registered D3D9 device with the Remix API");
     }
 
@@ -1342,13 +1347,13 @@ void updateEffectLights() {
 
     s_effectDebug.enabled = true;
 
-    if (s_lightsNeedRecreate) {
+    if (s_effectLightsNeedRecreate) {
         // Drop the handles without destroying them: they refer to a device that no longer
         // exists, and its light manager went with it. The sites go too - holding them would
         // carry a grace period across a discontinuity it was never meant to span.
         s_effectLights.clear();
         dusk::effect_lights::reset();
-        s_lightsNeedRecreate = false;
+        s_effectLightsNeedRecreate = false;
     }
 
     dusk::effect_lights::Params params;

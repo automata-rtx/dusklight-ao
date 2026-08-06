@@ -323,7 +323,11 @@ Four exclusions are structural and should stay:
 3. **Non-additive.** §3.
 4. **Distance and budget.** Beyond `maxDistance` from the camera, or past
    `maxLights` this frame, ordered by weight. A light that contributes nothing
-   still costs a light-manager entry and an RTXDI slot.
+   still costs a light-manager entry and an RTXDI slot. Both settings treat
+   **0 as "no limit"**, which is worth knowing before dragging `maxLights` down
+   to turn the system off — that is what `effectLights` is for, and 0 does the
+   opposite. The budget bounds what is *returned*, grace-period sites included,
+   not merely what is refreshed.
 
 Two are judgement calls, and are **options** rather than constants because
 they are the ones most likely to be overruled:
@@ -453,6 +457,12 @@ overlay's Dusklight tab:
 | `effLightsOrphans` | vanilla lights with no site near them — **the number that decides whether §4.6's default is right** |
 | `effLightsCulled` | dropped by distance or budget |
 
+Bursts are recorded in the report even though they are excluded from lighting,
+because that report is the thing meant to settle whether excluding them is
+right. Each request also **clears the memory**, so a press covers everything
+seen since the last press rather than filling once and then capping for the
+rest of the session.
+
 **A one-shot classification report** (`effectLightReport`, an action option):
 one line per *distinct effect ID seen so far*, capped, with a truncation
 notice — the effect's name, its blend configuration, its primary and
@@ -514,8 +524,12 @@ the comparison path: turning it on and this system off reproduces the previous
 behaviour, which is the only way to judge whether a placement improved.
 
 They are **not** meant to run together — every fire would get two lights, one
-of them in the wrong place. The overlay says so; nothing enforces it, because
-"both on" is a legitimate thing to look at once.
+of them in the wrong place. Nothing enforces it, because "both on" is a
+legitimate thing to look at once. But **inheriting** it is not: anyone who
+tuned the old mirror has `localLights = True` saved, and the first launch after
+this lands doubles every fire, which reads as the new placement being wrong.
+The overlay therefore says so loudly whenever both are enabled, rather than
+leaving it in a paragraph.
 
 ---
 

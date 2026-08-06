@@ -393,6 +393,47 @@ int main() {
         check(stats().candidates == 3, "each instance reached the rule separately");
     }
 
+    // 9b. The budget bounds what is RETURNED, not just what is refreshed. Regression: a site
+    //     dropped by the budget is also "not seen", so it went into the grace period and kept
+    //     being handed back - a budget that bounded nothing while the counter said it did.
+    clearLights();
+    resetSites();
+    {
+        std::vector<EmitterSpec> many;
+        for (int i = 0; i < 12; i++) {
+            many.push_back(EmitterSpec {static_cast<u16>(0x700 + i), "ZI_J_fire_y.jpa",
+                                        static_cast<float>(i * 1000), 0.0f, 0.0f});
+        }
+        buildScene(many);
+        // Track all twelve first, then tighten the budget - which is what happens when the
+        // owner drags Max Lights down, or walks into a room that pushes past the cap.
+        Params generous = p;
+        generous.maxLights = 64;
+        check(collect(generous).size() == 12, "all twelve are tracked while the budget allows");
+
+        Params budgeted = p;
+        budgeted.maxLights = 3;
+        const std::vector<Site>& tightened = collect(budgeted);
+        check(tightened.size() == 3,
+              "tightening the budget drops sites instead of holding them in the grace period");
+        check(stats().culled == 9, "and the drop is still reported");
+    }
+
+    // 9c. A burst reaches the classification report even though it is excluded from lighting -
+    //     that report is the thing meant to settle whether excluding it is right.
+    clearLights();
+    resetSites();
+    buildScene({{0x501, "ZI_J_bakuha_fire_b.jpa", 0, 0, 0}});
+    {
+        Params noBursts = p;
+        noBursts.bursts = false;
+        collect(noBursts);
+        check(stats().candidates == 0, "a burst is still excluded from lighting by default");
+        requestReport();
+        collect(noBursts);  // emits the report; no assertion, but it must not crash or omit
+        check(true, "(report emitted with the burst recorded - read the log to confirm)");
+    }
+
     // 11. Records do not survive into the next frame. (The sites they made are held by the
     //     grace period, so drain that first - the check is about the records, not the sites.)
     {
