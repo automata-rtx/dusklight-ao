@@ -271,3 +271,10 @@ the dense-fog regime that would actually challenge them (Lake Hylia in the morni
 they remain unchallenged rather than confirmed. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
 pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
 live in stage data rather than in source.
+
+**The mapping from this ramp to a medium was reworked on 2026-08-06, fork-side, and is untested.** The ramp described in
+§1 is *flat zero* until `mFogNear` and a homogeneous medium is not, which is a shape mismatch no density setting can fix;
+the fork now runs the medium deliberately thin and corrects to this ramp in the composite instead. Nothing on this side
+changed. What did change is what the §5 measurement pass buys: `mFogNear`'s size relative to `mFogFar` is precisely what
+decides how much near-field haze survives per area, so the numbers this section has always asked for now have a concrete
+consumer. `DusklightAtmosphere.md` §5.1 tabulates the trade.

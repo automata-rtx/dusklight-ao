@@ -72,6 +72,12 @@ rtx.dusklight.emissive.log    = True
 # stated here so the session starts on rather than on whatever was last saved.
 # This is the A/B in 0a - off is the single-op approximation it replaces.
 rtx.dusklight.rampMaterials = True
+
+# Fog falloff, reworked 2026-08-06. Both defaults; stated so the session starts
+# from the intended split rather than a saved one. The log is what test 0g
+# collects and it is bounded at 24 lines.
+rtx.dusklight.atmosphere.mediumFraction = 0.5
+rtx.dusklight.atmosphere.fogLog         = True
 ```
 
 **Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
@@ -271,6 +277,50 @@ later. Nobody has confirmed that it can.
 Nothing to describe by eye here, and nothing that can regress the image: if this
 is inconvenient to run, it can wait for a session that is already taking
 captures for another reason.
+
+#### 0g. Fog falloff — the rework, and the measurement pass it needs (2026-08-06, UNTESTED)
+
+The volumetric fog's falloff was reworked fork-side. The reported symptom was
+that it did not match the game's own falloff while the depth-based fog did;
+three arithmetic faults were found and fixed, and `remix-open-issues.md` lists
+them. **Nothing here needs describing by eye — this test is a walk and a log.**
+
+**Just walk and send the log.** `rtx.dusklight.atmosphere.fogLog` writes one
+bounded line per distinct fog derivation, so visiting different areas is the
+entire method. Worth covering deliberately, because these are the regimes that
+differ and the per-area values have never been recorded at all:
+
+- Hyrule Field at dawn, noon and dusk — thin, long-range, `fogStartZ` large.
+- Faron Woods morning, then midday — the same area, ramp moving under you.
+- **Lake Hylia in the morning**, in and out of the kytag01 fog bank — the
+  negative-`start` whiteout, which by this reading has never actually reached
+  the screen at anything like its authored strength.
+- **Goron Mines** — near and dense, and the strongest fog tint in the game, so
+  it is the area where the colour fault (fault 3) was worst.
+- Forest Temple, Palace of Twilight.
+
+That also finally completes the `kankyo-fog.md` §5 measurement pass, which has
+been outstanding since 2026-07-27.
+
+**Reading a line.** `nearHaze=` is the field to look at first: it is the fog the
+original did not have, near the camera, and it is the one error the correction
+cannot remove. `DusklightAtmosphere.md` §5.1 tabulates what to expect. The
+`fix=` columns are what the composite adds at each quarter of the froxel grid.
+
+| What you find | Reading |
+| :-- | :-- |
+| `nearHaze` is 0.10–0.12 in field areas | Expected at the default `mediumFraction` of 0.5. If near geometry looks hazier than it should, halve the setting and it halves too. |
+| `nearHaze` above ~0.2 anywhere | Higher than the design intends — send the line, the area's ramp is more offset than the cases the trade was tabulated for. |
+| Distant terrain **still** does not dissolve into the sky at `fogEndZ` | Fault 2 is not actually fixed. This one is checkable by eye and is worth saying so. |
+| Fog in the Goron Mines reads noticeably brighter/hotter than before | Expected, and the point of fault 3 — the medium now settles at the authored colour instead of 22.5% of it. Only a problem if it reads *blown out*, in which case `rtx.dusklight.atmosphere.multiScatteringScale` is the dial. |
+| Grain or noise in the Lake Hylia whiteout | The correction divides by the medium's sampled transmittance, which is noisiest where the medium is thickest. Predicted, never observed; report if it shows. |
+
+**The A/B, if there is time for one:** `mediumFraction` at 0 is the game's ramp
+exactly with no volumetrics in the fog at all, and at 1 the medium carries as
+much as it can. The total fog should look *the same density* at both ends and
+differ only in how much shaft and local-light structure is in it. If density
+visibly changes with that slider, the correction is not doing its job and that
+is the single most useful thing this test can find.
 
 ### 1. Clock — do this first, it is the tool the rest want
 

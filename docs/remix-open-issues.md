@@ -36,13 +36,15 @@ runs are what produced the findings below. **Nothing landed on 2026-08-05 has
 been run** — that is the self-illumination rule, the emitted-colour default, the
 instrumentation fixes and the blend reporting.
 
-**`dxvk-remix/RtxOptions.md` was regenerated 2026-08-05 and is current** — it
-had documented 40 of the 130 `rtx.dusklight.*` options for weeks. Reconciled
-against the `RTX_OPTION*` declarations in `src/`: nothing declared is missing,
-the four emissive options this session removed are gone, and the three it added
-are present. One caveat noted in the file itself: the build that produced it
-also carried the unmerged `claude/dx9-high-res-textures` branch, so eight
-`texrep` rows describe options not on this branch yet.
+**`dxvk-remix/RtxOptions.md` was regenerated 2026-08-05 and is now three rows
+stale.** It had documented 40 of the 130 `rtx.dusklight.*` options for weeks;
+the regeneration reconciled it against the `RTX_OPTION*` declarations in `src/`
+in both directions. Since then the 2026-08-06 fog rework added
+`rtx.dusklight.atmosphere.mediumFraction` and `.fogLog` and changed
+`.multiScatteringScale`'s default from 0.25 to 1.0, none of which are in the
+file. Two caveats stand: the build that produced it also carried the unmerged
+`claude/dx9-high-res-textures` branch, so eight `texrep` rows describe options
+not on this branch yet.
 
 It is **generated, never hand-edited**. A row that reads badly means the
 `RTX_OPTION` description string in `src/` reads badly — fix it there and
@@ -62,6 +64,36 @@ shadow drawn on top of a traced one — transfers to them word for word, and it 
 now a confirmed reading rather than a prediction. Not done because nobody has
 asked and Link's shadow is a far more visible change than a rupee's; it is the
 same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
+
+**The volumetric fog's falloff was reworked on 2026-08-06 — fork-side only,
+CI-green, UNTESTED in game.** Reported symptom: the volumetric fog did not match
+the game's falloff while the depth-based fog did. Reading the fork's derivation
+against `mFogNear`/`mFogFar` found three arithmetic faults, none of which needed
+a test session to establish:
+
+1. **The near field was over-fogged**, by up to +0.27 opacity where the game's
+   ramp shows none, because the medium's density was matched at a single
+   distance and the ramp's flat-zero dead zone before `mFogNear` was ignored.
+   This is the reported symptom.
+2. **The fog never closed to opaque** — 0.75–0.81 at `mFogFar` instead of 1.0 —
+   so distant terrain never fully dissolved into the sky.
+3. **The near and far halves of the fog aimed at colours 4.4× apart**, so fog
+   read dark wherever real lighting was not filling the difference in. Worst in
+   exactly the areas with the most strongly tinted fog, which are the dark
+   interiors.
+
+Nothing on this side changed: the bridge already pushes the right values and the
+protocol is untouched at 6. What to expect when it is next run is in
+`dxvk-remix/documentation/DusklightAtmosphere.md` §5 and §12, including the
+regression signature. The new control is
+`rtx.dusklight.atmosphere.mediumFraction` (default 0.5) and the log line to
+collect is `rtx.dusklight.atmosphere.fogLog`, whose `nearHaze=` field is the
+residual of fault 1 that no amount of correction can remove.
+
+This also makes the §5 measurement pass in [`kankyo-fog.md`](kankyo-fog.md)
+worth more than it was: the per-area `fogStartZ`/`fogEndZ` values have still
+never been recorded, and they are exactly what decides how large that residual
+is per area.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
