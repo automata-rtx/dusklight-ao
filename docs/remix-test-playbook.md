@@ -154,7 +154,7 @@ surface in the room, plus one warm glow texture, and nothing else.
 | Control | Do this |
 | :-- | :-- |
 | Nothing | Default is the intended configuration. Just look at the lava. |
-| Emissive Brightness | The one dial, and it now means a target brightness rather than a multiplier — a dark saturated emitter and a pale one reach the same brightness at the same setting. This is what should stop the lava and a heart needing wildly different settings. Default 1.0. |
+| Emissive Brightness | The one dial. Default **10.0**, which is the value the lava was dialled to in game on 2026-08-06 — so a fresh config should already look right and this is here for exteriors, which have not been looked at. |
 | Emitted Colour | Leave on *Reconstructed Albedo*. It is the two-colour ramp — `lerp(FF0000, FFFE63, texture)` — so the texture drives the colour. The other two are there to compare against, not to use. |
 | Emissive Surfaces Enabled | Untick for an A/B against no emission at all. |
 

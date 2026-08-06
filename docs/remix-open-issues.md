@@ -54,11 +54,12 @@ default off, live in the overlay under Geometry). The flat discs the game paints
 under rupees, hearts and pots approximate a shadow Remix traces for real from the
 same geometry, so drawing them puts a painted shadow on top of a correct one.
 Dropped at registration in `dDlst_shadowControl_c::setSimple`, so no draw call is
-issued rather than one being hidden downstream. **The game's projected shadows
+issued rather than one being hidden downstream. **Shipped in the same build as
+the 2026-08-06 emissive test, but not commented on** — so it is built and
+CI-green, and whether it looks right is still open. **The game's projected shadows
 (`dDlst_shadowReal_c` — Link, major actors) are a separate system and are
 untouched** — they are equally redundant under a path tracer, but nobody has
 asked for them yet and Link's shadow is a bigger visual change than a rupee's.
-CI-green, untested in game.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -105,12 +106,18 @@ as black quads (issue 11), the ambient grade, and the Controls tab.
 - **HUD fade-in alpha** (issue 12) — the fading constant now rides TFACTOR's
   alpha instead of being discarded.
 
-**Self-illumination (issue 9): three revisions cut on a weighted score and all
-three missed the lava, which scores 0.00.** Rev 4 drops the score from the
-decision entirely. The rule is structural — self-lit (no TEV colour stage reads
-the rasterized channel) AND a colour of its own AND that colour reading as a
-glow — and replays over the last log at **6 of 77 materials, every lava and fire
-surface, no false positives, nothing to tune**. CI-green, untested in game.
+**Self-illumination (issue 9): rev 4 is TESTED IN GAME (2026-08-06) and works.**
+Three earlier revisions cut on a weighted score and all three missed the lava,
+which scores 0.00. Rev 4 drops the score entirely: self-lit (no TEV colour stage
+reads the rasterized channel) AND a colour of its own AND that colour reading as
+a glow. Replayed over the last log that is **6 of 77 materials, every lava and
+fire surface, no false positives, nothing to tune** — and in game it caught the
+lava and read as properly molten.
+
+`emissive.brightness` was dialled to **10.0**, now the default. Calibrated in
+one dark interior; a bright exterior may want less, and none has been looked at.
+Not confirmed by that session: whether the per-material derivation holds for a
+small pickup as well as for lava (the report named the lava only).
 
 **`grp=` does not work and has been removed.** It was meant to end "which of
 these logged materials is the thing on screen?", and every material in that
