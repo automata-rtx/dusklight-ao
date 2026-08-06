@@ -196,6 +196,19 @@ still builds today and breaks the moment that branch is cleaned up.
   artifact. Keep CI green on the dev branch. Dusklight's workflow has path
   filters, so a docs-only commit correctly produces no run — that is not a
   failure.
+- **Two CI states that look like failures and are not.** Both cost time on
+  2026-08-06 and neither is a code problem:
+  - **A *cancelled* job makes the whole run read "failure".** The scarce
+    runner is **Windows MSVC arm64**: on 2026-08-06 it sat 15 minutes with no
+    runner assigned, executed **zero steps**, and was killed — while every
+    other config, x86_64 included, passed and uploaded its artifact. Before
+    treating a red run as broken code, list its jobs: `conclusion: cancelled`
+    with an empty `runner_name` and no steps is capacity, not a compile error,
+    and the x86_64 artifact from that same run is real and testable.
+  - **GitHub sometimes drops push events entirely.** Three consecutive pushes
+    touching `src/` produced *no run at all*, hours apart, while the fork
+    scheduled normally. That is why `build.yml` now has `workflow_dispatch` —
+    when it happens again, dispatch a run rather than pushing again and hoping.
 - The game's own UI is **never drawn** in the fixed-function D3D9 mode. Any
   setting that needs to be reachable while running has to be hosted in the
   Remix overlay (`rtx.dusklight.game.*`) — see `documentation/DusklightOverlay.md`

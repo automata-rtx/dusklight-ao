@@ -71,7 +71,12 @@ assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 **Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
 
-**Effect lights landed 2026-08-06 and have not been run.** Sphere lights at the
+**Effect lights landed 2026-08-06 and have not been run.** Both sides are
+**CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
+`70a6d482`. (dusklight's run reads "failure" because its MSVC **arm64** job was
+*cancelled* without ever being given a runner; every other config passed and the
+x86_64 artifact is real. See `CLAUDE.md` — that state is capacity, not code.)
+ Sphere lights at the
 origin of the game's own fire and glow effects, replacing the local-light
 mirror (which now defaults off and is kept as the comparison path). Design and
 citations: [`effect-lights.md`](effect-lights.md). CI-green is not claimed;
