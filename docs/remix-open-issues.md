@@ -36,11 +36,18 @@ runs are what produced the findings below. **Nothing landed on 2026-08-05 has
 been run** — that is the self-illumination rule, the emitted-colour default, the
 instrumentation fixes and the blend reporting.
 
-**One generated document is stale and needs a Windows run to fix:**
-`dxvk-remix/RtxOptions.md` is produced by the runtime itself and currently
-documents a subset of `rtx.dusklight.*`. This session removed four emissive
-options and added three; the header comments in
-`rtx_dusklight_emissive.h` are authoritative until it is regenerated.
+**`dxvk-remix/RtxOptions.md` was regenerated 2026-08-05 and is current** — it
+had documented 40 of the 130 `rtx.dusklight.*` options for weeks. Reconciled
+against the `RTX_OPTION*` declarations in `src/`: nothing declared is missing,
+the four emissive options this session removed are gone, and the three it added
+are present. One caveat noted in the file itself: the build that produced it
+also carried the unmerged `claude/dx9-high-res-textures` branch, so eight
+`texrep` rows describe options not on this branch yet.
+
+It is **generated, never hand-edited**. A row that reads badly means the
+`RTX_OPTION` description string in `src/` reads badly — fix it there and
+regenerate with `DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1`. Nothing in CI
+enforces this, so it goes stale silently; regenerate it at checkpoints.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
