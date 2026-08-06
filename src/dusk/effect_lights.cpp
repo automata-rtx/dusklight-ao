@@ -1055,7 +1055,8 @@ const std::vector<Site>& collect(const Params& params) {
             continue;
         }
         if (++s_tracked[i].missingFrames > kSiteGraceFrames) {
-            s_tracked.erase(s_tracked.begin() + static_cast<ptrdiff_t>(i));
+            s_tracked.erase(s_tracked.begin() +
+                            static_cast<std::vector<TrackedSite>::difference_type>(i));
         }
     }
 
