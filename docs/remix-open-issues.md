@@ -63,10 +63,16 @@ material resolution. Not an open issue; recorded here because it changes what
 authoring a remaster involves (albedo comes for free; author roughness/normal/
 metalness only). `extern/aurora/docs/dx9/texture-replacements.md`.
 
-Its one known characteristic is a **long first-launch warm-up** — Remix keeps no
-on-disk texture cache, so every `.dds` is re-read each launch and only the OS
-file cache makes later launches fast. Expected, not a fault; §9 of that document
-has the candidate fix if it ever matters.
+Its one known characteristic is a **long first-launch warm-up**. Expected, not a
+fault — but the cause is **not established**, and the first write-up of it was
+wrong: it inferred "the OS file cache" from the (correct) fact that Remix keeps
+no on-disk *texture* cache, overlooking that DXVK does keep an on-disk
+*pipeline* cache and that every first launch is slow for that reason regardless
+of the pack. Both contribute; which dominates is unmeasured, and the pack's
+lateness is partly a symptom of slow frames rather than their cause. **One
+reboot separates them** — it clears the OS page cache and keeps `.dxvk-cache`.
+Candidate fixes, to be taken only if that test implicates I/O, are in §9 of
+`extern/aurora/docs/dx9/texture-replacements.md`.
 
 **The two live rendering defects:**
 

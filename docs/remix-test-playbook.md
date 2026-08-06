@@ -289,11 +289,21 @@ default on and are read at launch.
 | World sharpens, HUD does not | `applyToRaster` off, or a multi-texture UI draw (only the albedo stage is substituted on the raster path). |
 | **Texture hashes differ between pack-on and pack-off** | **A real regression, and the serious one** — it means the pack is reaching D3D9, which silently invalidates every `rtx.conf` category and USD binding. The whole design exists to prevent this. |
 
-**Expect a slow first launch** and a fast second one. That is the OS file cache,
-not a fault — `extern/aurora/docs/dx9/texture-replacements.md` §9. If it is
-worth quantifying, the game log's gap between
-`texrep: N replacement(s) selected` and `texrep: N material(s) created` measures
-it exactly.
+**Expect a slow first launch** and a fast second one. Not a fault, but the cause
+is not established — Remix compiles shaders on first load and caches them to
+disk, so every first launch is slow with or without a pack, and the pack's own
+`.dds` reads are *not* durably cached. If a session has a spare reboot, that is
+the experiment: **reboot, then launch.** It clears the OS file cache and keeps
+the shader cache.
+
+| Result | Reading |
+| :-- | :-- |
+| Slow again after a reboot | The pack's file I/O is the dominant term. §9's fixes are then worth taking. |
+| Fast after a reboot | Shader compilation dominated; the pack's cost is minor and nothing needs doing. |
+
+Either way the game log's gap between `texrep: N replacement(s) selected` and
+`texrep: N material(s) created` quantifies the pack's own share.
+`extern/aurora/docs/dx9/texture-replacements.md` §9.
 
 Not exercised by the 2026-08-06 run, so still worth covering if a session has
 room: a BC7 or BC5 pack, a deliberately-`.png` entry, a window resize (materials

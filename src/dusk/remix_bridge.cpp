@@ -384,11 +384,12 @@ constexpr uint64_t kTexRepHandleBase = 0xD05C000000000000ull;
 // to the game's own texture for anything not resident yet, so a slow ramp costs fidelity for a
 // moment rather than correctness.
 //
-// Measured 2026-08-06: the first launch with a pack installed is slow for a long stretch, later
-// launches are not. Remix keeps no on-disk texture cache, so every .dds is re-read each launch
-// and only the OS file cache makes the difference - a count budget therefore stalls each frame
-// by however long 16 cold reads take. A *time* budget would stretch the ramp instead of the
-// frame, and is the change to make if this ever needs shortening.
+// Observed 2026-08-06: the first launch with a pack installed is slow for a long stretch, later
+// launches are not. Do NOT assume that is this loop - Remix also compiles shaders on first load
+// and caches them to disk, so every first launch is slow with or without a pack, and a per-frame
+// budget makes the pack take longer to arrive whenever frames are slow for any other reason.
+// Which term dominates is unmeasured. If it turns out to be this one, a *time* budget stretches
+// the ramp instead of the frame, and prefetching the files on a worker thread is better still.
 // extern/aurora/docs/dx9/texture-replacements.md §9.
 constexpr size_t kTexRepCreationsPerFrame = 16;
 

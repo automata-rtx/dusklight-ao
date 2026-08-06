@@ -515,10 +515,12 @@ open-ended linear radiance, and none of them mean what they meant.
 
   **Expect a slow first launch.** With a pack installed the first run spends a
   long period at poor performance before the replacements appear; later runs
-  have them immediately. This is expected, not a fault: Remix keeps no on-disk
-  cache of loaded textures, so it re-reads every `.dds` each launch, and only
-  the operating system's own file cache makes the second run fast. Full account,
-  and the one change that would shorten it, in
+  have them immediately. Expected, not a fault — but note that *every* first
+  launch of this runtime is slow, pack or no pack, because Remix compiles
+  shaders and caches the result to disk. The pack adds its own cost on top
+  (Remix keeps no on-disk cache of textures, so every `.dds` is re-read each
+  launch), and which of the two dominates has not been measured. A reboot
+  separates them: it clears the OS file cache while keeping the shader cache.
   `extern/aurora/docs/dx9/texture-replacements.md` §9.
 
   If a pack appears to do nothing, the Dusklight tab's **HD Texture Pack**
