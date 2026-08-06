@@ -657,7 +657,10 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
 
     // The spot list. field_0x26 is a per frame liveness flag: dScnKy_env_light_c::exeKankyo
     // clears all six at the top of the frame (src/d/d_kankyo.cpp:4769) and whoever registers a
-    // light sets it again. Slot 0 is Link's lantern and the wolf senses (dKy_WolfEyeLight_set,
+    // light sets it again. That ordering works out for us: processes execute in ascending
+    // list-ID order (cTrIt_Method, c_tree_iter.cpp:12-21), kankyo is list 1
+    // (d_kankyo.cpp:8420), the torch actors are list 3 and Link is list 5 - and the bridge runs
+    // after all of them, so the flags we read are this frame's. Slot 0 is Link's lantern and the wolf senses (dKy_WolfEyeLight_set,
     // src/d/d_kankyo.cpp:10314); slots 1..5 are the torches, candles and carried lights that
     // went through dKy_BossLight_set rather than dKy_plight_set - a large share of the game's
     // torches, so skipping this list would leave most of them without the game's own colour.

@@ -594,19 +594,34 @@ neighbouring torches. That 32 lights is a sensible budget.
    `dPa_hermiteEcallBack_c` sets the translation itself — but the other
    `dPa_levelEcallBack` subclasses were not checked. Signature: a light left
    behind where an effect used to be.
-2. **Whether the spot registry is readable at bridge time is unknown.** The
-   flag is cleared at the top of `exeKankyo` and set by actors during their
-   own execute; which of the two runs last is a process-ordering question this
-   pass did not settle. `effLightsVanilla` reports the two registries
-   separately so one log answers it. The failure is safe either way — those
-   sites fall back to configured defaults rather than being mispositioned.
+2. ~~**Whether the spot registry is readable at bridge time is unknown.**~~
+   **Resolved by reading, 2026-08-06.** Processes execute in ascending list-ID
+   order (`cTrIt_Method`, `c_tree_iter.cpp:12-21`, over the 16 lists of
+   `g_fpcLn_Queue`). Kankyo is **list 1** (`d_kankyo.cpp:8420`); the torch
+   actors are **list 3** (`d_a_obj_lv1Candle00.cpp`, `fireWood2`, `maki`) and
+   Link is **list 5** (`d_a_alink.cpp`). So `exeKankyo` clears the flags before
+   any of them run, the actors set them, and `dusk::remix::tick()`
+   (`m_Do_main.cpp:327`) runs after all of it. The flags are live.
+   `effLightsVanilla` is kept anyway — it costs nothing and it turns a reading
+   into a measurement, which this project has reason to prefer.
 3. **A burning bonfire may have no registered point light at all.**
    `d_a_obj_maki` registers one in create and then cuts it on the first
    `Execute` frame while burning (`d_a_obj_maki.cpp:107-110`, and `Execute` is
    called at the end of create at `:235`). Read directly from source; whether
    that matches retail or is a decomp artefact is **unverified**. If it holds,
    bonfires run undetermined.
-4. **`d_a_obj_lv3Candle` never calls `dKy_plight_set` at all** — it fills a
+4. **Lights lead geometry by one frame.** Actor draw methods enter models into
+   J3D draw buffers; the GX/D3D9 commands for them are issued by
+   `mDoGph_Painter` at the *start* of the next iteration
+   (`f_pc_manager.cpp:75`). `dusk::remix::tick()` runs at the end of the
+   current one. So the D3D9 stream Remix builds its scene from carries state
+   from frame *k-1* while the lights submitted alongside it carry state *k*.
+   For anything static this is invisible. For a swinging lantern the light
+   leads the lamp by one frame — 16 to 33 ms — which is named here so it is
+   recognised rather than rediscovered. It applies to the local-light mirror
+   and the celestial light equally; it is a property of the frame, not of this
+   system.
+5. **`d_a_obj_lv3Candle` never calls `dKy_plight_set` at all** — it fills a
    `LIGHT_INFLUENCE` and only ever cuts it — and spawns its flame
    unconditionally. A permanently burning torch with no registered light is
    exactly the case the old mirror could not see, and it is the strongest
