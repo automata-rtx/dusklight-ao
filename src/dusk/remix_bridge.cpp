@@ -13,6 +13,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "dolphin/pad.h"
 #include "d/d_com_inf_game.h"
+#include "f_op/f_op_camera_mng.h"
 #include "dusk/map_loader_definitions.h"
 #include "dusk/action_bindings.h"
 
@@ -1322,7 +1323,7 @@ void updateEffectLights() {
         return;
     }
 
-    const dusk::Settings::Game& game = getSettings().game;
+    const auto& game = getSettings().game;
 
     if (!dusk::IsGameLaunched ||
         !readOptionBool("rtx.dusklight.game.effectLights", game.effectLights.getValue())) {
@@ -1461,8 +1462,10 @@ void updateEffectLights() {
         // from a reach and a radius and routinely lands in the hundreds, so a fixed 0.01 would
         // trip on the colour animation of every flame, every frame.
         constexpr float kPositionEpsilon = 0.5f;   // world units
-        constexpr float kRadianceRelative = 0.02f; // 2 percent
-        constexpr float kRadianceFloor = 0.01f;
+        // static, because std::max binds its arguments by const reference and MSVC will not
+        // let a capture-less lambda odr-use a function-local constexpr.
+        static constexpr float kRadianceRelative = 0.02f; // 2 percent
+        static constexpr float kRadianceFloor = 0.01f;
 
         const auto radianceChanged = [](float now, float before) {
             const float scale = std::max(std::fabs(now), std::fabs(before));

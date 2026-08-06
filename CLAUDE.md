@@ -203,3 +203,9 @@ still builds today and breaks the moment that branch is cleaned up.
 - Verify D3D9 code with the MinGW syntax harness described in
   `extern/aurora/docs/dx9/progress.md` §"How to resume"; full builds happen on
   the owner's Windows machine and in CI.
+- **Verify Remix-facing game code with `tools/syntax-check-remix.sh`** before
+  pushing. It cross-compiles `remix_bridge.cpp`, `effect_lights.cpp` and
+  `d_particle.cpp` with MinGW. **A native Linux `g++` is worse than useless
+  here:** the bridge is inside `#if defined(_WIN32)`, so Linux preprocesses the
+  entire thing away and then reports success. On 2026-08-06 four compile errors
+  reached CI that way. Needs `g++-mingw-w64-x86-64` and `libfmt-dev`.

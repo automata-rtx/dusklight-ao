@@ -564,11 +564,24 @@ liveness flag on the spot list. `mPow` being a real radius. That `dPa_RM`'s
 `0x8000` bit selects a bank rather than a namespace. The two spawn paths and
 the fact that the simple one shares an emitter. The blend-mode accessors.
 
-**Exercised by a test harness** (`compiles and behaves`, not `tested in game`).
-`tests/effect_lights/run.sh` compiles the module against stub headers matching
-the signatures above and runs it under ASan and UBSan. It **cannot** catch a
-stub that has drifted from the real declaration — only the reading above says
-those match. 32 assertions cover: a bonfire's five emitters merging to one
+**Compiles, on two harnesses, neither of which is the real build.**
+
+`tools/syntax-check-remix.sh` cross-compiles `effect_lights.cpp`,
+`remix_bridge.cpp` and `d_particle.cpp` with **MinGW**, against the game's own
+headers. MinGW matters rather than being a detail: the bridge is wrapped in
+`#if defined(_WIN32)`, so a native Linux `g++` preprocesses every light system,
+every option read and every API call away and then reports success. That is
+precisely what happened on 2026-08-06 — four compile errors in
+`remix_bridge.cpp` reached CI because the local check had never seen the file.
+The script is checked against those four: it catches the bogus type, the
+missing include, MSVC's capture-less-lambda rule, and a wrong format-string
+argument count. It is `-fsyntax-only` under GCC, so it will not catch every
+MSVC-ism and nothing at link time; **CI remains the authority.**
+
+`tests/effect_lights/run.sh` compiles the module against *stub* headers and
+runs it under ASan and UBSan. It **cannot** catch a stub that has drifted from
+the real declaration — only the reading above says those match, which is why
+the MinGW check exists alongside it. 32 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect
 being rejected and a white-hot one accepted; a nearby game light being adopted
 for colour and reach *without* moving the light off the effect origin; a
