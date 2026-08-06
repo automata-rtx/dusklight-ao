@@ -93,6 +93,7 @@ UserSettings g_userSettings = {
         .effectLightBursts {"game.effectLightBursts", false},
         .effectLightMinChroma {"game.effectLightMinChroma", 0.20f},
         .effectLightMinLuma {"game.effectLightMinLuma", 0.75f},
+        .effectLightVolumetric {"game.effectLightVolumetric", 1.0f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
@@ -337,6 +338,7 @@ void registerSettings() {
     Register(g_userSettings.game.effectLightBursts);
     Register(g_userSettings.game.effectLightMinChroma);
     Register(g_userSettings.game.effectLightMinLuma);
+    Register(g_userSettings.game.effectLightVolumetric);
     Register(g_userSettings.game.disableFrustumCulling);
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);

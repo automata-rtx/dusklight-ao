@@ -224,6 +224,7 @@ struct UserSettings {
         ConfigVar<bool> effectLightBursts;
         ConfigVar<float> effectLightMinChroma;
         ConfigVar<float> effectLightMinLuma;
+        ConfigVar<float> effectLightVolumetric;
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;

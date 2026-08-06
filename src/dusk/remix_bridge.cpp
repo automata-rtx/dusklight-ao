@@ -1388,6 +1388,13 @@ void updateEffectLights() {
     params.minLuma = readOptionFloat("rtx.dusklight.game.effectLightMinLuma",
                                      game.effectLightMinLuma.getValue());
 
+    // Not part of the decision, so it never reaches effect_lights: it is a per light multiplier
+    // Remix applies in the volumetrics passes only, so above 1 a flame hazes the air around it
+    // without getting any brighter on surfaces.
+    const float volumetric = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightVolumetric",
+                        game.effectLightVolumetric.getValue()), 0.0f);
+
     const camera_class* camera = dComIfGp_getCamera(0);
     if (camera != nullptr) {
         params.cameraPos[0] = camera->view.lookat.eye.x;
@@ -1441,20 +1448,32 @@ void updateEffectLights() {
 
         tracked->seen = true;
 
-        // Re-create on a real change but not on float noise: a fire's colour animates
-        // continuously, and every re-create crosses the API lock and re-enters the light
-        // manager. The thresholds are the ones the local light mirror settled on.
-        constexpr float kPositionEpsilon = 0.5f;
-        constexpr float kRadianceEpsilon = 0.01f;
+        // Re-create on a real change but not on float noise. This matters more than it looks:
+        // re-creating a light resets the entry in Remix's light manager, and with it the light's
+        // place in the RTXDI index map - so every update costs one frame of temporal reuse for
+        // every pixel the light touches. A fire whose radiance is re-sent every tick never
+        // accumulates any, and is visibly noisier than a static one.
+        //
+        // The radiance test is RELATIVE, unlike the local light mirror's. Radiance here is solved
+        // from a reach and a radius and routinely lands in the hundreds, so a fixed 0.01 would
+        // trip on the colour animation of every flame, every frame.
+        constexpr float kPositionEpsilon = 0.5f;   // world units
+        constexpr float kRadianceRelative = 0.02f; // 2 percent
+        constexpr float kRadianceFloor = 0.01f;
+
+        const auto radianceChanged = [](float now, float before) {
+            const float scale = std::max(std::fabs(now), std::fabs(before));
+            return std::fabs(now - before) > std::max(kRadianceFloor, scale * kRadianceRelative);
+        };
 
         const bool changed =
             tracked->handle == nullptr ||
             std::fabs(site.position[0] - tracked->position[0]) > kPositionEpsilon ||
             std::fabs(site.position[1] - tracked->position[1]) > kPositionEpsilon ||
             std::fabs(site.position[2] - tracked->position[2]) > kPositionEpsilon ||
-            std::fabs(site.radiance[0] - tracked->radiance[0]) > kRadianceEpsilon ||
-            std::fabs(site.radiance[1] - tracked->radiance[1]) > kRadianceEpsilon ||
-            std::fabs(site.radiance[2] - tracked->radiance[2]) > kRadianceEpsilon ||
+            radianceChanged(site.radiance[0], tracked->radiance[0]) ||
+            radianceChanged(site.radiance[1], tracked->radiance[1]) ||
+            radianceChanged(site.radiance[2], tracked->radiance[2]) ||
             std::fabs(site.radius - tracked->radius) > 0.001f;
 
         if (changed) {
@@ -1463,7 +1482,7 @@ void updateEffectLights() {
             sphere.position = {site.position[0], site.position[1], site.position[2]};
             sphere.radius = site.radius;
             sphere.shaping_hasvalue = 0;
-            sphere.volumetricRadianceScale = 1.0f;
+            sphere.volumetricRadianceScale = volumetric;
 
             remixapi_LightInfo info = {};
             info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
@@ -1477,11 +1496,13 @@ void updateEffectLights() {
                 continue;
             }
 
-            if (tracked->handle != nullptr) {
-                s_interface.DestroyLight(tracked->handle);
-                s_effectDebug.destroys++;
-            }
-
+            // No DestroyLight here, even though this is an update rather than a first create.
+            // The handle Remix returns is the hash itself (rtx_remix_api.cpp: the handle is a
+            // reinterpret_cast of info.hash), and our hash is stable per site - so the "old"
+            // handle and the new one are the same value, and destroying it would erase the light
+            // that was just written. The failure that causes is nasty and invisible in the
+            // counters: DrawLightInstance still returns success, so "drawn" keeps incrementing
+            // while the light is gone for every frame in which it changed.
             tracked->handle = handle;
             for (int i = 0; i < 3; i++) {
                 tracked->position[i] = site.position[i];
