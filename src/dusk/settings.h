@@ -206,6 +206,24 @@ struct UserSettings {
         ConfigVar<bool> remixLocalLights;
         ConfigVar<float> remixLocalLightIntensity;
         ConfigVar<float> remixLocalLightRadius;
+        // Effect lights: sphere lights at the origin of the game's own fire and glow effects,
+        // rather than at the positions of the game's registered lights. docs/effect-lights.md.
+        ConfigVar<bool> effectLights;
+        ConfigVar<float> effectLightIntensity;
+        ConfigVar<float> effectLightDerivedIntensity;
+        ConfigVar<float> effectLightDerivedRadius;
+        ConfigVar<float> effectLightUndeterminedIntensity;
+        ConfigVar<float> effectLightUndeterminedReach;
+        ConfigVar<float> effectLightUndeterminedRadius;
+        ConfigVar<float> effectLightFireOffset;
+        ConfigVar<float> effectLightGlowOffset;
+        ConfigVar<float> effectLightMergeRadius;
+        ConfigVar<float> effectLightAdoptRadius;
+        ConfigVar<int> effectLightMaxLights;
+        ConfigVar<float> effectLightMaxDistance;
+        ConfigVar<bool> effectLightBursts;
+        ConfigVar<float> effectLightMinChroma;
+        ConfigVar<float> effectLightMinLuma;
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;

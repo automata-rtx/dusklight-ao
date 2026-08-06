@@ -51,6 +51,7 @@ bool s_celestialFlip = false;
 bool s_celestialLock = false;
 
 LocalLightsDebug s_localDebug = {};
+EffectLightsDebug s_effectDebug = {};
 
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
@@ -685,6 +686,53 @@ bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float sc
     return true;
 }
 
+// --- Effect lights -----------------------------------------------------------
+//
+// The replacement for the mirror above, and the reason it now defaults off. Instead of copying
+// the game's registered lights - which reproduces every faked placement the original shading
+// model got away with, because a GameCube point light casts no shadow and could sit anywhere -
+// this puts a sphere light at the origin of the effect that actually draws the fire, and takes
+// only the game's colour and reach from whatever light was authored nearby.
+//
+// The decision is dusk::effect_lights; this half only owns the Remix API calls. Design,
+// citations and the exclusion policy: docs/effect-lights.md.
+
+constexpr uint64_t kEffectLightHashBase = 0xE55C114E00000000ull;
+
+struct TrackedEffectLight {
+    uint32_t siteId;
+    remixapi_LightHandle handle;
+    float position[3];
+    float radiance[3];
+    float radius;
+    bool seen;
+};
+
+std::vector<TrackedEffectLight> s_effectLights;
+
+uint64_t effectLightHash(uint32_t siteId) {
+    return kEffectLightHashBase | static_cast<uint64_t>(siteId);
+}
+
+void destroyEffectLight(TrackedEffectLight& light) {
+    if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
+        s_interface.DestroyLight(light.handle);
+        s_effectDebug.destroys++;
+    }
+
+    light.handle = nullptr;
+}
+
+void releaseEffectLights() {
+    for (TrackedEffectLight& light : s_effectLights) {
+        destroyEffectLight(light);
+    }
+
+    s_effectLights.clear();
+    s_effectDebug.tracked = 0;
+    s_effectDebug.drawn = 0;
+}
+
 void destroyLocalLight(TrackedLocalLight& light) {
     if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
         s_interface.DestroyLight(light.handle);
@@ -1265,6 +1313,204 @@ void updateLocalLights() {
     s_localDebug.tracked = static_cast<int>(s_localLights.size());
 }
 
+void updateEffectLights() {
+    s_effectDebug.enabled = false;
+    s_effectDebug.drawn = 0;
+
+    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
+        s_interface.dxvk_RegisterD3D9Device == nullptr) {
+        return;
+    }
+
+    const dusk::Settings::Game& game = getSettings().game;
+
+    if (!dusk::IsGameLaunched ||
+        !readOptionBool("rtx.dusklight.game.effectLights", game.effectLights.getValue())) {
+        releaseEffectLights();
+        dusk::effect_lights::Params off;
+        off.enable = false;
+        dusk::effect_lights::collect(off);
+        s_effectDebug.stats = dusk::effect_lights::stats();
+        return;
+    }
+
+    if (!ensureDeviceRegistered()) {
+        return;
+    }
+
+    s_effectDebug.enabled = true;
+
+    if (s_lightsNeedRecreate) {
+        // Drop the handles without destroying them: they refer to a device that no longer
+        // exists, and its light manager went with it.
+        s_effectLights.clear();
+        s_lightsNeedRecreate = false;
+    }
+
+    dusk::effect_lights::Params params;
+    params.enable = true;
+    params.intensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightIntensity",
+                        game.effectLightIntensity.getValue()), 0.0f);
+    params.derivedIntensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedIntensity",
+                        game.effectLightDerivedIntensity.getValue()), 0.0f);
+    params.derivedRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedRadius",
+                        game.effectLightDerivedRadius.getValue()), 0.01f);
+    params.undeterminedIntensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedIntensity",
+                        game.effectLightUndeterminedIntensity.getValue()), 0.0f);
+    params.undeterminedReach = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedReach",
+                        game.effectLightUndeterminedReach.getValue()), 0.0f);
+    params.undeterminedRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedRadius",
+                        game.effectLightUndeterminedRadius.getValue()), 0.01f);
+    params.fireOffset = readOptionFloat("rtx.dusklight.game.effectLightFireOffset",
+                                        game.effectLightFireOffset.getValue());
+    params.glowOffset = readOptionFloat("rtx.dusklight.game.effectLightGlowOffset",
+                                        game.effectLightGlowOffset.getValue());
+    params.mergeRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightMergeRadius",
+                        game.effectLightMergeRadius.getValue()), 0.0f);
+    params.adoptRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightAdoptRadius",
+                        game.effectLightAdoptRadius.getValue()), 0.0f);
+    params.maxLights = readOptionInt("rtx.dusklight.game.effectLightMaxLights",
+                                     game.effectLightMaxLights.getValue());
+    params.maxDistance = readOptionFloat("rtx.dusklight.game.effectLightMaxDistance",
+                                         game.effectLightMaxDistance.getValue());
+    params.bursts = readOptionBool("rtx.dusklight.game.effectLightBursts",
+                                   game.effectLightBursts.getValue());
+    params.minChroma = readOptionFloat("rtx.dusklight.game.effectLightMinChroma",
+                                       game.effectLightMinChroma.getValue());
+    params.minLuma = readOptionFloat("rtx.dusklight.game.effectLightMinLuma",
+                                     game.effectLightMinLuma.getValue());
+
+    const camera_class* camera = dComIfGp_getCamera(0);
+    if (camera != nullptr) {
+        params.cameraPos[0] = camera->view.lookat.eye.x;
+        params.cameraPos[1] = camera->view.lookat.eye.y;
+        params.cameraPos[2] = camera->view.lookat.eye.z;
+        params.cameraValid = isFinite3(params.cameraPos);
+    }
+
+    // The report is an action, so act on the counter changing and latch the first value seen
+    // without acting - otherwise connecting to a Remix that outlived a game restart dumps a
+    // report nobody asked for. Same shape as the warp and clock commits.
+    {
+        static int s_reportCommit = 0;
+        static bool s_reportLatched = false;
+        const int commit = readOptionInt("rtx.dusklight.game.effectLightReportCommit", 0);
+        if (!s_reportLatched) {
+            s_reportCommit = commit;
+            s_reportLatched = true;
+        } else if (commit != s_reportCommit) {
+            s_reportCommit = commit;
+            dusk::effect_lights::requestReport();
+        }
+    }
+
+    const std::vector<dusk::effect_lights::Site>& sites = dusk::effect_lights::collect(params);
+    s_effectDebug.stats = dusk::effect_lights::stats();
+
+    for (TrackedEffectLight& tracked : s_effectLights) {
+        tracked.seen = false;
+    }
+
+    for (const dusk::effect_lights::Site& site : sites) {
+        if (!isFinite3(site.position) || !isFinite3(site.radiance)) {
+            continue;
+        }
+
+        const uint64_t hash = effectLightHash(site.id);
+
+        TrackedEffectLight* tracked = nullptr;
+        for (TrackedEffectLight& candidate : s_effectLights) {
+            if (candidate.siteId == site.id) {
+                tracked = &candidate;
+                break;
+            }
+        }
+
+        if (tracked == nullptr) {
+            s_effectLights.push_back(TrackedEffectLight {site.id, nullptr, {}, {}, 0.0f, false});
+            tracked = &s_effectLights.back();
+        }
+
+        tracked->seen = true;
+
+        // Re-create on a real change but not on float noise: a fire's colour animates
+        // continuously, and every re-create crosses the API lock and re-enters the light
+        // manager. The thresholds are the ones the local light mirror settled on.
+        constexpr float kPositionEpsilon = 0.5f;
+        constexpr float kRadianceEpsilon = 0.01f;
+
+        const bool changed =
+            tracked->handle == nullptr ||
+            std::fabs(site.position[0] - tracked->position[0]) > kPositionEpsilon ||
+            std::fabs(site.position[1] - tracked->position[1]) > kPositionEpsilon ||
+            std::fabs(site.position[2] - tracked->position[2]) > kPositionEpsilon ||
+            std::fabs(site.radiance[0] - tracked->radiance[0]) > kRadianceEpsilon ||
+            std::fabs(site.radiance[1] - tracked->radiance[1]) > kRadianceEpsilon ||
+            std::fabs(site.radiance[2] - tracked->radiance[2]) > kRadianceEpsilon ||
+            std::fabs(site.radius - tracked->radius) > 0.001f;
+
+        if (changed) {
+            remixapi_LightInfoSphereEXT sphere = {};
+            sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+            sphere.position = {site.position[0], site.position[1], site.position[2]};
+            sphere.radius = site.radius;
+            sphere.shaping_hasvalue = 0;
+            sphere.volumetricRadianceScale = 1.0f;
+
+            remixapi_LightInfo info = {};
+            info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+            info.pNext = &sphere;
+            info.hash = hash;
+            info.radiance = {site.radiance[0], site.radiance[1], site.radiance[2]};
+
+            remixapi_LightHandle handle = nullptr;
+            if (s_interface.CreateLight(&info, &handle) != REMIXAPI_ERROR_CODE_SUCCESS) {
+                tracked->handle = nullptr;
+                continue;
+            }
+
+            if (tracked->handle != nullptr) {
+                s_interface.DestroyLight(tracked->handle);
+                s_effectDebug.destroys++;
+            }
+
+            tracked->handle = handle;
+            for (int i = 0; i < 3; i++) {
+                tracked->position[i] = site.position[i];
+                tracked->radiance[i] = site.radiance[i];
+            }
+            tracked->radius = site.radius;
+            s_effectDebug.creates++;
+        }
+
+        if (s_interface.DrawLightInstance(tracked->handle) == REMIXAPI_ERROR_CODE_SUCCESS) {
+            s_effectDebug.drawn++;
+        }
+    }
+
+    // Sites that ended. Remix keeps an entry per created handle until it is destroyed, so
+    // dropping them here is what stops the light manager's map growing for the whole session
+    // as rooms load and unload.
+    for (size_t i = s_effectLights.size(); i-- > 0;) {
+        if (!s_effectLights[i].seen) {
+            destroyEffectLight(s_effectLights[i]);
+            s_effectLights.erase(
+                s_effectLights.begin() +
+                static_cast<std::vector<TrackedEffectLight>::difference_type>(i));
+        }
+    }
+
+    s_effectDebug.tracked = static_cast<int>(s_effectLights.size());
+}
+
 // The bridge's diff cache assumed nothing else ever touched rtx.dusklight.env.*.
 // That is wrong: those options are NoSave, so anything that rebuilds Remix's user
 // layer - saving settings from its UI, a config reload - drops them back to their
@@ -1314,7 +1560,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "6");
+    push("rtx.dusklight.env.protocol", "7");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1413,6 +1659,32 @@ void pushLightStatus() {
     push("rtx.dusklight.env.localLightsDrawn", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
     push("rtx.dusklight.env.localLightsTracked", buffer);
+
+    // Effect lights. Every one of these exists because the alternative was asking the owner to
+    // describe what they saw; docs/effect-lights.md section 7 says which question each answers.
+    // In particular "orphans" is what decides whether refusing to forward a vanilla light that
+    // no effect corroborates is the right default - it counts exactly the lights that policy
+    // is throwing away.
+    push("rtx.dusklight.env.effLightsRunning", formatBool(s_effectDebug.enabled));
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.emitters);
+    push("rtx.dusklight.env.effLightsEmitters", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.considered);
+    push("rtx.dusklight.env.effLightsConsidered", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.candidates);
+    push("rtx.dusklight.env.effLightsCandidates", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.sites);
+    push("rtx.dusklight.env.effLightsSites", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.drawn);
+    push("rtx.dusklight.env.effLightsDrawn", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.derived);
+    push("rtx.dusklight.env.effLightsDerived", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.orphans);
+    push("rtx.dusklight.env.effLightsOrphans", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.culled);
+    push("rtx.dusklight.env.effLightsCulled", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d/%d", s_effectDebug.stats.vanillaPoint,
+                  s_effectDebug.stats.vanillaSpot);
+    push("rtx.dusklight.env.effLightsVanilla", buffer);
 }
 #endif  // DUSK_REMIX_BRIDGE_SUPPORTED
 
@@ -1577,6 +1849,7 @@ void tick() {
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();
+    updateEffectLights();
     updateWarp();
     updateControls();
     pushLightStatus();
@@ -1601,6 +1874,10 @@ bool& celestialFlipDirection() {
 
 bool& celestialLockDirection() {
     return s_celestialLock;
+}
+
+const EffectLightsDebug& effectLightsDebug() {
+    return s_effectDebug;
 }
 
 const LocalLightsDebug& localLightsDebug() {

@@ -1436,6 +1436,8 @@ set(DUSK_FILES
         src/dusk/discord_presence.cpp
         src/dusk/dvd_asset.cpp
         src/dusk/dvd_asset.hpp
+        src/dusk/effect_lights.cpp
+        src/dusk/effect_lights.hpp
         src/dusk/extras.c
         src/dusk/file_select.cpp
         src/dusk/file_select.hpp

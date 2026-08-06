@@ -74,6 +74,25 @@ UserSettings g_userSettings = {
         .remixLocalLights {"game.remixLocalLights", false},
         .remixLocalLightIntensity {"game.remixLocalLightIntensity", 19.0f},
         .remixLocalLightRadius {"game.remixLocalLightRadius", 10.0f},
+        // Effect lights. Every default below except the two inherited from the local light
+        // mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
+        // docs/effect-lights.md section 10 says so plainly.
+        .effectLights {"game.effectLights", true},
+        .effectLightIntensity {"game.effectLightIntensity", 1.0f},
+        .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
+        .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
+        .effectLightUndeterminedIntensity {"game.effectLightUndeterminedIntensity", 1.0f},
+        .effectLightUndeterminedReach {"game.effectLightUndeterminedReach", 400.0f},
+        .effectLightUndeterminedRadius {"game.effectLightUndeterminedRadius", 8.0f},
+        .effectLightFireOffset {"game.effectLightFireOffset", 15.0f},
+        .effectLightGlowOffset {"game.effectLightGlowOffset", 0.0f},
+        .effectLightMergeRadius {"game.effectLightMergeRadius", 60.0f},
+        .effectLightAdoptRadius {"game.effectLightAdoptRadius", 250.0f},
+        .effectLightMaxLights {"game.effectLightMaxLights", 32},
+        .effectLightMaxDistance {"game.effectLightMaxDistance", 12000.0f},
+        .effectLightBursts {"game.effectLightBursts", false},
+        .effectLightMinChroma {"game.effectLightMinChroma", 0.20f},
+        .effectLightMinLuma {"game.effectLightMinLuma", 0.75f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
@@ -302,6 +321,22 @@ void registerSettings() {
     Register(g_userSettings.game.remixLocalLights);
     Register(g_userSettings.game.remixLocalLightIntensity);
     Register(g_userSettings.game.remixLocalLightRadius);
+    Register(g_userSettings.game.effectLights);
+    Register(g_userSettings.game.effectLightIntensity);
+    Register(g_userSettings.game.effectLightDerivedIntensity);
+    Register(g_userSettings.game.effectLightDerivedRadius);
+    Register(g_userSettings.game.effectLightUndeterminedIntensity);
+    Register(g_userSettings.game.effectLightUndeterminedReach);
+    Register(g_userSettings.game.effectLightUndeterminedRadius);
+    Register(g_userSettings.game.effectLightFireOffset);
+    Register(g_userSettings.game.effectLightGlowOffset);
+    Register(g_userSettings.game.effectLightMergeRadius);
+    Register(g_userSettings.game.effectLightAdoptRadius);
+    Register(g_userSettings.game.effectLightMaxLights);
+    Register(g_userSettings.game.effectLightMaxDistance);
+    Register(g_userSettings.game.effectLightBursts);
+    Register(g_userSettings.game.effectLightMinChroma);
+    Register(g_userSettings.game.effectLightMinLuma);
     Register(g_userSettings.game.disableFrustumCulling);
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
