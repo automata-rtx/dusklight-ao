@@ -68,8 +68,51 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 6.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
+
+**Effect lights landed 2026-08-06 and have not been run.** Sphere lights at the
+origin of the game's own fire and glow effects, replacing the local-light
+mirror (which now defaults off and is kept as the comparison path). Design and
+citations: [`effect-lights.md`](effect-lights.md). CI-green is not claimed;
+what *is* claimed is that it compiles and that
+`tests/effect_lights/run.sh` passes 32 behavioural assertions under ASan and
+UBSan against stub headers.
+
+Four things a first session should settle, in the order they matter — every one
+of them is answerable from the Dusklight tab or one log line, so none of them
+is a question for the owner:
+
+1. **Is the classifier right about this game?** The rule accepts an effect that
+   is being drawn, blends additively, and has a colour that reads as a glow.
+   The additive clause is read from the JPA format's semantics, **not** from
+   this game's `.jpa` assets, which are not in the repo. Press *Log Effect
+   Classification Report* and the game writes one line per distinct effect it
+   has seen — name, blend configuration, colours, class, verdict. That log
+   turns the inference into a measurement for the whole game at once.
+   Watch `effLightsCandidates` against `effLightsConsidered`: a large gap is
+   normal (most emitters are smoke), a gap to *zero* while stood at a fire is
+   the classifier being wrong.
+2. **Is the spot light registry readable when the bridge runs?** Many of the
+   game's torches register through `dKy_BossLight_set` rather than
+   `dKy_plight_set`, and Link's lantern only through the former. Its "in use"
+   flag is cleared at the top of `exeKankyo` and set again by the actors, so
+   whether it survives to the bridge depends on where the kankyo process falls
+   in the frame — which this pass did not settle by reading.
+   `effLightsVanilla` reports `point/spot`; a spot count that is always zero
+   while a torch burns is the answer. The failure is safe (those sites fall
+   back to configured defaults) but costs the game's own colour.
+3. **How many of the game's lights is the new policy throwing away?**
+   `effLightsOrphans` counts the registered lights no effect corroborated.
+   Those are dropped, because their placement is exactly what this system
+   exists to stop trusting — but some of them are real sources with no particle
+   at all (dungeon fill lights, glowing crystals) and those go dark. A
+   consistently high count in a room that reads under-lit is the signal that
+   the policy needs the escape hatch that is currently only a stub.
+4. **Do the defaults land anywhere near right?** Every one of them except the
+   two inherited from the local-light mirror was chosen to be visible rather
+   than correct. `effectLightIntensity` moves everything at once; the derived
+   and undetermined multipliers move the two halves separately.
 
 **The two live rendering defects:**
 

@@ -18,6 +18,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Run a test session | [`remix-test-playbook.md`](remix-test-playbook.md) |
 | Check whether something was already investigated (last resort — unmaintained archive) | [`remix-history.md`](remix-history.md) |
 | Understand the fog specifically | [`kankyo-fog.md`](kankyo-fog.md) (game side) + `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer) |
+| Understand where fire and glow get their lights | [`effect-lights.md`](effect-lights.md) |
 | Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |

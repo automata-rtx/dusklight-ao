@@ -36,6 +36,7 @@ what it needs:
 | `docs/remix-open-issues.md` | what is broken, what is untested | every session |
 | `docs/remix-test-playbook.md` | how to run a test session | a test is added |
 | `docs/remix-history.md` | **unmaintained archive.** Last resort only — stale status, superseded plans, one wrong diagnosis | never |
+| `docs/effect-lights.md` | the effect-light system: how fire and glow get real lights in the path tracer, and why the placement no longer comes from the game's own light registry | the design changes |
 | `docs/kankyo-fog.md` | fog, game side | rarely |
 | `docs/dx9-fixed-function.md` | how to set the game up under Remix, and the `rtx.conf` | settings change |
 | `docs/sun-elevation.md` | the sun/moon orbit | rarely |

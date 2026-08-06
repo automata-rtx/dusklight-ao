@@ -347,6 +347,69 @@ issue 0. If `drawn > 0` but the room is still dark, that is intensity rather
 than plumbing — try **Local Intensity 19** (the alternative reading of the
 attenuation curve, `remix_bridge.cpp:640-670`).
 
+### 3b. Effect lights — NEW, NEVER RUN
+
+The system that replaced the mirror above. Design: [`effect-lights.md`](effect-lights.md).
+It defaults **on**, and `localLights` now defaults **off** — do not run both, or
+every fire gets two lights, one of them in the wrong place.
+
+```ini
+rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working fire is unmistakable
+```
+
+Everything below reads off the **Effect Lights** section of Remix's Dusklight
+tab. Nothing here needs the owner to judge a colour or count an artifact; if a
+question below cannot be answered from the panel or the log, that is a defect in
+the instrumentation, not a question to ask.
+
+**First, before looking at anything: press *Log Effect Classification Report*.**
+It writes one line per distinct effect the game has seen so far — name, blend
+configuration, colours, class, and whether the rule accepted it. Press it once
+early and once after a couple of rooms. That log is the single highest-value
+artifact of the session, because the rule's central claim — that this game
+authors fire and glow with additive blending and smoke without — is read from
+the file format's semantics and has never been checked against this game's
+actual assets.
+
+**Warp to Forest Temple → Forest Temple (`D_MN05`)**, the same room the mirror
+was validated in. Its torch stands go through the *shared-emitter* spawn path,
+which is the half a naive sweep would get wrong, so a room where each torch has
+its own light is the headline result. Kakariko's bonfire (five emitters at one
+point, which must produce exactly one light) and Ordon at night with the lantern
+lit are the other two worth visiting.
+
+Read, in this order:
+
+| Reading | What it means |
+| :-- | :-- |
+| `emitters → considered → candidates → sites → drawn` | where a light was lost. A big drop at *considered* is normal — most emitters are smoke and screen effects. A drop to zero at *candidates* while you are stood at a fire means the classifier is wrong; the report names which effect it refused |
+| `game lights available (point/spot)` | whether the spot registry survives to the bridge. Most of this game's torches and **all** of Link's lantern register there. A spot count that stays 0 while a torch burns answers open question 2 — those sites are falling back to configured defaults instead of the game's own colour. Safe, but worth knowing |
+| `game lights with no effect` | how many registered lights the new policy is throwing away. Some are real sources with no particle at all and go dark under the default |
+| `culled` | budget or distance. Non-zero in a room full of candles is expected |
+
+**The lantern is the cheapest single check.** Equip it, light it, and watch the
+light appear at the flame and follow the lamp as it swings. Then let the oil run
+out: the light should go out with the flame, because the same `StopDraw` flag
+the game already sets is the first clause of the rule. If it goes out but leaves
+a light behind, the grace period is holding a site that should have been let go.
+
+**If it is too bright or too dim,** move `Master Intensity` first — it scales
+everything. Only reach for `Derived Intensity` / `Undetermined Intensity` once
+you can see which half is wrong: the panel's `reach from the game` count tells
+you how many lights each is driving.
+
+**Regression signatures worth naming before you look, so they are recognised
+rather than discovered:**
+
+- lights on smoke or water spray → the additive clause is too permissive; look
+  for sites whose class is `other` and whose colour is grey in the report
+- a fire that strobes → a site is being created and destroyed each frame; check
+  whether its position is jittering more than the half-unit epsilon
+- a light floating above or beside a fire → `Fire Height Offset`, or the merge
+  radius grouping two nearby fires into one
+- a light left behind where an effect used to be → a callback-driven emitter
+  whose position the game stopped refreshing (`effect-lights.md` §10, hole 1)
+
 ### 4. `hideSkyBillboards` — night shadow wandering — RESOLVED
 
 > **PASSED 2026-07-29, and it is the fix.** Turning it on stops the wandering.
