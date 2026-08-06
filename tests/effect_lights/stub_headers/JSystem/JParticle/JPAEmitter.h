@@ -1,0 +1,21 @@
+#pragma once
+#include <types.h>
+#include <gx.h>
+namespace JGeometry { template <typename T> struct TVec3 { T x, y, z; }; }
+enum { JPAEmtrStts_StopEmit = 0x01, JPAEmtrStts_StopCalc = 0x02, JPAEmtrStts_StopDraw = 0x04,
+       JPAEmtrStts_EnableDeleteEmitter = 0x08, JPAEmtrStts_Immortal = 0x40, JPAEmtrStts_Delete = 0x100 };
+class JPAEmitterCallBack;
+class JPAResource;
+template <typename T> struct JSULink { void* storage[2]; T* getObject(); JSULink<T>* getNext(); };
+class JPABaseEmitter {
+public:
+    u32 checkStatus(u32) const;
+    u8 getGlobalAlpha() const;
+    u32 getParticleNumber() const;
+    void calcEmitterGlobalPosition(JGeometry::TVec3<f32>*) const;
+    JPAEmitterCallBack* getEmitterCallBackPtr() const;
+    JGeometry::TVec3<f32> mGlobalTrs;
+    GXColor mPrmClr, mEnvClr, mGlobalPrmClr, mGlobalEnvClr;
+    JPAResource* pRes;
+    JSULink<JPABaseEmitter> mLink;
+};

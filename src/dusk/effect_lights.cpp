@@ -233,21 +233,25 @@ bool isAdditive(const JPABaseShape* shape) {
         return false;
     }
 
-    const GXBlendFactor dst = shape->getBlendDst();
-    return dst == GX_BL_ONE || dst == GX_BL_SRCALPHA || dst == GX_BL_DSTALPHA;
+    // ONE only. A destination factor of ONE is the one configuration that literally adds the
+    // draw to what is behind it; SRC_ALPHA or INV_SRC_ALPHA there scale the background down,
+    // which is how smoke and spray cover things up. Being permissive here would buy a few more
+    // fires at the price of lighting every puff of dust, and the price is worse - a wrong light
+    // is visible, a missing one is only dim, and the report says which effects were refused.
+    return shape->getBlendDst() == GX_BL_ONE;
 }
 
+// Deliberately the same two functions the fork's material self-illumination rule uses
+// (rtx_dusklight_emissive.h): chroma is the unnormalized spread between the brightest and
+// dimmest channel, luma is Rec.601. The two rules are meant to be the same judgement made in
+// two places, so an earlier revision of this file that used normalized chroma and Rec.709 was
+// quietly asking a different question with the same words.
 float chromaOf(const float c[3]) {
-    const float hi = std::max(c[0], std::max(c[1], c[2]));
-    const float lo = std::min(c[0], std::min(c[1], c[2]));
-    if (hi <= 0.0001f) {
-        return 0.0f;
-    }
-    return (hi - lo) / hi;
+    return std::max(c[0], std::max(c[1], c[2])) - std::min(c[0], std::min(c[1], c[2]));
 }
 
 float lumaOf(const float c[3]) {
-    return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
+    return 0.299f * c[0] + 0.587f * c[1] + 0.114f * c[2];
 }
 
 // Saturated, or near white hot. Same shape as the material self illumination rule's third
@@ -728,6 +732,13 @@ const Stats& stats() {
     return s_stats;
 }
 
+void reset() {
+    s_tracked.clear();
+    s_sites.clear();
+    s_simpleCount = 0;
+    s_simpleOverflowed = false;
+}
+
 const std::vector<Site>& collect(const Params& params) {
     s_stats = Stats();
     s_sites.clear();
@@ -969,7 +980,10 @@ const std::vector<Site>& collect(const Params& params) {
         const Pending& p = pending[i];
 
         TrackedSite* match = nullptr;
-        float bestD2 = mergeR2 * 4.0f;
+        // Generous compared to the merge radius, because a site's position steps whenever a
+        // different member becomes the heaviest. Floored so that a merge radius of zero, which
+        // means "never merge", does not also mean "never recognise the same site twice".
+        float bestD2 = std::max(mergeR2 * 4.0f, 100.0f);
         for (TrackedSite& t : s_tracked) {
             if (t.seen || t.site.cls != p.cls) {
                 continue;
@@ -1024,21 +1038,26 @@ const std::vector<Site>& collect(const Params& params) {
         }
     }
 
+    // Sites that produced no candidate this frame are held, unchanged, for a few frames before
+    // they are let go - and they are still reported, so the caller keeps drawing them.
+    //
+    // Holding the site id alone would not be enough. Not reporting a site tells the bridge the
+    // light is gone, and it destroys it; when the effect comes back a frame later the light is
+    // created again from scratch and its temporal history starts over. Several effects in this
+    // game are re-set every few frames rather than continuously, so without this they would
+    // strobe. The cost is that a fire that genuinely goes out lingers for the grace period,
+    // which at this length is under a fifth of a second.
     for (size_t i = s_tracked.size(); i-- > 0;) {
         if (s_tracked[i].seen) {
             continue;
         }
-        // Some effects are re-set every few frames rather than continuously. Without the
-        // grace period those would create and destroy a Remix light in a loop.
         if (++s_tracked[i].missingFrames > kSiteGraceFrames) {
             s_tracked.erase(s_tracked.begin() + static_cast<ptrdiff_t>(i));
         }
     }
 
     for (const TrackedSite& t : s_tracked) {
-        if (t.seen) {
-            s_sites.push_back(t.site);
-        }
+        s_sites.push_back(t.site);
     }
 
     s_stats.sites = static_cast<int>(s_sites.size());

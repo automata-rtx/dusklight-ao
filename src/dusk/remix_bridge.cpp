@@ -1327,6 +1327,7 @@ void updateEffectLights() {
     if (!dusk::IsGameLaunched ||
         !readOptionBool("rtx.dusklight.game.effectLights", game.effectLights.getValue())) {
         releaseEffectLights();
+        dusk::effect_lights::reset();
         dusk::effect_lights::Params off;
         off.enable = false;
         dusk::effect_lights::collect(off);
@@ -1342,8 +1343,10 @@ void updateEffectLights() {
 
     if (s_lightsNeedRecreate) {
         // Drop the handles without destroying them: they refer to a device that no longer
-        // exists, and its light manager went with it.
+        // exists, and its light manager went with it. The sites go too - holding them would
+        // carry a grace period across a discontinuity it was never meant to span.
         s_effectLights.clear();
+        dusk::effect_lights::reset();
         s_lightsNeedRecreate = false;
     }
 

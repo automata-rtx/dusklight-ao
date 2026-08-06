@@ -76,8 +76,10 @@ struct Params {
     bool bursts = false;                 // include one-shot effects
     int orphanPolicy = 0;                // 0 none, 1 unadopted only, 2 all - see Stats::orphans
 
-    float minChroma = 0.20f;             // "reads as a glow" thresholds
-    float minLuma = 0.75f;
+    // "reads as a glow" - saturated OR near white hot. Same shape and same defaults as the
+    // fork's material self-illumination rule, which asks the same question of a surface.
+    float minChroma = 0.50f;
+    float minLuma = 0.70f;
     float minAlpha = 0.08f;
 
     // Camera position, for the distance cull. The caller supplies it because this module
@@ -117,6 +119,11 @@ struct Stats {
 const std::vector<Site>& collect(const Params& params);
 
 const Stats& stats();
+
+// Drops every tracked site, so the next collect() starts from nothing. Call it whenever the
+// continuity between frames has genuinely been broken - a Remix device reset, the system being
+// switched off - rather than letting the grace period below hold stale sites across it.
+void reset();
 
 // --- the simple effect side channel ---------------------------------------------------
 //

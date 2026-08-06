@@ -267,10 +267,22 @@ sparks and lava blend additively; smoke, dust, water and splashes do not.
 It is the same distinction the material rule draws with "no TEV colour stage
 reads the rasterized channel", arrived at from the other end.
 
+`ONE` and nothing else. A destination factor of `SRC_ALPHA` or
+`INV_SRC_ALPHA` scales the background *down*, which is how smoke covers things
+up, so accepting those would buy a few more fires at the price of lighting
+every puff of dust — and a wrong light is visible where a missing one is only
+dim. §7's report names the effects this refuses, so the trade is measurable
+rather than argued.
+
 **Reads as a glow.** Chroma or luminance of `prm ⊗ globalPrm` /
-`env ⊗ globalEnv` above a threshold — thresholds are options, for the same
-reason §9's are: they are a judgement about this game's palette, not a
-constant of the universe.
+`env ⊗ globalEnv` above a threshold. **The same two functions and the same
+default thresholds as the fork's material rule** — unnormalized chroma
+(brightest channel minus dimmest) and Rec.601 luma, 0.50 and 0.70
+(`rtx_dusklight_emissive.h`). That is the point: it is one judgement asked in
+two places, and an earlier revision of this file used normalized chroma and
+Rec.709 and so was quietly asking a different question with the same words.
+Thresholds rather than constants, for the same reason §9's are: they are a
+judgement about this game's palette.
 
 **⚠ The additive clause is inference, not measurement.** It is read from the
 JPA format's semantics and from what `setGX` does with it, *not* from having
@@ -456,6 +468,25 @@ below `effLightsEmitters`; the report will name the effect that was rejected.
 
 ---
 
+## 7.1 One interaction worth knowing about
+
+An additive particle draw already gets a small emissive contribution from Remix
+without this system: `calculateAlphaState` classifies additive blending as
+`emissiveBlend`, and `rtx.enableEmissiveBlendEmissiveOverride` (default on)
+gives it a flat `rtx.emissiveBlendOverrideEmissiveIntensity` of 0.2
+(`rtx_instance_manager.cpp`, `rtx_options.h`). That branch sits *above* the
+Dusklight material rule in the same `else if` chain, so **a fire sprite is
+already glowing a little, and the Dusklight self-illumination rule never sees
+it.**
+
+This does not conflict with anything here. That path makes the *sprite* emit;
+this system makes a *light* that casts shadows and reaches surfaces the sprite
+does not touch. But it does mean a fire is never completely unlit even with
+this system off, which is worth knowing before concluding from a screenshot
+that effect lights are working.
+
+---
+
 ## 8. What happens to the old mirror
 
 `rtx.dusklight.game.localLights` stays exactly as it is, defaulting off. It is
@@ -491,8 +522,9 @@ Remix. The overlay hosts them in the Dusklight tab.
 | `effectLightMaxDistance` | 12000.0 | cull distance from the camera |
 | `effectLightBursts` | off | include one-shot effects (§4.5) |
 | `effectLightOrphanPolicy` | `None` | *not implemented yet* — see §10 |
-| `effectLightMinChroma` | 0.20 | the "reads as a glow" thresholds (§3) |
-| `effectLightMinLuma` | 0.75 | |
+| `effectLightVolumetric` | 1.0 | how much a light contributes to fog relative to surfaces; above 1 a flame hazes the air without getting brighter on the walls |
+| `effectLightMinChroma` | 0.50 | the "reads as a glow" thresholds (§3) — same functions and defaults as the material rule |
+| `effectLightMinLuma` | 0.70 | |
 | `effectLightReportCommit` | action | dump the classification report (§7) |
 
 The same names exist in the game's own `config.json` under `game.*`, which is
@@ -513,15 +545,20 @@ liveness flag on the spot list. `mPow` being a real radius. That `dPa_RM`'s
 the fact that the simple one shares an emitter. The blend-mode accessors.
 
 **Exercised by a test harness** (`compiles and behaves`, not `tested in game`).
-The module is compiled against stub headers matching the signatures above and
-run through 25 assertions covering: a bonfire's five emitters merging to one
+`tests/effect_lights/run.sh` compiles the module against stub headers matching
+the signatures above and runs it under ASan and UBSan. It **cannot** catch a
+stub that has drifted from the real declaration — only the reading above says
+those match. 32 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect
 being rejected and a white-hot one accepted; a nearby game light being adopted
 for colour and reach *without* moving the light off the effect origin; a
 distant one being counted as an orphan instead; site identity surviving a
 member joining; `StopDraw` extinguishing a light; bursts excluded by default;
 the budget dropping and reporting; three torches sharing one emitter still
-getting three lights; and records not surviving into the next frame.
+getting three lights; records not surviving into the next frame; a
+fire-coloured but non-additive effect still being refused; the grace period
+holding a light rather than letting it be destroyed and rebuilt; and `reset()`
+dropping everything at once.
 
 **Inference, not measurement.** That fire and glow effects in *this game* are
 authored with an additive destination factor and smoke is not (§3) — this is
