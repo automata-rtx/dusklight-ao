@@ -487,6 +487,26 @@ that effect lights are working.
 
 ---
 
+## 7.2 Why this is the only fine-grained light indoors
+
+Worth stating once, because it sets how much these lights are carrying.
+
+The scene has three light sources. The **sun/moon distant light** is gated on
+`dKy_SunMoon_Light_Check()`, so it is off in interiors and in twilight. The
+**generated sky** is outdoor fill only — and per
+`DusklightAtmosphere.md` §14.1, Remix has no dome light type at all, so a sky
+contributes *only through ray miss* and is never NEE-sampled. The **ambient
+grade** is off by default and has never been reached in a test.
+
+An effect light is a **sphere** light, which is NEE-sampled like any other. So
+indoors, these are not a garnish on top of an existing lighting solution —
+between them and whatever the mirror is doing, they are the lighting solution.
+That is the argument for getting their placement right, and also the reason
+`effLightsOrphans` matters: every registered light this policy drops in an
+interior is light nothing else replaces.
+
+---
+
 ## 8. What happens to the old mirror
 
 `rtx.dusklight.game.localLights` stays exactly as it is, defaulting off. It is
