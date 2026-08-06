@@ -199,6 +199,14 @@ still builds today and breaks the moment that branch is cleaned up.
   setting that needs to be reachable while running has to be hosted in the
   Remix overlay (`rtx.dusklight.game.*`) — see `documentation/DusklightOverlay.md`
   in the fork.
+- **HD texture packs go to Remix, never through D3D9** (`remix_bridge.cpp`
+  `updateTextureReplacements`, tested good 2026-08-06). The game hands each
+  `.dds` to `remixapi_CreateMaterial` and aurora tags each draw with its index.
+  The reason is load-bearing and easy to undo by accident: the D3D9 texture is
+  what Remix hashes, so uploading a pack would silently re-key **every** texture
+  tag, `rtx.conf` category and USD binding. If you ever find yourself making
+  aurora upload replacement pixels, that is the trap.
+  `extern/aurora/docs/dx9/texture-replacements.md`.
 - Verify D3D9 code with the MinGW syntax harness described in
   `extern/aurora/docs/dx9/progress.md` §"How to resume"; full builds happen on
   the owner's Windows machine and in CI.

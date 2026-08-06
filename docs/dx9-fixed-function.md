@@ -482,8 +482,8 @@ open-ended linear radiance, and none of them mean what they meant.
   **`config.json` is not rewritten**, so the same config moves between a
   modded build and a D3D9 test build with no edits either way. Remix's path
   tracer replaces the graphics mods' effects wholesale.
-- **HD texture replacement packs work in this mode** as of 2026-08-05
-  (**untested in game**). Drop `.dds` files named the usual
+- **HD texture replacement packs work in this mode** as of 2026-08-05,
+  **tested good 2026-08-06**. Drop `.dds` files named the usual
   `tex1_{w}x{h}_{hash}_{fmt}.dds` way into `<ConfigPath>/texture_replacements/`
   and launch on the D3D9 backend with our fork's `d3d9.dll`. Nothing else to
   turn on: `game.enableTextureReplacements` and `game.remixTextureReplacements`
@@ -512,6 +512,14 @@ open-ended linear radiance, and none of them mean what they meant.
   UI draws instead of path-tracing them, so they never reach material
   replacement. Turn `rtx.dusklight.texrep.applyToRaster` off to isolate a
   HUD-only regression.
+
+  **Expect a slow first launch.** With a pack installed the first run spends a
+  long period at poor performance before the replacements appear; later runs
+  have them immediately. This is expected, not a fault: Remix keeps no on-disk
+  cache of loaded textures, so it re-reads every `.dds` each launch, and only
+  the operating system's own file cache makes the second run fast. Full account,
+  and the one change that would shorten it, in
+  `extern/aurora/docs/dx9/texture-replacements.md` §9.
 
   If a pack appears to do nothing, the Dusklight tab's **HD Texture Pack**
   section says which half is at fault — it reports the game's counts and Remix's

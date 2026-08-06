@@ -383,6 +383,13 @@ constexpr uint64_t kTexRepHandleBase = 0xD05C000000000000ull;
 // created in one frame is a visible hitch at launch. Spread it out instead; the fork falls back
 // to the game's own texture for anything not resident yet, so a slow ramp costs fidelity for a
 // moment rather than correctness.
+//
+// Measured 2026-08-06: the first launch with a pack installed is slow for a long stretch, later
+// launches are not. Remix keeps no on-disk texture cache, so every .dds is re-read each launch
+// and only the OS file cache makes the difference - a count budget therefore stalls each frame
+// by however long 16 cold reads take. A *time* budget would stretch the ramp instead of the
+// frame, and is the change to make if this ever needs shortening.
+// extern/aurora/docs/dx9/texture-replacements.md §9.
 constexpr size_t kTexRepCreationsPerFrame = 16;
 
 std::vector<aurora::texture::ReplacementDescriptor> s_texRepQueue;

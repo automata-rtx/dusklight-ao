@@ -20,7 +20,7 @@ correctly, and where the D3D9 stream cannot carry something the answer is to
 implement it in the fork rather than to approximate it in D3D9. Full statement:
 `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 
-## State, as of 2026-08-05
+## State, as of 2026-08-06
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
@@ -38,17 +38,35 @@ instrumentation fixes and the blend reporting.
 
 **One generated document is stale and needs a Windows run to fix:**
 `dxvk-remix/RtxOptions.md` is produced by the runtime itself and currently
-documents a subset of `rtx.dusklight.*`. This session removed four emissive
-options and added three; the header comments in
-`rtx_dusklight_emissive.h` are authoritative until it is regenerated.
+documents a subset of `rtx.dusklight.*`. The 2026-08-05 session removed four
+emissive options and added three; 2026-08-06 added four more it does not list at
+all (`rtx.dusklight.texrep.enable`, `.applyToRaster`, `.forceFullMips`,
+`.report`). The header comments in `rtx_dusklight_emissive.h` and
+`rtx_dusklight_texrep.h` are authoritative until it is regenerated.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 6.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
+
+**HD texture replacement packs work on the D3D9 backend — tested good
+2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each
+`.dds` to Remix through `remixapi_CreateMaterial` and aurora tags each draw with
+its index, so the game's own textures remain what Remix hashes and **texture
+tagging, `rtx.conf` category lists and USD bindings are unaffected by installing
+or changing a pack.** Substituted at two sites — the material for path-traced
+draws, the texture bind for the rasterized HUD — because a UI draw never reaches
+material resolution. Not an open issue; recorded here because it changes what
+authoring a remaster involves (albedo comes for free; author roughness/normal/
+metalness only). `extern/aurora/docs/dx9/texture-replacements.md`.
+
+Its one known characteristic is a **long first-launch warm-up** — Remix keeps no
+on-disk texture cache, so every `.dds` is re-read each launch and only the OS
+file cache makes later launches fast. Expected, not a fault; §9 of that document
+has the candidate fix if it ever matters.
 
 **The two live rendering defects:**
 

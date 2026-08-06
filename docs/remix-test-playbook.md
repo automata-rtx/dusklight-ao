@@ -265,6 +265,40 @@ Nothing to describe by eye here, and nothing that can regress the image: if this
 is inconvenient to run, it can wait for a session that is already taking
 captures for another reason.
 
+### 0b. HD texture packs — PASSED 2026-08-06, kept as the regression recipe
+
+> **PASSED 2026-08-06, first try.** Replacements appear, and texture tagging is
+> unaffected. Re-run this whenever anything in the texture, material or tagging
+> path changes — the tagging check below is the one that would catch the
+> expensive kind of regression.
+
+Needs a `.dds` pack in `<ConfigPath>/texture_replacements/`. Nothing to enable:
+`game.enableTextureReplacements` and `game.remixTextureReplacements` both
+default on and are read at launch.
+
+1. Launch, open the Dusklight tab → **HD Texture Pack**, read both counter rows.
+2. Look at the world and the HUD.
+3. **The tagging check.** Open Remix's texture categorization list and note a
+   few hashes. Quit, move the pack directory aside, relaunch, and compare.
+
+| What you find | Reading |
+| :-- | :-- |
+| `Game: N selected, N handed over` and `Remix: … substituted` climbing | Working. |
+| Handed over > 0 but `0 draws tagged` | The D3D9 stream is not carrying the index — an aurora older than the fork, or a protocol skew. Read the protocol line first. |
+| `N selected, 0 handed over` | The game's device never registered with Remix, or the pack is all `.png` — `texrepSkipped` and the game log say which. |
+| World sharpens, HUD does not | `applyToRaster` off, or a multi-texture UI draw (only the albedo stage is substituted on the raster path). |
+| **Texture hashes differ between pack-on and pack-off** | **A real regression, and the serious one** — it means the pack is reaching D3D9, which silently invalidates every `rtx.conf` category and USD binding. The whole design exists to prevent this. |
+
+**Expect a slow first launch** and a fast second one. That is the OS file cache,
+not a fault — `extern/aurora/docs/dx9/texture-replacements.md` §9. If it is
+worth quantifying, the game log's gap between
+`texrep: N replacement(s) selected` and `texrep: N material(s) created` measures
+it exactly.
+
+Not exercised by the 2026-08-06 run, so still worth covering if a session has
+room: a BC7 or BC5 pack, a deliberately-`.png` entry, a window resize (materials
+should be re-created), and palette-animated art.
+
 ### 1. Clock — do this first, it is the tool the rest want
 
 > **PASSED 2026-07-29** — slider, presets and Freeze Time all "work flawlessly
