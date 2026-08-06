@@ -209,3 +209,8 @@ still builds today and breaks the moment that branch is cleaned up.
   here:** the bridge is inside `#if defined(_WIN32)`, so Linux preprocesses the
   entire thing away and then reports success. On 2026-08-06 four compile errors
   reached CI that way. Needs `g++-mingw-w64-x86-64` and `libfmt-dev`.
+  It also runs `tools/check-remix-protocol.py`, which cross-checks every
+  `rtx.dusklight.*` name the game reads or pushes against the fork's
+  `RTX_OPTION` declarations. **No compiler can see that class of mistake** — a
+  mistyped name silently falls back to `config.json` forever, and a readout
+  nothing pushes silently reads as its default.

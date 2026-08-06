@@ -112,3 +112,8 @@ fi
 
 echo
 echo "syntax check passed"
+
+# The other half of the protocol is string-matched at runtime, where no compiler
+# can see it. Skips itself if the fork is not checked out alongside.
+echo
+"$root/tools/check-remix-protocol.py" || exit 1
