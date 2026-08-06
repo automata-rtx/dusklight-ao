@@ -49,17 +49,19 @@ It is **generated, never hand-edited**. A row that reads badly means the
 regenerate with `DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1`. Nothing in CI
 enforces this, so it goes stale silently; regenerate it at checkpoints.
 
-**Blob shadows are suppressed under Remix as of 2026-08-05** (`rtx.dusklight.game.blobShadows`,
+**Blob shadows are suppressed under Remix, and it is TESTED (2026-08-06):** the
+flat quads under dropped items are gone. Landed 2026-08-05 (`rtx.dusklight.game.blobShadows`,
 default off, live in the overlay under Geometry). The flat discs the game paints
 under rupees, hearts and pots approximate a shadow Remix traces for real from the
 same geometry, so drawing them puts a painted shadow on top of a correct one.
 Dropped at registration in `dDlst_shadowControl_c::setSimple`, so no draw call is
-issued rather than one being hidden downstream. **Shipped in the same build as
-the 2026-08-06 emissive test, but not commented on** — so it is built and
-CI-green, and whether it looks right is still open. **The game's projected shadows
+issued rather than one being hidden downstream. **The game's projected shadows
 (`dDlst_shadowReal_c` — Link, major actors) are a separate system and are
-untouched** — they are equally redundant under a path tracer, but nobody has
-asked for them yet and Link's shadow is a bigger visual change than a rupee's.
+untouched.** The reasoning that made the blob suppression correct — a painted
+shadow drawn on top of a traced one — transfers to them word for word, and it is
+now a confirmed reading rather than a prediction. Not done because nobody has
+asked and Link's shadow is a far more visible change than a rupee's; it is the
+same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;

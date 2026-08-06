@@ -158,11 +158,10 @@ surface in the room, plus one warm glow texture, and nothing else.
 | Emitted Colour | Leave on *Reconstructed Albedo*. It is the two-colour ramp — `lerp(FF0000, FFFE63, texture)` — so the texture drives the colour. The other two are there to compare against, not to use. |
 | Emissive Surfaces Enabled | Untick for an A/B against no emission at all. |
 
-Also new and needing nothing from you: the game no longer draws the flat disc
-shadows under rupees, hearts and pots. Remix traces those for real, so the disc
-was a painted shadow on top of a correct one. Link's own shadow is a separate
-system and is unchanged — if *that* now looks doubled, say so, because it means
-the same treatment is wanted there.
+The game no longer draws the flat disc shadows under rupees, hearts and pots —
+**tested 2026-08-06, correct.** Remix traces those for real, so the disc was a
+painted shadow on top of a correct one. Link's own shadow is a separate system
+and is unchanged; if *that* ever looks doubled, it is the same one-line fix.
 
 | What you see | Reading |
 | :-- | :-- |
