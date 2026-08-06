@@ -211,6 +211,10 @@ struct UserSettings {
         ConfigVar<bool> remixHideSkyBillboards;
         ConfigVar<bool> remixHideVrbox;
         ConfigVar<bool> remixPerBladeGrass;
+        // Suppress the game's flat circular shadows under small objects; Remix traces
+        // real ones from the geometry, so the painted disc lands on top of a correct
+        // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
+        ConfigVar<bool> remixBlobShadows;
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;

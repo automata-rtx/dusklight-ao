@@ -49,6 +49,17 @@ It is **generated, never hand-edited**. A row that reads badly means the
 regenerate with `DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1`. Nothing in CI
 enforces this, so it goes stale silently; regenerate it at checkpoints.
 
+**Blob shadows are suppressed under Remix as of 2026-08-05** (`rtx.dusklight.game.blobShadows`,
+default off, live in the overlay under Geometry). The flat discs the game paints
+under rupees, hearts and pots approximate a shadow Remix traces for real from the
+same geometry, so drawing them puts a painted shadow on top of a correct one.
+Dropped at registration in `dDlst_shadowControl_c::setSimple`, so no draw call is
+issued rather than one being hidden downstream. **The game's projected shadows
+(`dDlst_shadowReal_c` — Link, major actors) are a separate system and are
+untouched** — they are equally redundant under a path tracer, but nobody has
+asked for them yet and Link's shadow is a bigger visual change than a rupee's.
+CI-green, untested in game.
+
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
