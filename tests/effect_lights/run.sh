@@ -16,7 +16,7 @@ out=${TMPDIR:-/tmp}/dusk_effect_lights_test
 
 g++ -std=c++20 -w -g -fsanitize=address,undefined \
     -I"$here/stub_logging" -I"$here/stub_headers" -I"$root/src" \
-    "$here/test_effect_lights.cpp" "$root/src/dusk/effect_lights.cpp" \
+    "$here/test_effect_lights.cpp" "$root/src/dusk/effect_lights.cpp" -lfmt \
     -o "$out"
 
 "$out"

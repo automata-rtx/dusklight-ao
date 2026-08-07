@@ -155,5 +155,9 @@ void recordSimple(uint16_t effectId, const void* emitter, float x, float y, floa
 // this is what turns the "additive means emissive" inference into a measurement.
 void requestReport();
 
+// The bridge's own counters, handed over so the report can print them. Call once per frame
+// before collect(); they are display-only and nothing here reads them for a decision.
+void setBridgeCounters(int creates, int destroys, int drawn);
+
 }  // namespace effect_lights
 }  // namespace dusk

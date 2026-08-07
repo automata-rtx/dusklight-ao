@@ -89,7 +89,7 @@ assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 and merged.** Sphere lights at the origin of the game's own fire and glow
 effects, replacing the local-light mirror (which now defaults off and is kept as
 the comparison path). Design and citations:
-[`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 42
+[`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 45
 behavioural checks under ASan and UBSan.
 
 **CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
@@ -124,8 +124,15 @@ as read from the file format rather than measured. What the pass does **not**
 establish is anything about *which* effects are accepted, because **no
 classification report was read.**
 
-So these stay open. Every one is answerable from the Dusklight tab or one log
-line, so none of them is a question for the owner:
+**As of 2026-08-07 all of them are answerable by ONE press of *Log Full Effect
+Light Report*.** That was the point of the instrumentation work: the report is
+five sections — counters, effects, sites, game lights, and a retrospective
+trace — and between them they cover every question below plus the burst ones.
+The trace is retrospective, so the loop is *do the thing, then press*, not
+*arm a trace and hope*. If a question about this system cannot be answered
+from one press, that is a defect in the report, not a question for the owner.
+
+So these stay open, but none of them costs a test session of its own:
 
 1. **Which effects does the classifier accept, and which does it silently
    refuse?** The rule accepts an effect that is being drawn, blends additively,

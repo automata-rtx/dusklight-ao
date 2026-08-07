@@ -9,11 +9,13 @@
 #include <JSystem/JParticle/JPABaseShape.h>
 #include <JSystem/JParticle/JPAEmitter.h>
 #include <JSystem/JParticle/JPAEmitterManager.h>
+#include <JSystem/JParticle/JPAKeyBlock.h>
 #include <JSystem/JParticle/JPAResource.h>
 #include <d/d_com_inf_game.h>
 #include <d/d_kankyo.h>
 #include <d/d_particle.h>
 #include <d/d_particle_name.h>
+#include <dusk/logging.h>
 
 #include <cassert>
 #include <cstdio>
@@ -27,9 +29,26 @@ struct FakeShape {
     GXBlendMode mode = GX_BM_BLEND;
     GXBlendFactor src = GX_BL_SRCALPHA;
     GXBlendFactor dst = GX_BL_ONE;
+    // Animation configuration, reported but never decided on. Defaults say "does not animate".
+    int glblClrAnm = 0;
+    int prmAnm = 0;
+    int envAnm = 0;
+    u32 anmType = 0;
+    s16 anmMaxFrm = 0;
+    f32 baseSizeX = 10.0f;
+    f32 baseSizeY = 10.0f;
 };
 
+// LAYOUT-COUPLED to the JPAResource stub, and the coupling is load-bearing. The harness hands
+// the module a FakeRes* reinterpret_cast to JPAResource*, so any field the module reads THROUGH
+// the JPAResource declaration - as opposed to through getBsp()/getUsrIdx(), which resolve to
+// explicit members here - has to sit at the same offset in both. ppKey and keyNum are read
+// directly (they are public fields on the real class too), so they must come first, in the same
+// order as the stub declares them. ASan caught this the moment the key-block walk was added:
+// reading ppKey off the front of FakeShape segfaulted immediately.
 struct FakeRes {
+    JPAKeyBlock** ppKey = nullptr;
+    u8 keyNum = 0;
     FakeShape shape;
     u16 usrIdx = 0;
 };
@@ -60,6 +79,18 @@ JPABaseShape* JPAResource::getBsp() const {
 }
 u16 JPAResource::getUsrIdx() const { return reinterpret_cast<const FakeRes*>(this)->usrIdx; }
 
+// The animation-configuration accessors the classification report prints. Values come from the
+// FakeShape so a case can express "this effect's colour animates" or "it does not"; the defaults
+// say it does not, which is the conservative reading for an effect nobody has measured.
+BOOL JPABaseShape::isGlblClrAnm() const { return reinterpret_cast<const FakeShape*>(this)->glblClrAnm; }
+BOOL JPABaseShape::isPrmAnm() const { return reinterpret_cast<const FakeShape*>(this)->prmAnm; }
+BOOL JPABaseShape::isEnvAnm() const { return reinterpret_cast<const FakeShape*>(this)->envAnm; }
+u32 JPABaseShape::getClrAnmType() const { return reinterpret_cast<const FakeShape*>(this)->anmType; }
+s16 JPABaseShape::getClrAnmMaxFrm() const { return reinterpret_cast<const FakeShape*>(this)->anmMaxFrm; }
+f32 JPABaseShape::getBaseSizeX() const { return reinterpret_cast<const FakeShape*>(this)->baseSizeX; }
+f32 JPABaseShape::getBaseSizeY() const { return reinterpret_cast<const FakeShape*>(this)->baseSizeY; }
+u8 JPAKeyBlock::getID() const { return 0; }
+
 static u32 g_status[64];
 // Per-emitter global particle scale. 1.0 is the ordinary case; a case sets it to 0 to express
 // an emitter the game has hidden by shrinking rather than by alpha or StopDraw, which is how
@@ -83,6 +114,7 @@ u32 JPABaseEmitter::checkStatus(u32 mask) const {
 }
 u8 JPABaseEmitter::getGlobalAlpha() const { return mGlobalPrmClr.a; }
 u32 JPABaseEmitter::getParticleNumber() const { return 4; }
+u32 JPABaseEmitter::getAge() const { return 0; }
 void JPABaseEmitter::getGlobalParticleScale(JGeometry::TVec3<f32>* out) const {
     const int i = emitterIndex(this);
     const float s = (i >= 0) ? g_pscale[i] : 1.0f;
@@ -557,6 +589,38 @@ int main() {
 
         check(collect(p).empty(),
               "a neutral simple-path effect is refused - the caller's white no longer decides");
+    }
+
+    // 14. The report is the whole deliverable of the instrumentation work: one press has to
+    //     answer every open question, so it has to survive being pressed in the states that
+    //     actually occur - including the empty world and the capped one. It is checked for not
+    //     crashing and for covering the sections; what it SAYS is read by a human from the log.
+    clearLights();
+    resetSites();
+    buildScene({{dPa_RM(0x204), "ZI_S_maki_fire_a.jpa", 100, 0, 100},
+                {0x81C4, "ZI_S_db_yodareM1_a.jpa", 900, 0, 0},
+                {0x501, "ZI_J_bakuha_fire_b.jpa", 1800, 0, 0}});
+    addPointLight(100, 10, 100, 0xBC, 0x66, 0x42, 500.0f);
+    {
+        setBridgeCounters(123, 45, 7);
+        collect(p);              // a frame of history for the trace
+        requestReport();
+        aurora::Module::enabled() = true;   // print this one, so the shape can be eyeballed
+        const std::vector<Site>& sites = collect(p);
+        aurora::Module::enabled() = false;
+        check(!sites.empty(), "the report runs on a populated frame without crashing");
+        check(stats().excluded == 1, "and the refused drool is still counted while it reports");
+    }
+
+    // 14b. Pressed with nothing alive at all. An empty world is the state someone will be in
+    //      when they press the button by accident, and a report that divides by a zero site
+    //      count there is a report nobody gets to read.
+    clearLights();
+    resetSites();
+    buildScene({});
+    {
+        requestReport();
+        check(collect(p).empty(), "the report survives being pressed with no lights at all");
     }
 
     std::printf("\n%s (%d failures)\n", g_failures == 0 ? "ALL PASS" : "FAILURES", g_failures);

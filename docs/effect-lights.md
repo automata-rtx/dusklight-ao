@@ -586,12 +586,41 @@ right. Each request also **clears the memory**, so a press covers everything
 seen since the last press rather than filling once and then capping for the
 rest of the session.
 
-**A one-shot classification report** (`effectLightReport`, an action option):
-one line per *distinct effect ID seen so far*, capped, with a truncation
-notice — the effect's name, its blend configuration, its primary and
-environment colours, its class, the rule's verdict, and why. That is the log
-that turns §3's inference into measurement, and it is bounded by the number
-of distinct effects in a scene rather than by frames.
+**One press, five sections, every open question answered.** *Log Full Effect
+Light Report* in the Dusklight tab (`effectLightReportCommit`, an action
+option). The design goal is literally "send the log and nothing else is
+needed" — if a question about this system cannot be answered from one press,
+that is a defect in the report rather than a question for the owner.
+
+| Section | What it settles |
+| :-- | :-- |
+| **counters** | the whole chain, plus the bridge's own `creates`/`destroys` — which were counted since the system landed and printed **nowhere** until 2026-08-07. `creates` counts light *updates*, so it is the number that prices an animating light |
+| **effects** | one line per distinct effect since the last press: name, blend configuration, colours, the **measured** chroma and luma the rule cut on, which **keyword** picked its class, and a verdict naming *which clause* refused it — `no(opaque)` / `no(colour)` / `no(name)` / `LIT-if-bursts`. Plus the **animation configuration**, so you can see whether an effect's colour is even *capable* of animating, and `maxFrame`/`life`/`age`/`particles` for how long it lives |
+| **sites** | every light this frame: position, how many emitters merged into it, and **the distance to the game light it adopted** — the one number the burst design turns on and which had never been measured |
+| **game lights** | every light the game registered and which effect took it. Adoption is **exclusive**, so this is what shows a short-lived effect stealing a torch's light and leaving the torch 19× dimmer |
+| **trace** | a rolling ring of how each light changed over the last few seconds |
+
+Two properties worth knowing:
+
+- **The trace is RETROSPECTIVE.** Do the thing first, *then* press. A line is
+  written only when a site appears, goes, or its radiance moves more than 2% —
+  the bridge's own update threshold — so a steady torch is one line and an
+  explosion is many. That is what lets a 512-entry ring cover minutes of play
+  instead of eight frames, and it is why you do not have to arm a trace and
+  hope the timing lands.
+- **The effects memory clears on each press; the trace does not.** A press
+  covers every effect seen *since the last press* rather than filling once and
+  capping for the session. Clearing the trace too would mean two presses in a
+  row lose the very thing the second was asking about.
+
+Bursts are recorded even though they are excluded from lighting, because that
+report is the thing meant to settle whether excluding them is right. So is
+`Class::Excluded` — a wrong exclusion shows up as a line rather than as a room
+that quietly went dark.
+
+Every section is capped and says so when it truncates. Nothing in the report
+is read back for a decision; it is display-only, and `setBridgeCounters` exists
+only to let the bridge hand over numbers it owns.
 
 **Regression signature.** If the additive clause is wrong in the permissive
 direction, the symptom is lights on smoke and water spray — look for sites
@@ -788,7 +817,7 @@ MSVC-ism and nothing at link time; **CI remains the authority.**
 `tests/effect_lights/run.sh` compiles the module against *stub* headers and
 runs it under ASan and UBSan. It **cannot** catch a stub that has drifted from
 the real declaration — only the reading above says those match, which is why
-the MinGW check exists alongside it. 42 assertions cover: a bonfire's five emitters merging to one
+the MinGW check exists alongside it. 45 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect
 being rejected and a white-hot one accepted; a nearby game light being adopted
 for colour and reach *without* moving the light off the effect origin; a

@@ -1428,6 +1428,13 @@ void updateEffectLights() {
         }
     }
 
+    // Hand over the counters this side owns, so one report can answer cost questions too.
+    // These have been counted since the system landed and printed nowhere - `creates` in
+    // particular is the number that says whether an animating light is expensive, because the
+    // bridge re-creates a light every time its radiance moves more than 2%.
+    dusk::effect_lights::setBridgeCounters(s_effectDebug.creates, s_effectDebug.destroys,
+                                           s_effectDebug.drawn);
+
     const std::vector<dusk::effect_lights::Site>& sites = dusk::effect_lights::collect(params);
     s_effectDebug.stats = dusk::effect_lights::stats();
 

@@ -9,6 +9,7 @@
 #include "JSystem/JParticle/JPABaseShape.h"
 #include "JSystem/JParticle/JPAEmitter.h"
 #include "JSystem/JParticle/JPAEmitterManager.h"
+#include "JSystem/JParticle/JPAKeyBlock.h"
 #include "JSystem/JParticle/JPAResource.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
@@ -62,6 +63,17 @@ constexpr int kMaxSimpleRecords = 192;
 constexpr int kMaxSites = 128;
 constexpr int kMaxReportEntries = 256;
 
+// The report's other four sections. All fixed-size and all saturating with a stated truncation
+// notice, per the logging rule in CLAUDE.md: a log that fills a disk is worse than no log.
+constexpr int kMaxVanillaReport = 64;
+constexpr int kMaxSiteReport = 64;
+constexpr int kMaxTraceEntries = 512;
+
+// A site's radiance must move by more than this fraction to earn a trace line. Deliberately
+// the bridge's own update threshold (remix_bridge.cpp, kRadianceRelative): a change too small
+// to make the bridge re-create the light is too small to be worth a line.
+constexpr float kTraceRelative = 0.02f;
+
 // A site whose members all vanish is kept this many frames before its light is dropped. Some
 // effects are re-set every few frames rather than continuously, and without the grace period
 // those would create and destroy a Remix light in a loop.
@@ -93,8 +105,16 @@ struct TrackedSite {
     Site site;
     int missingFrames;
     bool seen;
+    // Report-only, deliberately not on the public Site: the caller has no use for either, and
+    // widening the API for a log would be the wrong trade.
+    float reach;
+    float vanillaDistance;
 };
 
+// One press of Log Effect Classification Report has to answer every open question at once, so
+// the report is five sections rather than one table. The shape is deliberate: a reader who has
+// only the log, and not the source, should be able to work out why any given light does or does
+// not exist. See docs/effect-lights.md section 7.
 struct ReportEntry {
     uint16_t effectId;
     uint8_t blendMode;
@@ -106,6 +126,86 @@ struct ReportEntry {
     bool additive;
     bool glow;
     bool simple;
+
+    // The measured inputs to readsAsGlow, so a refusal can be priced rather than guessed at:
+    // "what would minChroma have to be for this to pass" is arithmetic once these are printed.
+    float chroma;
+    float luma;
+
+    // Which keyword put it in its class, or "-" for Other. This turns the keyword lists from
+    // something reviewed by eye into something checkable from data - the lists have been wrong
+    // twice (lava matched nothing, smokeLight classified as Glow).
+    const char* keyword;
+
+    // The animation configuration, all of it queryable at runtime with no .jpa parsing. This is
+    // what says whether an effect's colour can animate at all: the emitter's mPrmClr is only
+    // re-sampled per frame when glblClrAnm && prmAnm, and two of the five anmType values pin
+    // the key frame at 0 and never move.
+    bool hasRes;
+    bool glblClrAnm;
+    bool prmAnm;
+    bool envAnm;
+    uint8_t anmType;
+    int16_t anmMaxFrm;
+    int32_t maxFrame;   // emission window; 0 = continuous
+    int16_t lifeTime;   // PARTICLE life, and keyed - this is the current value, not authored
+    uint32_t age;       // mTick at the moment it was first seen
+    int particles;
+    float baseSizeX;
+    float baseSizeY;
+    float globalScale;
+    uint8_t keyIds;     // bitmask of JPAKeyBlock IDs present, 0 = no key blocks
+};
+
+// One line per light the game itself registered, and who took it. This is what settles whether
+// a short-lived effect steals a torch's light: adoption is exclusive and resolved in cluster
+// order, not priority order, so a bomb inside adoptRadius of a torch can take it for the whole
+// explosion and leave the torch on the undetermined fallback - 19x dimmer.
+struct VanillaReportEntry {
+    float pos[3];
+    uint8_t color[3];
+    float reach;
+    bool spot;
+    uint16_t adoptedByEffect;  // effect id that took it, 0 = nobody
+    float adoptDistance;       // to the effect that took it, or -1
+};
+
+// One line per live site, taken at the end of collect(). Answers the merge question (members),
+// the adoption hinge (vanillaDistance - the one unverified number the whole burst design turns
+// on), and what the light actually ended up being.
+struct SiteReportEntry {
+    uint32_t id;
+    Class cls;
+    uint16_t effectId;
+    float pos[3];
+    int members;
+    bool derived;
+    bool colorFromGame;
+    float reach;
+    float radius;
+    float radiance;
+    float vanillaDistance;  // to the adopted light, or -1 if none
+};
+
+// A retrospective ring of site state over time. Retrospective is the point: you throw the bomb
+// and THEN press the button, rather than having to arm a trace and hope the timing lands.
+//
+// A line is recorded only when a site appears, disappears, or its radiance moves by more than
+// the bridge's own 2% update threshold - so an animating explosion produces a dense trace and a
+// steady torch produces one line and then nothing. That is what keeps a 512-entry ring covering
+// minutes of play rather than eight frames.
+struct TraceEntry {
+    uint32_t frame;
+    uint32_t siteId;
+    Class cls;
+    uint16_t effectId;
+    float radiance;
+    float reach;
+    float radius;
+    uint8_t color[3];
+    int members;
+    bool derived;
+    uint8_t event;  // 0 = changed, 1 = appeared, 2 = gone
 };
 
 bool s_recordingEnabled = false;
@@ -124,6 +224,36 @@ ReportEntry s_report[kMaxReportEntries];
 int s_reportCount = 0;
 bool s_reportOverflowed = false;
 bool s_reportRequested = false;
+
+VanillaReportEntry s_vanillaReport[kMaxVanillaReport];
+int s_vanillaReportCount = 0;
+
+SiteReportEntry s_siteReport[kMaxSiteReport];
+int s_siteReportCount = 0;
+
+// The trace ring. Overwrites oldest-first and never allocates; s_traceWritten is the total
+// ever written, so the emitter can say how many lines were lost rather than pretending the
+// ring is the whole history.
+TraceEntry s_trace[kMaxTraceEntries];
+int s_traceHead = 0;
+uint32_t s_traceWritten = 0;
+uint32_t s_frameCounter = 0;
+
+// Last radiance reported per site, for the trace's change test. Parallel to s_tracked by site
+// id rather than by index, because indices move when a site is erased.
+struct TraceMemory {
+    uint32_t siteId;
+    float radiance;
+};
+TraceMemory s_traceMemory[kMaxSites];
+int s_traceMemoryCount = 0;
+
+// Counters the bridge owns. They exist today and are incremented every frame, and until now
+// nothing has ever printed them - which is a rule 4 gap in shipped code: we count how many
+// times a light is re-created and have no way to see it.
+int s_bridgeCreates = 0;
+int s_bridgeDestroys = 0;
+int s_bridgeDrawn = 0;
 
 // Name derived class, resolved once per effect id. 0 means "not resolved yet".
 uint8_t s_classCache[kIdMask + 1] = {};
@@ -247,6 +377,36 @@ Class classifyByName(uint16_t id) {
     return Class::Other;
 }
 
+// Which keyword actually claimed this name, for the report. Deliberately a SECOND pass in the
+// same order rather than a refactor of classifyByName into something that returns both: the
+// classifier is on the per-frame path and cached, this runs once per distinct effect at report
+// time, and keeping them separate means the report cannot slow the classifier down. The order
+// below must match classifyByName exactly - if it drifts, the report lies about the class it is
+// printing beside.
+const char* classKeyword(uint16_t id) {
+    const char* name = effectName(id);
+    if (name[0] == '\0') {
+        return "(unnamed)";
+    }
+    static const char* const kLava[] = {"lava", "magma", "youdo", "yogan", "yougan", nullptr};
+    static const char* const kExcluded[] = {"yoda", "taieki", nullptr};
+    static const char* const kBurst[] = {"bakuha", "explo", "bomb", "baku", nullptr};
+    static const char* const kFire[] = {"fire",   "honoo", "hono",  "kaen",   "flame", "taimatsu",
+                                        "maki",   "kantera", "torch", "ablaze", "kagarib", nullptr};
+    static const char* const kGlow[] = {"hikari", "light", "kira", "pika",
+                                        "glow",   "aura",  "shine", "spark", nullptr};
+    static const char* const* const kLists[] = {kLava, kExcluded, kBurst, kFire, kGlow};
+
+    for (const char* const* list : kLists) {
+        for (const char* const* w = list; *w != nullptr; w++) {
+            if (nameHas(name, *w)) {
+                return *w;
+            }
+        }
+    }
+    return "-";
+}
+
 Class cachedClass(uint16_t id) {
     const uint16_t key = id & kIdMask;
     if (s_classCache[key] == 0) {
@@ -334,7 +494,8 @@ void pickColor(const float prm[3], const float env[3], float out[3]) {
 }
 
 void noteForReport(uint16_t effectId, const JPABaseShape* shape, const float prm[3],
-                   const float env[3], Class cls, bool additive, bool glow, bool simple) {
+                   const float env[3], Class cls, bool additive, bool glow, bool simple,
+                   const JPABaseEmitter* emitter, const float decided[3]) {
     for (int i = 0; i < s_reportCount; i++) {
         if (s_report[i].effectId == effectId) {
             return;
@@ -347,6 +508,57 @@ void noteForReport(uint16_t effectId, const JPABaseShape* shape, const float prm
     }
 
     ReportEntry& entry = s_report[s_reportCount++];
+
+    // The measured inputs to the glow test, on the colour pickColor actually chose. Printing
+    // these rather than a pass/fail is what makes a refusal actionable: the threshold that
+    // would have accepted it is then arithmetic instead of another test session.
+    entry.chroma = chromaOf(decided);
+    entry.luma = lumaOf(decided);
+    entry.keyword = classKeyword(effectId);
+
+    // Animation configuration. Everything here is a public runtime accessor over the loaded
+    // resource - no .jpa parsing - and it is what decides whether an effect's colour is capable
+    // of animating at all. Guarded hard: mpPrmClrAnmTbl is NULL when the flag is clear, and the
+    // whole resource may be absent on a record whose emitter has already gone.
+    const JPAResource* res = (emitter != nullptr) ? emitter->pRes : nullptr;
+    const JPABaseShape* bsp = (res != nullptr) ? res->getBsp() : nullptr;
+    entry.hasRes = (bsp != nullptr);
+    entry.glblClrAnm = bsp != nullptr && bsp->isGlblClrAnm() != 0;
+    entry.prmAnm = bsp != nullptr && bsp->isPrmAnm() != 0;
+    entry.envAnm = bsp != nullptr && bsp->isEnvAnm() != 0;
+    entry.anmType = bsp != nullptr ? static_cast<uint8_t>(bsp->getClrAnmType()) : 0xFF;
+    entry.anmMaxFrm = bsp != nullptr ? bsp->getClrAnmMaxFrm() : 0;
+    entry.baseSizeX = bsp != nullptr ? bsp->getBaseSizeX() : 0.0f;
+    entry.baseSizeY = bsp != nullptr ? bsp->getBaseSizeY() : 0.0f;
+
+    entry.maxFrame = emitter != nullptr ? emitter->mMaxFrame : 0;
+    entry.lifeTime = emitter != nullptr ? emitter->mLifeTime : 0;
+    entry.age = emitter != nullptr ? emitter->getAge() : 0;
+    entry.particles = emitter != nullptr ? static_cast<int>(emitter->getParticleNumber()) : 0;
+
+    entry.globalScale = 1.0f;
+    if (emitter != nullptr) {
+        JGeometry::TVec3<f32> pscl;
+        emitter->getGlobalParticleScale(&pscl);
+        entry.globalScale = pscl.x;
+    }
+
+    // Which authored curves land on the emitter. calcKey dispatches on the block's ID and
+    // writes emitter fields directly, so this says what CAN animate beyond colour.
+    entry.keyIds = 0;
+    if (res != nullptr) {
+        const int n = res->keyNum;
+        for (int k = 0; k < n && k < 16; k++) {
+            const JPAKeyBlock* kb = res->ppKey[k];
+            if (kb != nullptr) {
+                const u8 id = static_cast<u8>(kb->getID());
+                if (id < 8) {
+                    entry.keyIds |= static_cast<uint8_t>(1u << id);
+                }
+            }
+        }
+    }
+
     entry.effectId = effectId;
     entry.blendMode = shape != nullptr ? static_cast<uint8_t>(shape->getBlendMode()) : 0xFF;
     entry.blendSrc = shape != nullptr ? static_cast<uint8_t>(shape->getBlendSrc()) : 0xFF;
@@ -385,32 +597,308 @@ const char* blendFactorName(uint8_t v) {
     }
 }
 
-void emitReport() {
-    Log.info("effect light classification report: {} distinct effects{}", s_reportCount,
-             s_reportOverflowed ? " (CAPPED - more were seen than fit)" : "");
-    Log.info("  columns: id name | blend mode/src/dst | prm rgb | env rgb | class | additive glow "
-             "| verdict");
+// Record one trace line. Called only from the snapshot below, which is the only place that
+// knows whether anything changed.
+void pushTrace(const TrackedSite& t, uint8_t event, float radiance) {
+    TraceEntry& e = s_trace[s_traceHead];
+    s_traceHead = (s_traceHead + 1) % kMaxTraceEntries;
+    s_traceWritten++;
+
+    e.frame = s_frameCounter;
+    e.siteId = t.site.id;
+    e.cls = t.site.cls;
+    e.effectId = t.site.effectId;
+    e.radiance = radiance;
+    e.reach = t.reach;
+    e.radius = t.site.radius;
+    const float brightest =
+        std::max(t.site.radiance[0], std::max(t.site.radiance[1], t.site.radiance[2]));
+    for (int c = 0; c < 3; c++) {
+        const float n = brightest > 0.0f ? t.site.radiance[c] / brightest : 0.0f;
+        e.color[c] = static_cast<uint8_t>(std::min(255.0f, std::max(0.0f, n * 255.0f)));
+    }
+    e.members = t.site.members;
+    e.derived = t.site.derived;
+    e.event = event;
+}
+
+float siteRadiance(const Site& s) {
+    return std::max(s.radiance[0], std::max(s.radiance[1], s.radiance[2]));
+}
+
+// Once per frame, at the end of collect(). Two jobs: keep the trace ring fed, and hold a
+// snapshot of the live sites so a report pressed at any moment describes the frame it was
+// pressed on rather than a half-built intermediate.
+void snapshotSites(const std::vector<TrackedSite>& tracked) {
+    s_frameCounter++;
+
+    s_siteReportCount = 0;
+    for (const TrackedSite& t : tracked) {
+        const float rad = siteRadiance(t.site);
+
+        // Find this site's last recorded radiance. Linear over at most kMaxSites, once per
+        // site per frame - the same order the clustering already pays.
+        int mem = -1;
+        for (int i = 0; i < s_traceMemoryCount; i++) {
+            if (s_traceMemory[i].siteId == t.site.id) {
+                mem = i;
+                break;
+            }
+        }
+
+        if (mem < 0) {
+            if (s_traceMemoryCount < kMaxSites) {
+                mem = s_traceMemoryCount++;
+                s_traceMemory[mem].siteId = t.site.id;
+                s_traceMemory[mem].radiance = rad;
+            }
+            pushTrace(t, 1 /* appeared */, rad);
+        } else {
+            const float before = s_traceMemory[mem].radiance;
+            const float scale = std::max(std::fabs(rad), std::fabs(before));
+            if (std::fabs(rad - before) > std::max(0.01f, scale * kTraceRelative)) {
+                s_traceMemory[mem].radiance = rad;
+                pushTrace(t, 0 /* changed */, rad);
+            }
+        }
+
+        if (s_siteReportCount < kMaxSiteReport) {
+            SiteReportEntry& s = s_siteReport[s_siteReportCount++];
+            s.id = t.site.id;
+            s.cls = t.site.cls;
+            s.effectId = t.site.effectId;
+            for (int c = 0; c < 3; c++) {
+                s.pos[c] = t.site.position[c];
+            }
+            s.members = t.site.members;
+            s.derived = t.site.derived;
+            s.colorFromGame = t.site.colorFromGame;
+            s.reach = t.reach;
+            s.radius = t.site.radius;
+            s.radiance = rad;
+            s.vanillaDistance = t.vanillaDistance;
+        }
+    }
+
+    // Forget sites that no longer exist, and say so in the trace. Walking backwards so the
+    // swap-erase does not skip an entry.
+    for (int i = s_traceMemoryCount; i-- > 0;) {
+        bool alive = false;
+        for (const TrackedSite& t : tracked) {
+            if (t.site.id == s_traceMemory[i].siteId) {
+                alive = true;
+                break;
+            }
+        }
+        if (!alive) {
+            TraceEntry& e = s_trace[s_traceHead];
+            s_traceHead = (s_traceHead + 1) % kMaxTraceEntries;
+            s_traceWritten++;
+            std::memset(&e, 0, sizeof(e));
+            e.frame = s_frameCounter;
+            e.siteId = s_traceMemory[i].siteId;
+            e.event = 2;  // gone
+
+            s_traceMemory[i] = s_traceMemory[--s_traceMemoryCount];
+        }
+    }
+}
+
+const char* anmTypeName(uint8_t v) {
+    // JPABaseShape.cpp's five JPACalcClrIdx* variants, in flag order. Merge and Random pin the
+    // key frame at 0 on the EMITTER path, so an effect using either cannot animate its colour
+    // where we can see it however rich its authored table is.
+    switch (v) {
+    case 0: return "normal";   // clamps at anmMaxFrm - a one-shot ramp
+    case 1: return "repeat";
+    case 2: return "reverse";
+    case 3: return "merge*";   // * pinned to frame 0 at emitter level
+    case 4: return "random*";  // * pinned to frame 0 at emitter level
+    default: return "?";
+    }
+}
+
+// Which authored curves land on the EMITTER (JPAResource::calcKey dispatches on block ID and
+// writes emitter fields directly). Anything not listed here animates per particle only, where
+// this system cannot see it.
+void formatKeyIds(uint8_t mask, char* out, size_t cap) {
+    static const char* const kNames[8] = {"rate", "volsz", "?2",   "volrad",
+                                          "life", "?5",    "away", "axis"};
+    size_t n = 0;
+    out[0] = '\0';
+    if (mask == 0) {
+        std::snprintf(out, cap, "-");
+        return;
+    }
+    for (int i = 0; i < 8; i++) {
+        if ((mask & (1u << i)) == 0) {
+            continue;
+        }
+        const int w = std::snprintf(out + n, cap - n, "%s%s", n ? "," : "", kNames[i]);
+        if (w <= 0 || static_cast<size_t>(w) >= cap - n) {
+            break;
+        }
+        n += static_cast<size_t>(w);
+    }
+}
+
+const char* verdictOf(const ReportEntry& e) {
+    // The refusal reason, not just a refusal. Ordered exactly as the accept path tests, so the
+    // reason named is the clause that actually stopped it.
+    if (!e.additive) {
+        return "no(opaque)";
+    }
+    if (!e.glow) {
+        return "no(colour)";
+    }
+    if (e.cls == Class::Excluded) {
+        return "no(name)";
+    }
+    if (e.cls == Class::Burst) {
+        return "LIT-if-bursts";
+    }
+    return "LIT";
+}
+
+void emitReport(const Params& params) {
+    char buf[64];
+
+    Log.info("=== dusklight effect lights: full report ===");
+    Log.info("One press answers every open question. Five sections: counters, effects, sites, "
+             "game lights, trace. Sections are capped and say so when they truncate.");
+
+    // ---- 1. counters -------------------------------------------------------------------
+    Log.info("[counters] the chain, in the order a light can be lost:");
+    Log.info("  emitters {} -> considered {} -> candidates {} -> sites {} -> drawn {}",
+             s_stats.emitters, s_stats.considered, s_stats.candidates, s_stats.sites,
+             s_bridgeDrawn);
+    Log.info("  derived {}  colourFromGame {}  orphans {}  culled {}  excluded {}",
+             s_stats.derived, s_stats.colorFromGame, s_stats.orphans, s_stats.culled,
+             s_stats.excluded);
+    Log.info("  game lights available (point/spot) {}/{}", s_stats.vanillaPoint,
+             s_stats.vanillaSpot);
+    Log.info("  bridge: creates {}  destroys {}   (creates is per light UPDATE, not per light - "
+             "an animating light re-creates every frame it changes by more than 2%)",
+             s_bridgeCreates, s_bridgeDestroys);
+    Log.info("  settings: maxLights {}  maxDistance {:.0f}  mergeRadius {:.0f}  adoptRadius "
+             "{:.0f}  bursts {}  minChroma {:.2f}  minLuma {:.2f}",
+             params.maxLights, params.maxDistance, params.mergeRadius, params.adoptRadius,
+             params.bursts ? "on" : "off", params.minChroma, params.minLuma);
+    if (s_stats.culled > 0) {
+        Log.info("  NOTE culled > 0: the per-frame budget IS binding, so sites are competing. A "
+                 "site the budget drops is destroyed and comes back with a new id and no "
+                 "temporal history.");
+    }
+
+    // ---- 2. effects --------------------------------------------------------------------
+    Log.info("[effects] {} distinct effects seen since the last report{}", s_reportCount,
+             s_reportOverflowed ? "  (CAPPED)" : "");
+    Log.info("  id name | blend mode/src/dst | prm rgb | env rgb | chroma luma | class(keyword) "
+             "| verdict | anim: glbl/prm/env type maxfrm | maxFrame life age ptcls | size gscale "
+             "| keys");
+    Log.info("  verdict: LIT drawn. no(opaque) failed the additive test. no(colour) was additive "
+             "but chroma < {:.2f} AND luma < {:.2f}. no(name) refused as a substance. "
+             "LIT-if-bursts is one-shot, off by default.",
+             params.minChroma, params.minLuma);
+    Log.info("  anim: colour animates ONLY when glbl=1 AND prm=1 AND type is normal/repeat/"
+             "reverse. A starred type is pinned to frame 0 at emitter level and never moves.");
 
     for (int i = 0; i < s_reportCount; i++) {
         const ReportEntry& e = s_report[i];
-        Log.info("  {:#06x} {:<34} | {}/{}/{} | {:3},{:3},{:3} | {:3},{:3},{:3} | {:<5} | {} {} | "
-                 "{}{}",
+        formatKeyIds(e.keyIds, buf, sizeof(buf));
+        Log.info("  {:#06x} {:<32} | {}/{}/{} | {:3},{:3},{:3} | {:3},{:3},{:3} | {:.2f} {:.2f} | "
+                 "{:<5}({:<8}) | {:<13} | {}/{}/{} {:<7} {:<4} | {:<5} {:<5} {:<5} {:<4} | "
+                 "{:.0f}x{:.0f} {:.2f} | {}{}",
                  e.effectId, effectName(e.effectId), blendModeName(e.blendMode),
                  blendFactorName(e.blendSrc), blendFactorName(e.blendDst), e.prm[0], e.prm[1],
-                 e.prm[2], e.env[0], e.env[1], e.env[2], className(e.cls),
-                 e.additive ? "additive" : "opaque  ", e.glow ? "glow" : "flat",
-                 (e.additive && e.glow) ? "LIT" : "no", e.simple ? " (simple)" : "");
+                 e.prm[2], e.env[0], e.env[1], e.env[2], e.chroma, e.luma, className(e.cls),
+                 e.keyword, verdictOf(e), e.glblClrAnm ? 1 : 0, e.prmAnm ? 1 : 0,
+                 e.envAnm ? 1 : 0, e.hasRes ? anmTypeName(e.anmType) : "?", e.anmMaxFrm,
+                 e.maxFrame, e.lifeTime, e.age, e.particles, e.baseSizeX, e.baseSizeY,
+                 e.globalScale, buf, e.simple ? " (simple)" : "");
     }
 
     if (s_reportOverflowed) {
-        Log.info("  report capped at {} entries; earlier effects are listed, later ones were "
-                 "dropped. Ask again - the memory is cleared below, so the next report covers "
-                 "what is seen from now on", kMaxReportEntries);
+        Log.info("  effects capped at {}; later ones were dropped. Ask again - the memory is "
+                 "cleared below, so the next report covers what is seen from now on.",
+                 kMaxReportEntries);
     }
 
-    // Start the memory again. Without this the table fills once and then caps for the rest of
-    // the session, so the effect you walked up to specifically to ask about is the one missing
-    // from the answer. Each request now covers everything seen since the last one.
+    // ---- 3. sites ----------------------------------------------------------------------
+    Log.info("[sites] {} live this frame{}", s_siteReportCount,
+             s_siteReportCount >= kMaxSiteReport ? "  (CAPPED)" : "");
+    Log.info("  id class effect | position | members | derived colourFromGame | reach radius "
+             "radiance | distance to the game light it adopted");
+    Log.info("  members > 1 means several emitters merged into one light. adoptDist -1 means it "
+             "adopted nothing and is on the configured fallback.");
+    for (int i = 0; i < s_siteReportCount; i++) {
+        const SiteReportEntry& s = s_siteReport[i];
+        Log.info("  {:<4} {:<5} {:#06x} | {:8.0f} {:8.0f} {:8.0f} | {:2} | {} {} | {:7.1f} "
+                 "{:5.1f} {:9.2f} | {:.1f}",
+                 s.id, className(s.cls), s.effectId, s.pos[0], s.pos[1], s.pos[2], s.members,
+                 s.derived ? "derived  " : "undetermd", s.colorFromGame ? "gameColour" : "effColour",
+                 s.reach, s.radius, s.radiance, s.vanillaDistance);
+    }
+
+    // ---- 4. the game's own lights ------------------------------------------------------
+    Log.info("[game lights] {} registered this frame{}", s_vanillaReportCount,
+             s_vanillaReportCount >= kMaxVanillaReport ? "  (CAPPED)" : "");
+    Log.info("  position | colour | reach | list | adopted by effect (adoption is EXCLUSIVE - "
+             "one light, one site - so a short-lived effect can take a torch's light and leave "
+             "the torch on the fallback)");
+    for (int i = 0; i < s_vanillaReportCount; i++) {
+        const VanillaReportEntry& v = s_vanillaReport[i];
+        if (v.adoptedByEffect != 0) {
+            Log.info("  {:8.0f} {:8.0f} {:8.0f} | {:3},{:3},{:3} | {:7.1f} | {:<5} | {:#06x} {} "
+                     "at {:.1f}",
+                     v.pos[0], v.pos[1], v.pos[2], v.color[0], v.color[1], v.color[2], v.reach,
+                     v.spot ? "spot" : "point", v.adoptedByEffect,
+                     effectName(v.adoptedByEffect), v.adoptDistance);
+        } else {
+            Log.info("  {:8.0f} {:8.0f} {:8.0f} | {:3},{:3},{:3} | {:7.1f} | {:<5} | ORPHAN "
+                     "(no effect near it - this light is being dropped)",
+                     v.pos[0], v.pos[1], v.pos[2], v.color[0], v.color[1], v.color[2], v.reach,
+                     v.spot ? "spot" : "point");
+        }
+    }
+
+    // ---- 5. the trace ------------------------------------------------------------------
+    const int traced = static_cast<int>(
+        s_traceWritten < static_cast<uint32_t>(kMaxTraceEntries)
+            ? s_traceWritten
+            : static_cast<uint32_t>(kMaxTraceEntries));
+    Log.info("[trace] last {} changes, oldest first (of {} ever recorded, ring holds {})", traced,
+             s_traceWritten, kMaxTraceEntries);
+    Log.info("  This is RETROSPECTIVE - do the thing first, then press the button. A line is "
+             "written only when a site appears, goes, or its radiance moves more than {:.0f}%, "
+             "so a steady torch is one line and an explosion is many.",
+             kTraceRelative * 100.0f);
+    Log.info("  frame | event | site class effect | radiance | reach radius | colour | members");
+    const int first = (s_traceWritten < static_cast<uint32_t>(kMaxTraceEntries))
+                          ? 0
+                          : s_traceHead;
+    for (int k = 0; k < traced; k++) {
+        const TraceEntry& e = s_trace[(first + k) % kMaxTraceEntries];
+        const char* ev = e.event == 1 ? "appear" : (e.event == 2 ? "gone  " : "change");
+        if (e.event == 2) {
+            Log.info("  {:6} | {} | {:<4}", e.frame, ev, e.siteId);
+        } else {
+            Log.info("  {:6} | {} | {:<4} {:<5} {:#06x} | {:9.2f} | {:7.1f} {:5.1f} | "
+                     "{:3},{:3},{:3} | {:2}{}",
+                     e.frame, ev, e.siteId, className(e.cls), e.effectId, e.radiance, e.reach,
+                     e.radius, e.color[0], e.color[1], e.color[2], e.members,
+                     e.derived ? " derived" : "");
+        }
+    }
+
+    Log.info("=== end of report ===");
+
+    // Start the effect memory again. Without this the table fills once and then caps for the
+    // rest of the session, so the effect you walked up to specifically to ask about is the one
+    // missing from the answer. Each request covers everything seen since the last one.
+    //
+    // The TRACE is deliberately NOT cleared: it is a rolling window, and clearing it would make
+    // two presses in a row lose the very thing the second press was asking about.
     s_reportCount = 0;
     s_reportOverflowed = false;
 }
@@ -594,7 +1082,8 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             pickColor(prm, env, color);
             const bool glow = readsAsGlow(color, params);
 
-            noteForReport(effectId, shape, prm, env, cls, additive, glow, false);
+            noteForReport(effectId, shape, prm, env, cls, additive, glow, false, emitter,
+                          color);
 
             if (!additive || !glow) {
                 continue;
@@ -686,7 +1175,8 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         pickColor(prm, env, color);
         const bool glow = readsAsGlow(color, params);
 
-        noteForReport(rec.effectId, shape, prm, env, cls, additive, glow, true);
+        noteForReport(rec.effectId, shape, prm, env, cls, additive, glow, true, rec.emitter,
+                      color);
 
         if (!additive || !glow) {
             continue;
@@ -735,6 +1225,9 @@ struct VanillaLight {
     float reach;      // world units; only meaningful when reachKnown
     bool reachKnown;
     bool adopted;
+    bool spot;                 // came from the BOSS_LIGHT list rather than pointlight/efplight
+    uint16_t adoptedByEffect;  // effect id of the cluster that took it, 0 until then
+    float adoptDistance;       // -1 until then
 };
 
 int gatherVanillaLights(VanillaLight* out, int cap) {
@@ -746,7 +1239,7 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
     int n = 0;
 
     const auto push = [&](const cXyz& pos, float r, float g, float b, float reach,
-                          bool reachKnown) {
+                          bool reachKnown, bool spot) {
         if (n >= cap) {
             return;
         }
@@ -764,6 +1257,9 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
         v.reach = reach;
         v.reachKnown = reachKnown;
         v.adopted = false;
+        v.spot = spot;
+        v.adoptedByEffect = 0;
+        v.adoptDistance = -1.0f;
         if (isFinite3(v.pos)) {
             n++;
         }
@@ -775,14 +1271,14 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
     for (int i = 0; i < 100; i++) {
         const LIGHT_INFLUENCE* l = env->pointlight[i];
         if (l != nullptr && l->mPow > 0.01f) {
-            push(l->mPosition, l->mColor.r, l->mColor.g, l->mColor.b, l->mPow, true);
+            push(l->mPosition, l->mColor.r, l->mColor.g, l->mColor.b, l->mPow, true, false);
         }
     }
 
     for (int i = 0; i < 5; i++) {
         const LIGHT_INFLUENCE* l = env->efplight[i];
         if (l != nullptr && l->mPow > 0.01f) {
-            push(l->mPosition, l->mColor.r, l->mColor.g, l->mColor.b, l->mPow, true);
+            push(l->mPosition, l->mColor.r, l->mColor.g, l->mColor.b, l->mPow, true, false);
         }
     }
 
@@ -814,7 +1310,7 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
     for (int i = 0; i < 6; i++) {
         const BOSS_LIGHT& b = env->field_0x0c18[i];
         if (b.field_0x26 == 1 && b.mRefDistance > 0.0f) {
-            push(b.mPos, b.mColor.r, b.mColor.g, b.mColor.b, 0.0f, false);
+            push(b.mPos, b.mColor.r, b.mColor.g, b.mColor.b, 0.0f, false, true);
         }
     }
 
@@ -871,6 +1367,16 @@ void requestReport() {
     s_reportRequested = true;
 }
 
+void setBridgeCounters(int creates, int destroys, int drawn) {
+    // The bridge owns these and has counted them since the system landed, but nothing has ever
+    // printed them - a rule 4 gap in shipped code. `creates` is the one that matters for any
+    // question about cost: it counts light UPDATES, not lights, because the bridge re-creates a
+    // light whenever its radiance moves more than 2%.
+    s_bridgeCreates = creates;
+    s_bridgeDestroys = destroys;
+    s_bridgeDrawn = drawn;
+}
+
 const Stats& stats() {
     return s_stats;
 }
@@ -914,10 +1420,6 @@ const std::vector<Site>& collect(const Params& params) {
     }
     s_simpleCount = 0;
 
-    if (s_reportRequested) {
-        emitReport();
-        s_reportRequested = false;
-    }
 
     // --- cluster ---------------------------------------------------------------------
     //
@@ -1025,7 +1527,29 @@ const std::vector<Site>& collect(const Params& params) {
         if (best >= 0) {
             vanilla[best].adopted = true;
             resolved[i].vanillaIndex = best;
+            // For the report only. Adoption is EXCLUSIVE and resolved in cluster order rather
+            // than priority order, so a short-lived effect inside adoptRadius of a torch takes
+            // that torch's light for its whole life and leaves the torch on the undetermined
+            // fallback - about 19x dimmer. Recording who took what is what makes that visible
+            // in a log instead of being reported as "the room got darker near the explosion".
+            vanilla[best].adoptedByEffect = clusters[i].effectId;
+            vanilla[best].adoptDistance = std::sqrt(std::max(0.0f, bestD2));
         }
+    }
+
+    // Snapshot the game's own lights and who took each one, for the report.
+    s_vanillaReportCount = 0;
+    for (int v = 0; v < vanillaCount && s_vanillaReportCount < kMaxVanillaReport; v++) {
+        VanillaReportEntry& e = s_vanillaReport[s_vanillaReportCount++];
+        for (int c = 0; c < 3; c++) {
+            e.pos[c] = vanilla[v].pos[c];
+            e.color[c] = static_cast<uint8_t>(
+                std::min(255.0f, std::max(0.0f, vanilla[v].color[c] * 255.0f)));
+        }
+        e.reach = vanilla[v].reachKnown ? vanilla[v].reach : -1.0f;
+        e.spot = vanilla[v].spot;
+        e.adoptedByEffect = vanilla[v].adoptedByEffect;
+        e.adoptDistance = vanilla[v].adoptDistance;
     }
 
     for (int v = 0; v < vanillaCount; v++) {
@@ -1047,6 +1571,11 @@ const std::vector<Site>& collect(const Params& params) {
         bool derived;         // reach came from the game
         bool colorFromGame;   // colour came from the game (a wider set - see gatherVanillaLights)
         float priority;
+        // Distance to the vanilla light this site adopted, or -1. Recorded purely for the
+        // report: it is the one number the whole burst design turns on and the only one that
+        // has never been measured - the site is at calcEmitterGlobalPosition (which includes
+        // the emitter's authored local translation, unreadable here), not at the actor origin.
+        float vanillaDistance;
     };
 
     Pending pending[kMaxSites];
@@ -1076,6 +1605,17 @@ const std::vector<Site>& collect(const Params& params) {
             p.color[2] = clusters[i].color[2];
             p.colorFromGame = false;
         }
+
+        // The adoption distance, recorded whether or not the reach came with it. This is the
+        // number the burst design turns on and it has never been measured: the site is at
+        // calcEmitterGlobalPosition, which folds in the emitter's authored local translation,
+        // so "the light is 85 units from the site" was always inference.
+        // Measured from the CLUSTER position, not from p.pos, because that is the distance the
+        // adoption test itself used - p.pos has already had the per-class vertical offset added.
+        // Reporting the post-offset distance here made the sites and game-lights sections
+        // disagree about the same pair, which is worse than reporting neither.
+        p.vanillaDistance =
+            v >= 0 ? std::sqrt(std::max(0.0f, dist2(clusters[i].pos, vanilla[v].pos))) : -1.0f;
 
         if (v >= 0 && vanilla[v].reachKnown) {
             p.derived = true;
@@ -1158,6 +1698,8 @@ const std::vector<Site>& collect(const Params& params) {
         match->site.colorFromGame = p.colorFromGame;
         match->site.effectId = p.effectId;
         match->site.members = p.members;
+        match->reach = p.reach;
+        match->vanillaDistance = p.vanillaDistance;
 
         const float intensity =
             solveIntensity(p.reach, match->site.radius, p.scale * params.intensity);
@@ -1223,6 +1765,19 @@ const std::vector<Site>& collect(const Params& params) {
     }
 
     s_stats.sites = static_cast<int>(s_sites.size());
+
+    // Everything the report needs, captured once per frame while it is still in scope. This is
+    // what makes one button press enough: the log describes the frame it was pressed on, and
+    // the trace ring already holds the seconds before it.
+    snapshotSites(s_tracked);
+
+    // AFTER the snapshot, so the report describes the frame it was pressed on rather than the
+    // one before it - including the effects classified during this very call.
+    if (s_reportRequested) {
+        emitReport(params);
+        s_reportRequested = false;
+    }
+
     return s_sites;
 }
 
