@@ -211,6 +211,14 @@ struct UserSettings {
         ConfigVar<bool> remixHideSkyBillboards;
         ConfigVar<bool> remixHideVrbox;
         ConfigVar<bool> remixPerBladeGrass;
+        // Suppress the speed effect spawned while Epona dashes. It is placed in front of
+        // the camera rather than in the world, so under Remix it is captured as a
+        // translucent quad travelling with the view instead of composited over the frame.
+        // Driven from Remix's overlay via rtx.dusklight.game.hideDashEffect, which defaults
+        // to on and pushes that down every frame; this defaults to off so other backends
+        // keep the vanilla effect. Suppressing it is a hypothesis about the
+        // water-while-dashing report rather than a confirmed cause - see that option.
+        ConfigVar<bool> remixHideDashEffect;
         // Suppress the game's flat circular shadows under small objects; Remix traces
         // real ones from the geometry, so the painted disc lands on top of a correct
         // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.

@@ -1524,6 +1524,15 @@ void tick() {
             game.remixPerBladeGrass.setValue(perBladeGrass);
         }
 
+        // Epona's dash speed effect, which the game positions relative to the camera rather
+        // than the world - so Remix captures a translucent quad that travels with the view.
+        // Suppressed at the emitter, so no draw call is issued. See daHorse_c::setDashEffect.
+        const bool hideDash = readOptionBool("rtx.dusklight.game.hideDashEffect",
+                                             game.remixHideDashEffect.getValue());
+        if (hideDash != game.remixHideDashEffect.getValue()) {
+            game.remixHideDashEffect.setValue(hideDash);
+        }
+
         // The game's own recording mode. Its settings screen is never drawn in this rendering
         // mode, so config.json was previously the only way to reach it - and a one way trip,
         // since nothing in the running game could turn it back off.

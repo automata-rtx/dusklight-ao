@@ -23,6 +23,7 @@
 #if TARGET_PC
 #include "dusk/dusk.h"
 #include "dusk/frame_interpolation.h"
+#include "dusk/settings.h"
 
 namespace {
 // FRAME INTERP NOTE: Sim tick control point snapshots for interpolation
@@ -2331,6 +2332,27 @@ void daHorse_c::setMatrix() {
 void daHorse_c::setDashEffect(u32* i_emitterID) {
     camera_process_class* camera_p = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
     cXyz* eye_p = fopCamM_GetEye_p(camera_p);
+
+#if TARGET_PC
+    // This effect is positioned relative to the camera rather than the world (see the eye_p
+    // arithmetic below), so it is a translucent quad hanging a fixed distance in front of the
+    // view. A rasterizer composites that over the frame and it reads as speed; Remix captures
+    // it as ordinary world geometry standing directly in front of the camera, where it veils
+    // the scene and is path traced as though it were solid.
+    //
+    // Dropped here, before the emitter is created, so no draw call is issued rather than one
+    // being hidden downstream - the same treatment the blob shadows get in
+    // dDlst_shadowControl_c::setSimple. Returning without touching *i_emitterID matches the
+    // distance cull immediately below, which already leaves a stale ID alone.
+    //
+    // On only when Remix's overlay says so (rtx.dusklight.game.hideDashEffect); every other
+    // backend keeps the vanilla effect. That default encodes a hypothesis about water changing
+    // appearance while dashing and has NOT been confirmed - the matrep.rmx water lines are what
+    // would confirm or refute it. See the option's description in rtx_dusklight_game.h.
+    if (dusk::getSettings().game.remixHideDashEffect.getValue()) {
+        return;
+    }
+#endif
 
     if (eye_p->abs(current.pos) > 1200.0f) {
         return;

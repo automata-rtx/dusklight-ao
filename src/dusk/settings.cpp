@@ -79,6 +79,10 @@ UserSettings g_userSettings = {
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
+        // False here, true on the Remix side: the bridge pushes Remix's value down every
+        // frame when it is running, so this is suppressed under Remix and left vanilla on
+        // every other backend, where a camera-relative effect composites correctly.
+        .remixHideDashEffect {"game.remixHideDashEffect", false},
         .remixBlobShadows {"game.remixBlobShadows", true},
         .freezeTime {"game.freezeTime", false},
         // Where the clock would go if asked; timeCommit is what asks. Splitting the two means a
@@ -307,6 +311,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
+    Register(g_userSettings.game.remixHideDashEffect);
     Register(g_userSettings.game.remixBlobShadows);
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
