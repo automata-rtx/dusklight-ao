@@ -118,6 +118,32 @@ Still owed a run: **Goron Mines and the Forest Temple** (near, dense, and where
 a positive `mFogNear` is most likely), and **Lake Hylia inside the kytag01 fog
 bank** rather than beside it. `remix-test-playbook.md` §0g.
 
+**A height cutoff in the Lake Hylia volumetrics — mechanism found 2026-08-07,
+attribution inferred, fix untested.** Reported as *"a harsh transition that
+didn't look natural"* between the lower and upper parts of the screen, not
+always present and worst in the morning when the fog intensifies.
+
+The fork forces Remix's planet-atmosphere shell on outdoors, and **that shell's
+ceiling is an absolute world height, not a height above the player.** It was
+sized from `mFogFar` — and a scripted fog bank drives `mFogFar` *down*:
+kytag01 blends it toward `200` units, two metres
+(`src/d/actor/d_a_kytag01.cpp:94` → `d_kankyo.cpp:2510`). So as the bank engages
+the ceiling falls from 700 m to the option's 30 m floor, and the medium becomes
+a 30 m slab in a 775 m bubble that travels with the player. Everything above it
+loses its in-scatter outright.
+
+Fixed fork-side by sizing the shell from the camera's own height plus a fog
+depth, so it is always outside the range the fog can be seen through. Nothing on
+this side changed. **What was read: the shell geometry, the height derivation
+and kytag01's values. What was inferred: that this is the artifact reported.**
+Two `ONCE` tripwires now assert the conditions that made it possible, so a
+recurrence names itself.
+
+Regression signature to watch: the bank at full strength should now genuinely
+extinguish the sun, so the inside of it should read as *white* — lit by the
+fog's own colour. If it reads *dark* instead,
+`rtx.dusklight.atmosphere.zHalfMin` caps how dense the medium may get.
+
 **One setting note from the same log:** `rtx.autoExposure.enabled` was **True**
 in the effective config. The playbook baseline sets it False, because every
 brightness judgement is undone by auto exposure before it can be seen. It does
