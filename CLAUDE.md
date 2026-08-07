@@ -187,6 +187,55 @@ may later be deleted. This applies to `Fixed-Function-dev` and `Fixed-Function`
 alike — a dusklight branch pinning a SHA that lives only on a `claude/*` branch
 still builds today and breaks the moment that branch is cleaned up.
 
+## Merges that succeed and are still wrong
+
+**A clean `git merge` is not a correct merge.** Several features are developed
+on parallel branches that touch the same files, and git only compares *lines* —
+it cannot see that two branches have made the same sentence false, or that a
+conflict's obvious resolution is the wrong one.
+
+Three instances, all real:
+
+- **The protocol double-bump.** Two branches independently took protocol 6 → 7.
+  Git *did* conflict — and that made it worse: both sides said `7`, so keeping
+  either looks right and ships two features claiming one version. The conflict
+  was flagged; the **resolution** was the trap.
+- **`settings.h` / `settings.cpp`.** Every branch that adds a setting collides
+  here. Resolving by keeping one side drops a setting silently; resolving into
+  a different order in each file is a **compile error on MSVC**, because C++20
+  requires designated initialisers to follow declaration order.
+- **A submodule pin written by hand.** `extern/aurora` was pinned to a SHA typed
+  from a 7-character prefix. It pointed at nothing, and every CI job then failed
+  at *checkout* — which reads as a broken runner, not a bad pin.
+
+**So, after any merge — and before pushing one:**
+
+```
+python3 scripts/check_invariants.py
+```
+
+It checks the protocol literal against every document that states it, the
+declare/initialise/register triple in `settings.{h,cpp}` including order, that
+the `extern/aurora` pin names a commit that exists, and leftover conflict
+markers. The `Invariants` GitHub workflow runs it on **every** push — with no
+path filter, unlike `build.yml`, because a docs-only commit is the most likely
+way to introduce exactly this drift. It also runs aurora's own script against
+the pinned submodule, since that repo has no CI.
+
+**What it cannot check, and therefore what a human still has to:**
+
+- whether a "tested in game" claim survived the change underneath it
+- whether a document's *prose* still describes reality, as opposed to its
+  numbers agreeing with the code
+- whether two in-flight branches are about to claim the same protocol number —
+  nothing can see a branch that has not merged yet, so **check the other live
+  branches before bumping** (`git log origin/claude/... -- src/dusk/remix_bridge.cpp`)
+
+**When auditing documentation after a merge, re-derive the file list from the
+diff, not from memory.** On the merge that prompted all of this, every gap found
+on the thorough pass was in a document nobody had edited — precisely the set
+recall does not surface.
+
 ## Other standing facts
 
 - `mods/shadow_mod` and `mods/ao_mod` are third-party demonstration mods —
