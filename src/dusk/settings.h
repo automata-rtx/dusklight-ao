@@ -216,6 +216,10 @@ struct UserSettings {
         // without also being handed over, and so a pack problem can be isolated without
         // turning replacements off everywhere. Read once at launch; there is no live toggle.
         ConfigVar<bool> remixTextureReplacements;
+        // Suppress the game's flat circular shadows under small objects; Remix traces
+        // real ones from the geometry, so the painted disc lands on top of a correct
+        // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
+        ConfigVar<bool> remixBlobShadows;
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;

@@ -154,13 +154,20 @@ surface in the room, plus one warm glow texture, and nothing else.
 | Control | Do this |
 | :-- | :-- |
 | Nothing | Default is the intended configuration. Just look at the lava. |
-| Emissive Intensity | The one dial. If the lava glows but does not light the room, raise it; if it blows out, lower it. |
+| Emissive Brightness | The one dial. Default **10.0**, which is the value the lava was dialled to in game on 2026-08-06 — so a fresh config should already look right and this is here for exteriors, which have not been looked at. |
 | Emitted Colour | Leave on *Reconstructed Albedo*. It is the two-colour ramp — `lerp(FF0000, FFFE63, texture)` — so the texture drives the colour. The other two are there to compare against, not to use. |
 | Emissive Surfaces Enabled | Untick for an A/B against no emission at all. |
+
+The game no longer draws the flat disc shadows under rupees, hearts and pots —
+**tested 2026-08-06, correct.** Remix traces those for real, so the disc was a
+painted shadow on top of a correct one. Link's own shadow is a separate system
+and is unchanged; if *that* ever looks doubled, it is the same one-line fix.
 
 | What you see | Reading |
 | :-- | :-- |
 | Lava glows red-to-orange with visible crust, and lights the room | Worked. |
+| Lava and a heart both look right at one Brightness setting | The per-material derivation worked; that is the change. |
+| One of them still needs a different setting | Send the log — every emitter's `radiance=` is printed, so the ratio is measurable rather than describable. |
 | Lava glows but looks flat, one colour | The ramp is not reaching it — `ramp=` and `rampOther=` on the `dusklight.emis` line say so directly. |
 | Lava does not glow | The line carries `selfLit=`, `authored=` and the colour numbers, so it says which of the three facts failed. |
 | Something obviously wrong glowing | Roughly where is enough; every accepted material is named in the log. |

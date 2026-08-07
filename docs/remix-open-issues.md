@@ -36,13 +36,33 @@ runs are what produced the findings below. **Nothing landed on 2026-08-05 has
 been run** — that is the self-illumination rule, the emitted-colour default, the
 instrumentation fixes and the blend reporting.
 
-**One generated document is stale and needs a Windows run to fix:**
-`dxvk-remix/RtxOptions.md` is produced by the runtime itself and currently
-documents a subset of `rtx.dusklight.*`. The 2026-08-05 session removed four
-emissive options and added three; 2026-08-06 added four more it does not list at
-all (`rtx.dusklight.texrep.enable`, `.applyToRaster`, `.forceFullMips`,
-`.report`). The header comments in `rtx_dusklight_emissive.h` and
-`rtx_dusklight_texrep.h` are authoritative until it is regenerated.
+**`dxvk-remix/RtxOptions.md` was regenerated 2026-08-05 and is current** — it
+had documented 40 of the 130 `rtx.dusklight.*` options for weeks. Reconciled
+against the `RTX_OPTION*` declarations in `src/`: nothing declared is missing,
+the four emissive options this session removed are gone, and the three it added
+are present. The caveat it carried is now spent: the build that produced it also carried the
+then-unmerged HD texture pack branch, so eight `texrep` rows described options
+that did not exist here yet. That branch is merged, so those eight rows
+(`rtx.dusklight.texrep.*` and `rtx.dusklight.env.texrep*`) are accurate.
+
+It is **generated, never hand-edited**. A row that reads badly means the
+`RTX_OPTION` description string in `src/` reads badly — fix it there and
+regenerate with `DXVK_DOCUMENTATION_WRITE_RTX_OPTIONS_MD=1`. Nothing in CI
+enforces this, so it goes stale silently; regenerate it at checkpoints.
+
+**Blob shadows are suppressed under Remix, and it is TESTED (2026-08-06):** the
+flat quads under dropped items are gone. Landed 2026-08-05 (`rtx.dusklight.game.blobShadows`,
+default off, live in the overlay under Geometry). The flat discs the game paints
+under rupees, hearts and pots approximate a shadow Remix traces for real from the
+same geometry, so drawing them puts a painted shadow on top of a correct one.
+Dropped at registration in `dDlst_shadowControl_c::setSimple`, so no draw call is
+issued rather than one being hidden downstream. **The game's projected shadows
+(`dDlst_shadowReal_c` — Link, major actors) are a separate system and are
+untouched.** The reasoning that made the blob suppression correct — a painted
+shadow drawn on top of a traced one — transfers to them word for word, and it is
+now a confirmed reading rather than a prediction. Not done because nobody has
+asked and Link's shadow is a far more visible change than a rupee's; it is the
+same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -111,12 +131,18 @@ as black quads (issue 11), the ambient grade, and the Controls tab.
 - **HUD fade-in alpha** (issue 12) — the fading constant now rides TFACTOR's
   alpha instead of being discarded.
 
-**Self-illumination (issue 9): three revisions cut on a weighted score and all
-three missed the lava, which scores 0.00.** Rev 4 drops the score from the
-decision entirely. The rule is structural — self-lit (no TEV colour stage reads
-the rasterized channel) AND a colour of its own AND that colour reading as a
-glow — and replays over the last log at **6 of 77 materials, every lava and fire
-surface, no false positives, nothing to tune**. CI-green, untested in game.
+**Self-illumination (issue 9): rev 4 is TESTED IN GAME (2026-08-06) and works.**
+Three earlier revisions cut on a weighted score and all three missed the lava,
+which scores 0.00. Rev 4 drops the score entirely: self-lit (no TEV colour stage
+reads the rasterized channel) AND a colour of its own AND that colour reading as
+a glow. Replayed over the last log that is **6 of 77 materials, every lava and
+fire surface, no false positives, nothing to tune** — and in game it caught the
+lava and read as properly molten.
+
+`emissive.brightness` was dialled to **10.0**, now the default. Calibrated in
+one dark interior; a bright exterior may want less, and none has been looked at.
+Not confirmed by that session: whether the per-material derivation holds for a
+small pickup as well as for lava (the report named the lava only).
 
 **`grp=` does not work and has been removed.** It was meant to end "which of
 these logged materials is the thing on screen?", and every material in that

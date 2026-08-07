@@ -1690,6 +1690,16 @@ void tick() {
             game.remixHideVrbox.setValue(hideVrbox);
         }
 
+        // The game's flat circular shadows under rupees, hearts, pots and the like. Remix
+        // traces a real shadow for each of those objects, so the painted disc lands on top of
+        // a correct one. Suppressed at registration (dDlst_shadowControl_c::setSimple), so no
+        // draw call is issued rather than one being hidden downstream.
+        const bool blobShadows = readOptionBool("rtx.dusklight.game.blobShadows",
+                                                game.remixBlobShadows.getValue());
+        if (blobShadows != game.remixBlobShadows.getValue()) {
+            game.remixBlobShadows.setValue(blobShadows);
+        }
+
         // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys
         // Remix a stable hash for each blade - see dGrass_packet_c::draw.
         const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",

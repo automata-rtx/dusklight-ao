@@ -1806,6 +1806,21 @@ int dDlst_shadowControl_c::setSimple(cXyz* param_0, f32 param_1, f32 param_2, cX
         return 0;
     }
 
+#if TARGET_PC
+    // Under Remix these are wrong by construction: the flat disc under a rupee or a heart is
+    // the game approximating a shadow that Remix traces for real from the same geometry, so
+    // drawing it paints one shadow on top of another. Dropped here, at registration, rather
+    // than hidden later - nothing is added to the list, so no GX command is ever issued for it.
+    //
+    // Off only when Remix's overlay says so (rtx.dusklight.game.blobShadows); on every other
+    // backend the game's own shadows are the only ones there are, so nothing changes.
+    // The game's projected shadows (dDlst_shadowReal_c - Link, major actors) are a separate
+    // system and are not touched.
+    if (!dusk::getSettings().game.remixBlobShadows.getValue()) {
+        return 0;
+    }
+#endif
+
     mSimple[mSimpleNum].set(param_0, param_1, param_2, param_3, param_4, param_5, param_6);
     mSimpleNum++;
     return 1;
