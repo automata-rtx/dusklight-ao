@@ -217,6 +217,39 @@ each: Hyrule Field (dawn / noon / dusk / night), Faron Woods (morning and
 midday), Lake Hylia (morning, in and out of the kytag01 bank), Goron Mines
 entrance and interior, Forest Temple, Palace of Twilight.
 
+### 5.1 First measured values, 2026-08-06
+
+The Remix fork's `rtx.dusklight.atmosphere.fogLog` logs the derivation per area,
+so a walk collects these without anyone reading a panel. From a Hyrule Field →
+Lake Hylia → South Faron run:
+
+| Where | `mFogNear` | `mFogFar` | In metres (100 u/m) |
+| :-- | :-- | :-- | :-- |
+| Hyrule Field | 0 | 60000 | 0 – 600 m |
+| (long-range, unattributed) | 500 | 120000 | 5 – 1200 m |
+| (negative start, unattributed) | -10000 | 110000 | already 8% fogged at the camera |
+| Lake Hylia | -3000 | 70000 | already 4% fogged at the camera |
+
+Two facts fall out that no amount of source reading would have given:
+
+- **`mFogNear` is zero or negative in all four.** The "clear air, then fog"
+  shape — a large positive near plane — did not appear. That shape is what the
+  fork's near-field haze error depends on, so its absence here is the reason
+  that error measured 0.004–0.006 rather than the 0.27 a worked example
+  predicted.
+- **The ranges are enormous** — 600 to 1200 m — against a froxel grid capped at
+  120 m. The volumetric part of the fog therefore covers only the first 10–21%
+  of the ramp in these areas.
+
+Two of the four rows are unattributed because the log records the derivation,
+not the stage. That is a gap in the instrumentation rather than in the data;
+correlating them needs the area name on the line.
+
+Still unmeasured, and the interesting half: **Goron Mines and the Forest
+Temple** (near and dense, where a positive `mFogNear` is most likely), and
+**Lake Hylia inside the kytag01 bank** rather than beside it — `[-3000, 70000]`
+is the ordinary area fog, not the scripted whiteout of §3.3.
+
 ---
 
 ## 6. Moya (haze particles)

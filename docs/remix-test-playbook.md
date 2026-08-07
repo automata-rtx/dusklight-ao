@@ -73,11 +73,12 @@ rtx.dusklight.emissive.log    = True
 # This is the A/B in 0a - off is the single-op approximation it replaces.
 rtx.dusklight.rampMaterials = True
 
-# Fog falloff, reworked 2026-08-06. Both defaults; stated so the session starts
+# Fog falloff, reworked 2026-08-06. All defaults; stated so the session starts
 # from the intended split rather than a saved one. The log is what test 0g
-# collects and it is bounded at 24 lines.
-rtx.dusklight.atmosphere.mediumFraction = 0.5
-rtx.dusklight.atmosphere.fogLog         = True
+# collects, one line per area, capped at 24.
+rtx.dusklight.atmosphere.fogLog      = True
+rtx.dusklight.atmosphere.maxNearHaze = 0.02
+rtx.dusklight.atmosphere.mediumFraction = 1.0
 ```
 
 **Before anything:** F1 → Dusklight Remix tab must say *"Connected"* and Bridge
@@ -278,49 +279,59 @@ Nothing to describe by eye here, and nothing that can regress the image: if this
 is inconvenient to run, it can wait for a session that is already taking
 captures for another reason.
 
-#### 0g. Fog falloff — the rework, and the measurement pass it needs (2026-08-06, UNTESTED)
+#### 0g. Fog falloff — RUN 2026-08-06, and what is left
 
-The volumetric fog's falloff was reworked fork-side. The reported symptom was
-that it did not match the game's own falloff while the depth-based fog did;
-three arithmetic faults were found and fixed, and `remix-open-issues.md` lists
-them. **Nothing here needs describing by eye — this test is a walk and a log.**
+**This test is already done, and it needed nothing but a walk.** The 2026-08-06
+run — Hyrule Field, warp to Lake Hylia, warp to South Faron — produced the
+first real `mFogNear`/`mFogFar` values this project has ever had, from
+`rtx.dusklight.atmosphere.fogLog` alone. Nothing was described by eye and
+nothing needed to be.
 
-**Just walk and send the log.** `rtx.dusklight.atmosphere.fogLog` writes one
-bounded line per distinct fog derivation, so visiting different areas is the
-entire method. Worth covering deliberately, because these are the regimes that
-differ and the per-area values have never been recorded at all:
+If it is run again, that is the whole method: **play, and send the log.** Every
+area you stand in for a few seconds writes one line. What is still missing is
+listed at the bottom.
 
-- Hyrule Field at dawn, noon and dusk — thin, long-range, `fogStartZ` large.
-- Faron Woods morning, then midday — the same area, ramp moving under you.
-- **Lake Hylia in the morning**, in and out of the kytag01 fog bank — the
-  negative-`start` whiteout, which by this reading has never actually reached
-  the screen at anything like its authored strength.
-- **Goron Mines** — near and dense, and the strongest fog tint in the game, so
-  it is the area where the colour fault (fault 3) was worst.
-- Forest Temple, Palace of Twilight.
+**What a line says**, in the order it matters:
 
-That also finally completes the `kankyo-fog.md` §5 measurement pass, which has
-been outstanding since 2026-07-27.
+```
+[Dusklight] fog: colpat=0 outdoor daytime=180 ramp=[0,60000] reach=12000u(120.0m)
+  covers=20% sigma=1.860e-05/u limit=gridReach nearHaze=0.006/0.020 ...
+```
 
-**Reading a line.** `nearHaze=` is the field to look at first: it is the fog the
-original did not have, near the camera, and it is the one error the correction
-cannot remove. `DusklightAtmosphere.md` §5.1 tabulates what to expect. The
-`fix=` columns are what the composite adds at each quarter of the froxel grid.
-
-| What you find | Reading |
+| Field | What it tells you |
 | :-- | :-- |
-| `nearHaze` is 0.10–0.12 in field areas | Expected at the default `mediumFraction` of 0.5. If near geometry looks hazier than it should, halve the setting and it halves too. |
-| `nearHaze` above ~0.2 anywhere | Higher than the design intends — send the line, the area's ramp is more offset than the cases the trade was tabulated for. |
-| Distant terrain **still** does not dissolve into the sky at `fogEndZ` | Fault 2 is not actually fixed. This one is checkable by eye and is worth saying so. |
-| Fog in the Goron Mines reads noticeably brighter/hotter than before | Expected, and the point of fault 3 — the medium now settles at the authored colour instead of 22.5% of it. Only a problem if it reads *blown out*, in which case `rtx.dusklight.atmosphere.multiScatteringScale` is the dial. |
-| Grain or noise in the Lake Hylia whiteout | The correction divides by the medium's sampled transmittance, which is noisiest where the medium is thickest. Predicted, never observed; report if it shows. |
+| `ramp=[a,b]` | the game's own fog, in world units — 100 units is a metre |
+| `covers=` | how much of that ramp the volumetric grid reaches. Everything else is the analytic correction |
+| `nearHaze=x/budget` | fog the original did not have, near the camera. The one error nothing can remove; the budget is what holds it down |
+| `limit=` | which constraint set the density: `gridReach`, `nearHaze` or `zHalfMin` |
 
-**The A/B, if there is time for one:** `mediumFraction` at 0 is the game's ramp
-exactly with no volumetrics in the fog at all, and at 1 the medium carries as
-much as it can. The total fog should look *the same density* at both ends and
-differ only in how much shaft and local-light structure is in it. If density
-visibly changes with that slider, the correction is not doing its job and that
-is the single most useful thing this test can find.
+**The only thing that needs eyes**, and only if you happen to notice it:
+
+| If you see | It means |
+| :-- | :-- |
+| Distant terrain still not dissolving into the sky at the fog's far end | The closure fault is not actually fixed. Worth saying — the log cannot see this one. |
+| Fog reading brighter/hotter than before, especially in dark interiors | Expected. The medium now settles at the authored fog colour instead of 22.5% of it. Only report it if it looks *blown out*. |
+| Grain or noise in very dense fog | Predicted, never observed. The correction divides by the medium's sampled transmittance. |
+
+**Still missing after the 2026-08-06 run**, and the reason to run it again:
+
+- **Goron Mines and the Forest Temple.** Every area measured so far has
+  `mFogNear` at zero or negative. A dense interior is where a *positive* near
+  plane is most likely, and that is the only shape where the near-haze error
+  gets large. It is also where the colour fault was worst.
+- **Lake Hylia inside the kytag01 fog bank**, in the morning, rather than beside
+  it. The `[-3000, 70000]` measured is the ordinary area fog, not the scripted
+  whiteout.
+- **Two of the four rows could not be attributed to an area at all**, because
+  nothing on the wire names the current stage. That is a gap in the
+  instrumentation, not something to work around by narrating the route — see
+  `DusklightOverlay.md` §6 "Open".
+
+**The A/B, only if you want it:** `rtx.dusklight.atmosphere.maxNearHaze` from
+0.02 to 0 and back. The fog should look *the same density* at both ends and
+differ only in how much shaft and lit-air structure is in it. If the density
+visibly changes, the correction is not doing its job, and that is the single
+most useful thing this test can find.
 
 ### 1. Clock — do this first, it is the tool the rest want
 

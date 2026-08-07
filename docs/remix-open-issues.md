@@ -65,9 +65,9 @@ now a confirmed reading rather than a prediction. Not done because nobody has
 asked and Link's shadow is a far more visible change than a rupee's; it is the
 same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 
-**The volumetric fog's falloff was reworked on 2026-08-06 — fork-side only,
-CI-green, UNTESTED in game.** Reported symptom: the volumetric fog did not match
-the game's falloff while the depth-based fog did. Reading the fork's derivation
+**The volumetric fog's falloff was reworked on 2026-08-06 — fork-side only, and
+it has now had one run.** Reported symptom: the volumetric fog did not match the
+game's falloff while the depth-based fog did. Reading the fork's derivation
 against `mFogNear`/`mFogFar` found three arithmetic faults, none of which needed
 a test session to establish:
 
@@ -83,17 +83,45 @@ a test session to establish:
    interiors.
 
 Nothing on this side changed: the bridge already pushes the right values and the
-protocol is untouched at 6. What to expect when it is next run is in
-`dxvk-remix/documentation/DusklightAtmosphere.md` §5 and §12, including the
-regression signature. The new control is
-`rtx.dusklight.atmosphere.mediumFraction` (default 0.5) and the log line to
-collect is `rtx.dusklight.atmosphere.fogLog`, whose `nearHaze=` field is the
-residual of fault 1 that no amount of correction can remove.
+protocol is untouched at 6.
 
-This also makes the §5 measurement pass in [`kankyo-fog.md`](kankyo-fog.md)
-worth more than it was: the per-area `fogStartZ`/`fogEndZ` values have still
-never been recorded, and they are exactly what decides how large that residual
-is per area.
+**The 2026-08-06 run (Hyrule Field → Lake Hylia → South Faron) settled the
+numbers and corrected two of my own claims.** The log alone did it; nothing was
+described by eye. Values are in [`kankyo-fog.md`](kankyo-fog.md) §5.1 — the
+first real `mFogNear`/`mFogFar` this project has had, since they live in stage
+`.dzs` data. Three results:
+
+- **`mFogNear` is zero or negative in every area measured.** The "clear air,
+  then fog" shape that produces fault 1's headline +0.27 error **did not
+  occur.** In these ramps the old error was +0.02 to +0.04 — real, but the
+  smallest of the three faults. Faults 2 and 3 were the large ones here.
+- **The froxel grid covers only 10–21% of the ramp**, because Remix clamps it at
+  120 m while the game's fog runs 600–1200 m. So the ceiling on how volumetric
+  the fog can be is `rtx.dusklight.atmosphere.froxelMaxDistanceMaxMeters`, not
+  the fraction knob. Untried.
+- Two of the four rows **could not be attributed to an area**, because nothing
+  on the wire names the current stage. Recorded as a protocol-7 item in
+  `DusklightOverlay.md` §6 "Open" rather than worked around by asking about the
+  route — it is a logging defect by rule 2, and it will bite every future
+  atmosphere log the same way.
+
+Acted on: the density is now bounded by an error budget
+(`rtx.dusklight.atmosphere.maxNearHaze`, 0.02) rather than by a fixed fraction,
+because the measured cost of a fixed fraction ranged over two orders of
+magnitude between those four areas. That roughly doubles the volumetric share in
+three of them and holds the fourth at the budget. The fog log's dedup key was
+also fixed: `mFogFar` eases continuously, and against a 1-unit key every frame
+was a new derivation — the whole 24-line budget went in **0.23 seconds**, inside
+an area already logged.
+
+Still owed a run: **Goron Mines and the Forest Temple** (near, dense, and where
+a positive `mFogNear` is most likely), and **Lake Hylia inside the kytag01 fog
+bank** rather than beside it. `remix-test-playbook.md` §0g.
+
+**One setting note from the same log:** `rtx.autoExposure.enabled` was **True**
+in the effective config. The playbook baseline sets it False, because every
+brightness judgement is undone by auto exposure before it can be seen. It does
+not affect the fog *geometry* measured above, which is why those results stand.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
