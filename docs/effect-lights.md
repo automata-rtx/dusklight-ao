@@ -105,6 +105,41 @@ taken inside `dPa_simpleEcallBack::set` for the second, where each instance is
 still its own thing. The recorder is a fixed-size array that saturates rather
 than growing, and is inert unless the system asked for it.
 
+**The ordinary wall torch is the worked example, and it is worth having in
+full** — it is the most common fire in the game, and it exercises three
+separate parts of this design at once. `d_a_ep::ep_move` emits **three** effects
+at one position, all through `dComIfGp_particle_setSimple`
+(`d_a_ep.cpp:495`, `:498`, `:512`):
+
+| Variant 0 | Variant 1 | Resource | Role |
+| :-- | :-- | :-- | :-- |
+| `0x0100` | `0x8110` | `ZI_J_O_fire_a.jpa` | fire A |
+| `0x0101` | `0x8111` | `ZI_J_O_fire_b.jpa` | fire B |
+| `0x0103` | `0x8112` | `ZI_J_O_kagerou.jpa` | 陽炎, heat haze |
+
+(Resource names from `d_particle_name.cpp`, via
+`extern/aurora/docs/dx9/unsupported-effects.md`, which catalogues these three
+for a different reason — the white-circle investigation.) The variant is
+per-instance and comes from the actor's spawn parameter: **only** when bit 3 is
+set does the actor compute `field_0x60c = ((param & 7) + 1) & 1`, giving 0 or 1
+(`d_a_ep.cpp:888-891`); otherwise that branch is not taken and it stays 0
+(`:893-897` sets a different field). So variant 1 is the opt-in case, and both
+variants can be alight in one room.
+
+Three things follow, and all three are checkable in one classification report:
+
+1. **The hook is load-bearing, not defensive.** Every torch in the game takes
+   the simple path. Without the `dPa_simpleEcallBack::set` recorder, a room of
+   ten torches would light exactly one of them, in a position that changes
+   frame to frame.
+2. **Merging is the normal case, not an edge case.** Fire A and fire B sit at
+   the same point, so §6 has to collapse them or every torch gets two lights.
+   The 60-unit merge radius has no work to do here — the positions are equal.
+3. **The heat haze is the rule's nearest miss.** `kagerou` is a distortion
+   effect at the same point as real fire. If it passes §3 it costs nothing
+   (it merges into the same site); if it fails, that is the rule working. Which
+   it does is **not known** — it is the first line to look for in the report.
+
 ### 2.1 The emitter table is central and complete
 
 `dPa_control_c` owns one `JPAEmitterManager` for the whole game
