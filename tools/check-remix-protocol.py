@@ -14,6 +14,11 @@ Checks, against dxvk-remix's RTX_OPTION declarations:
   3. every env readout the fork declares is actually pushed by the game
   4. the protocol number the game pushes equals the fork's kRequiredProtocol,
      and every doc on both sides that states the CURRENT number agrees with it
+  5. every "rtx.dusklight.*" option name the DOCS mention is declared in the
+     fork. A doc naming a switch that does not exist sends the reader looking
+     through the overlay and rtx.conf for it - which is how effectLightOrphanPolicy
+     sat in a settings table for a day. Nothing else can catch it: the game
+     never reads that name, so checks 1-3 never see it.
 
 Check 4 exists because the number is written down in eight places across three
 repos and drifts silently: a doc saying 6 when the wire is at 7 sends the next
@@ -44,9 +49,32 @@ DOC_PROTOCOL = re.compile(
     re.IGNORECASE)
 
 
+# Every fork file that declares an rtx.dusklight.* option. Checks 1-3 only ever needed
+# the two option surfaces, but check 5 reads the docs, and the docs legitimately name
+# atmosphere, grade, emissive and matrep options too - so the authority has to be all of
+# them or every such mention reads as a missing switch.
+OPTION_SOURCES = (
+    "src/dxvk/rtx_render/rtx_dusklight_game.h",
+    "src/dxvk/rtx_render/rtx_dusklight_env.h",
+    "src/dxvk/rtx_render/rtx_dusklight_atmosphere.h",
+    "src/dxvk/rtx_render/rtx_dusklight_grade.h",
+    "src/dxvk/rtx_render/rtx_dusklight_emissive.h",
+    "src/d3d9/d3d9_rtx_matrep.h",
+)
+
+
 def declared(path):
     with open(path, encoding="utf-8") as handle:
         return {f"{m.group(1)}.{m.group(2)}" for m in DECL.finditer(handle.read())}
+
+
+def declared_all(fork):
+    names = set()
+    for rel in OPTION_SOURCES:
+        path = os.path.join(fork, rel)
+        if os.path.isfile(path):
+            names |= declared(path)
+    return names
 
 
 def read_text(path):
@@ -55,6 +83,54 @@ def read_text(path):
             return handle.read()
     except OSError:
         return None
+
+
+def doc_paths(fork):
+    return [os.path.join(ROOT, p) for p in (
+        "CLAUDE.md", "docs/kankyo-remix.md", "docs/kankyo-fog.md",
+        "docs/remix-open-issues.md", "docs/dx9-fixed-function.md",
+        "docs/remix-test-playbook.md", "docs/effect-lights.md",
+    )] + [os.path.join(fork, p) for p in (
+        "CLAUDE.md", "documentation/DusklightOverlay.md",
+        "documentation/DusklightAtmosphere.md",
+    )]
+
+
+# Names the docs mention on purpose that the fork does not declare. Each needs a reason,
+# and adding one has to be a deliberate act - an allowlist that grows by reflex is how a
+# check stops finding anything. A name here is NOT a switch anybody can set.
+DOC_NAME_ALLOWED = {
+    # Design intent in kankyo-remix.md's push table, phase 4, explicitly not built (the
+    # shipped rows carry a tick, these do not).
+    "rtx.dusklight.env.hazeColor": "kankyo-remix.md push table, phase 4, unbuilt",
+    "rtx.dusklight.env.darkworld": "kankyo-remix.md push table, phase 4, unbuilt",
+    "rtx.dusklight.env.sensesStrength": "kankyo-remix.md push table, phase 4, unbuilt",
+    # Named in remix-open-issues.md for the express purpose of recording that it was
+    # renamed to emissive.brightness and that RtxOptions.md still carries the old row.
+    "rtx.dusklight.emissive.intensity": "recorded as renamed to emissive.brightness",
+}
+
+
+def check_doc_option_names(fork, known, failures):
+    """Check 5. Any rtx.dusklight.<ns>.<name> the docs name must be declared."""
+    pattern = re.compile(r'rtx\.dusklight\.(?:game|env|emissive|atmosphere|grade|texrep|warp)'
+                         r'\.([A-Za-z_][A-Za-z0-9_]*)')
+    for path in doc_paths(fork):
+        text = read_text(path)
+        if text is None:
+            continue
+        rel = os.path.relpath(path, ROOT)
+        for match in pattern.finditer(text):
+            name = match.group(0)
+            # A trailing "*" in prose ("the rtx.dusklight.game.effectLight* options")
+            # is a family, not a name. The regex stops before it, so check the source text.
+            if text[match.end():match.end() + 1] == "*":
+                continue
+            if name not in known and name not in DOC_NAME_ALLOWED:
+                line = text[:match.start()].count("\n") + 1
+                failures.append(f"{rel}:{line} names option '{name}', which the fork "
+                                f"does not declare (a reader will hunt for a switch "
+                                f"that does not exist)")
 
 
 def check_protocol_number(fork, bridge, failures):
@@ -76,16 +152,7 @@ def check_protocol_number(fork, bridge, failures):
                         f"{required.group(1)} - one side is unbuilt")
         return wire
 
-    docs = [os.path.join(ROOT, p) for p in (
-        "CLAUDE.md", "docs/kankyo-remix.md", "docs/kankyo-fog.md",
-        "docs/remix-open-issues.md", "docs/dx9-fixed-function.md",
-        "docs/remix-test-playbook.md", "docs/effect-lights.md",
-    )] + [os.path.join(fork, p) for p in (
-        "CLAUDE.md", "documentation/DusklightOverlay.md",
-        "documentation/DusklightAtmosphere.md",
-    )]
-
-    for path in docs:
+    for path in doc_paths(fork):
         text = read_text(path)
         if text is None:
             continue
@@ -107,7 +174,7 @@ def main():
         print(f"protocol check skipped: no dxvk-remix at {fork}")
         return 0
 
-    known = declared(game_h) | declared(env_h)
+    known = declared_all(fork)
 
     with open(os.path.join(ROOT, "src/dusk/remix_bridge.cpp"), encoding="utf-8") as handle:
         bridge = handle.read()
@@ -127,6 +194,7 @@ def main():
                         f"(it will read as its default)")
 
     wire = check_protocol_number(fork, bridge, failures)
+    check_doc_option_names(fork, known, failures)
 
     print(f"protocol check: {len(read)} options read, {len(push)} readouts pushed, "
           f"{len(known)} declared in the fork"

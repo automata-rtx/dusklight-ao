@@ -39,22 +39,24 @@ instrumentation fixes and the blend reporting.
 **`dxvk-remix/RtxOptions.md` is STALE again as of 2026-08-07 — regenerate it as
 part of this merge.** It was regenerated 2026-08-05 and current then; the
 effect-light work has since added options it does not know about. Reconciled
-against every `RTX_OPTION*` declaration under `src/` (151 `rtx.dusklight.*`
-declared, 130 documented):
+2026-08-07 against every `RTX_OPTION*` declaration in the fork's six option
+surfaces — `rtx_dusklight_{game,env,atmosphere,grade,emissive}.h` and
+`d3d9_rtx_matrep.h` — which hold **151** `rtx.dusklight.*` names against
+**126** in the file:
 
-- **30 declared options are missing.** 19 are the effect lights
-  (`rtx.dusklight.game.effectLight*` plus `effectLights`), 10 are their readouts
-  (`rtx.dusklight.env.effLights*`), and two predate this work and were already
-  missing: `rtx.dusklight.game.blobShadows` and
-  `rtx.dusklight.emissive.brightness`.
-- **9 documented options no longer exist.** `rtx.dusklight.emissive.intensity`
-  was renamed to `brightness`; the eight `texrep` rows are the known caveat below
-  — they came from a build that also carried the unmerged
+- **35 declared options are missing.** 18 are the effect-light settings
+  (`rtx.dusklight.game.effectLight*`, `effectLights` among them), 10 are their
+  readouts (`rtx.dusklight.env.effLights*`), and **7 predate this work** and
+  were already absent: `blockGameInput`, `emissive.brightness`,
+  `game.blobShadows`, `matrep`, `menuKeyBinds`, `rampMaterials`, `uiActive`.
+- **10 documented options no longer exist.** `rtx.dusklight.emissive.intensity`
+  was renamed to `brightness`; the other **nine** are the `texrep` family — the
+  known caveat below — which came from a build that also carried the unmerged
   `claude/dx9-high-res-textures` branch.
 
-The list above was produced by matching the `RTX_OPTION*` declarations against
-the table's first column; it is worth redoing rather than trusting, since it is
-a script nobody has kept.
+An earlier revision of this entry said 30 / 19 / 9 / eight. Every one of those
+was wrong, because the reconciliation had been run against two of the six
+headers. The numbers above come from all six.
 
 It is **generated, never hand-edited**. A row that reads badly means the
 `RTX_OPTION` description string in `src/` reads badly — fix it there and

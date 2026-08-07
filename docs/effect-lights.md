@@ -616,14 +616,23 @@ Remix. The overlay hosts them in the Dusklight tab.
 | `effectLightMaxLights` | 32 | per-frame budget |
 | `effectLightMaxDistance` | 12000.0 | cull distance from the camera |
 | `effectLightBursts` | off | include one-shot effects (§4.5) |
-| `effectLightOrphanPolicy` | `None` | *not implemented yet* — see §10 |
 | `effectLightVolumetric` | 1.0 | how much a light contributes to fog relative to surfaces; above 1 a flame hazes the air without getting brighter on the walls |
 | `effectLightMinChroma` | 0.50 | the "reads as a glow" thresholds (§3) — same functions and defaults as the material rule |
 | `effectLightMinLuma` | 0.70 | |
 | `effectLightReportCommit` | action | dump the classification report (§7) |
 
 The same names exist in the game's own `config.json` under `game.*`, which is
-what a value falls back to when Remix's option is unreachable.
+what a value falls back to when Remix's option is unreachable — except
+`effectLightReportCommit`, which the bridge reads directly and which has nothing
+to fall back to, being an action rather than a value.
+
+**`orphanPolicy` is deliberately not in that table.** §4.6 describes it and §10
+lists it under what is not built; it exists only as a field on the internal
+`Params` struct (`effect_lights.hpp:77`) that nothing writes and nothing reads.
+It is **not** an option: not declared in the fork, not a `ConfigVar`, not in the
+overlay, not settable from `rtx.conf`. An earlier revision of this table listed
+it with a default, which would have sent somebody looking for a switch that does
+not exist. `tools/check-remix-protocol.py` now fails on that class of mistake.
 
 ---
 

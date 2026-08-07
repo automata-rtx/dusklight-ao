@@ -175,7 +175,9 @@ rtx.dusklight.game.hideSkyBillboards = True
 # Rev 4 is CI-green and untested in game as of 2026-08-05.
 #rtx.dusklight.emissive.enable      = True
 #rtx.dusklight.emissive.colorSource = 0
-#rtx.dusklight.emissive.intensity   = 2.0
+# NOT "intensity" - that name was renamed to brightness, and the old one silently
+# does nothing. It is a target brightness rather than a multiplier; default 10.0.
+#rtx.dusklight.emissive.brightness  = 10.0
 
 # Material translation report (Remix half; aurora's half is always on). Turn it
 # on for any session where a surface is the wrong colour - it prints what each
