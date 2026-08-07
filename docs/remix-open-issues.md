@@ -36,13 +36,25 @@ runs are what produced the findings below. **Nothing landed on 2026-08-05 has
 been run** — that is the self-illumination rule, the emitted-colour default, the
 instrumentation fixes and the blend reporting.
 
-**`dxvk-remix/RtxOptions.md` was regenerated 2026-08-05 and is current** — it
-had documented 40 of the 130 `rtx.dusklight.*` options for weeks. Reconciled
-against the `RTX_OPTION*` declarations in `src/`: nothing declared is missing,
-the four emissive options this session removed are gone, and the three it added
-are present. One caveat noted in the file itself: the build that produced it
-also carried the unmerged `claude/dx9-high-res-textures` branch, so eight
-`texrep` rows describe options not on this branch yet.
+**`dxvk-remix/RtxOptions.md` is STALE again as of 2026-08-07 — regenerate it as
+part of this merge.** It was regenerated 2026-08-05 and current then; the
+effect-light work has since added options it does not know about. Reconciled
+against every `RTX_OPTION*` declaration under `src/` (151 `rtx.dusklight.*`
+declared, 130 documented):
+
+- **30 declared options are missing.** 19 are the effect lights
+  (`rtx.dusklight.game.effectLight*` plus `effectLights`), 10 are their readouts
+  (`rtx.dusklight.env.effLights*`), and two predate this work and were already
+  missing: `rtx.dusklight.game.blobShadows` and
+  `rtx.dusklight.emissive.brightness`.
+- **9 documented options no longer exist.** `rtx.dusklight.emissive.intensity`
+  was renamed to `brightness`; the eight `texrep` rows are the known caveat below
+  — they came from a build that also carried the unmerged
+  `claude/dx9-high-res-textures` branch.
+
+The list above was produced by matching the `RTX_OPTION*` declarations against
+the table's first column; it is worth redoing rather than trusting, since it is
+a script nobody has kept.
 
 It is **generated, never hand-edited**. A row that reads badly means the
 `RTX_OPTION` description string in `src/` reads badly — fix it there and
@@ -71,30 +83,36 @@ assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 **Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
 
-**Effect lights landed 2026-08-06 and have not been run.** Both sides are
+**Effect lights landed 2026-08-06, were TESTED IN GAME 2026-08-07 — "it works" —
+and merged.** Sphere lights at the origin of the game's own fire and glow
+effects, replacing the local-light mirror (which now defaults off and is kept as
+the comparison path). Design and citations:
+[`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 36
+behavioural assertions under ASan and UBSan.
+
 **CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
 `70a6d482`. (dusklight's run reads "failure" because its MSVC **arm64** job was
 *cancelled* without ever being given a runner; every other config passed and the
 x86_64 artifact is real. See `CLAUDE.md` — that state is capacity, not code.)
- Sphere lights at the
-origin of the game's own fire and glow effects, replacing the local-light
-mirror (which now defaults off and is kept as the comparison path). Design and
-citations: [`effect-lights.md`](effect-lights.md). CI-green is not claimed;
-what *is* claimed is that it compiles and that
-`tests/effect_lights/run.sh` passes 32 behavioural assertions under ASan and
-UBSan against stub headers.
 
-Four things a first session should settle, in the order they matter — every one
-of them is answerable from the Dusklight tab or one log line, so none of them
-is a question for the owner:
+**The pass retires one inference and leaves four questions open.** Because the
+system emits nothing at all unless the rule accepts an emitter, this game
+demonstrably *does* author its fire additively — the clause the design flagged
+as read from the file format rather than measured. What the pass does **not**
+establish is anything about *which* effects are accepted, because **no
+classification report was read.**
 
-1. **Is the classifier right about this game?** The rule accepts an effect that
-   is being drawn, blends additively, and has a colour that reads as a glow.
-   The additive clause is read from the JPA format's semantics, **not** from
-   this game's `.jpa` assets, which are not in the repo. Press *Log Effect
-   Classification Report* and the game writes one line per distinct effect it
-   has seen — name, blend configuration, colours, class, verdict. That log
-   turns the inference into a measurement for the whole game at once.
+So these stay open. Every one is answerable from the Dusklight tab or one log
+line, so none of them is a question for the owner:
+
+1. **Which effects does the classifier accept, and which does it silently
+   refuse?** The rule accepts an effect that is being drawn, blends additively,
+   and has a colour that reads as a glow. Enough of this game passes it to light
+   a scene — 2026-08-07 showed that much — but a refused effect looks exactly
+   like an effect that has no light. Press *Log Effect Classification Report*
+   and the game writes one line per distinct effect it has seen — name, blend
+   configuration, colours, class, verdict. One press answers it for the whole
+   game at once.
    Watch `effLightsCandidates` against `effLightsConsidered`: a large gap is
    normal (most emitters are smoke), a gap to *zero* while stood at a fire is
    the classifier being wrong.
@@ -204,6 +222,9 @@ Added **2026-07-29**:
 - **Warp.** "Exactly as intended, no issues."
 - **Local point lights.** Forest Temple first room, `found 5 / drawn 4 /
   tracked 4`. Needs `localLightIntensity` 19 and `localLightRadius` 10.
+  **Superseded 2026-08-07 by effect lights and now off by default** — its
+  placements are the game's, which a path tracer shows to be wrong. Kept as the
+  comparison path; do not run both.
 - **`hideSkyBillboards`, and with it the night shadow wandering.** Works, and
   confirms the moon-quad cause.
 - **Aerial perspective under the physical sky.** Distant terrain reads
@@ -885,6 +906,20 @@ Added **2026-07-29**:
     stage's alpha to build the alpha test. Regression signature: alpha-tested
     foliage, grates or grass going solid or vanishing. That would outrank every
     other result in the session.
+
+Added **2026-08-07**:
+
+- **Effect lights.** "It works", and merged on that. Sphere lights at the origin
+  of the effect that draws the fire rather than at the position of the light the
+  game registered. Since the system emits nothing unless its rule accepts an
+  emitter, the pass also demonstrates that this game authors its fire
+  additively — which the design had flagged as read from the JPA format rather
+  than measured.
+  **The diagnostics were not read**, so which effects are accepted, whether the
+  spot registry is being adopted, and how many of the game's own lights the
+  orphan policy drops are all still unknown. Those are listed at the top of this
+  file rather than here, because they are open questions and this list is for
+  settled ones.
 
 #### Built and CI-green but NEVER RUN
 

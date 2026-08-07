@@ -570,6 +570,36 @@ what a value falls back to when Remix's option is unreachable.
 
 Following [rule 5](../CLAUDE.md#5-say-what-was-verified-and-what-was-not).
 
+**Tested in game 2026-08-07 — it works.** That is the whole report, and it is
+worth being exact about what it settles, because it is easy to read it as more
+than it is.
+
+*What it does settle:* lights appear, at the effect origins, and the result is
+good enough that the owner is merging it. Since the system produces nothing at
+all unless the rule accepts an emitter, **the additive clause is no longer pure
+inference** — this game does author its fire the way §3 assumed, at least for
+whatever was on screen.
+
+*What it does not settle*, and what the readouts and the report exist for:
+
+- **which** effects were accepted and which were refused. No classification
+  report has been read. An effect that never lights still looks like an effect
+  that has no light, and only the report tells them apart.
+- whether the **spot registry** is being adopted in practice — `effLightsVanilla`
+  answers it, and nobody has looked. The reading in hole 2 below says it should
+  be; a reading is not a measurement.
+- how many of the game's own lights the orphan policy is dropping
+  (`effLightsOrphans`), which is the number that decides whether §4.6's default
+  needs its escape hatch.
+- whether any **default** is right rather than merely acceptable. None was
+  tuned; §9's values are what shipped.
+- the specific cases the design was written around — the lantern, a fire arrow,
+  a bonfire's five emitters collapsing to one — were not individually confirmed.
+
+None of that is a reason to hold the merge. It is the list §3b of the test
+playbook exists to work through on a session where somebody is looking for it,
+and every item on it is answerable from the Dusklight tab or one log line.
+
 **Read in source, cited above.** The emitter table's completeness and reach.
 `mGlobalTrs` being the effect origin. The colour path. The effect ID space and
 its names. `StopDraw` being what the lantern's oil gates. Both light
@@ -577,6 +607,12 @@ registries, their contents, the authored torch values, and the per-frame
 liveness flag on the spot list. `mPow` being a real radius. That `dPa_RM`'s
 `0x8000` bit selects a bank rather than a namespace. The two spawn paths and
 the fact that the simple one shares an emitter. The blend-mode accessors.
+
+**CI-green on both sides** at the matching protocol-7 pair — dusklight
+`bf87551c`, dxvk-remix `70a6d482`. (dusklight's run reads "failure" because its
+MSVC **arm64** job was cancelled without ever being assigned a runner; every
+other config passed. `CLAUDE.md` records that state, because it looks exactly
+like a broken build and is not one.)
 
 **Compiles, on two harnesses, neither of which is the real build.**
 

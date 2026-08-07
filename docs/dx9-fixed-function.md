@@ -111,16 +111,21 @@ rtx.dusklight.game.celestialNoonElevation = 80
 # leaks through the gap. Tested - it works and visibly helps.
 rtx.dusklight.game.disableFrustumCulling = True
 
-# Local point lights. Tested 2026-07-29 and these are the values that work -
-# neither is the built-in default yet. 19 is not a taste value: it is the
-# derived reading of the game's own attenuation curve (mPow is where the light
-# reaches 1/11 of peak, not where it ends), and testing picked it independently
-# as the minimum giving usable light. Radius 10 clears the Forest Temple light
-# posts without clipping. The two interact - radiance is solved to reach the
-# same distance, so a bigger emitter needs less of it - so set them as a pair.
-rtx.dusklight.game.localLights          = True
-rtx.dusklight.game.localLightIntensity  = 19
-rtx.dusklight.game.localLightRadius     = 10
+# Effect lights: a sphere light at the origin of the effect that draws the fire.
+# On by default, so nothing is needed here - the line is shown so it is obvious
+# which switch to reach for. Tested in game 2026-08-07.
+#rtx.dusklight.game.effectLights = True
+
+# Local point lights - the PREVIOUS system, and now the comparison path only.
+# It mirrors the game's registered lights where the game put them, which the
+# original shading could get away with (a GX point light casts no shadow, so it
+# could sit anywhere the shading looked best) and a path tracer cannot.
+#
+# LEAVE THIS FALSE. If you have True saved from before 2026-08-06, remove it:
+# running both gives every fire two lights, one in the old, wrong place, and
+# that reads exactly like the new placement being broken. The Effect Lights
+# section of the Dusklight tab says so when both are on.
+rtx.dusklight.game.localLights          = False
 
 # Stops the game's sun/moon/star billboards. Tested 2026-07-29: this is what
 # fixes shadow coverage wandering with the camera at night. The billboards are
@@ -243,15 +248,28 @@ saving, so it is off by default. Remix's own
 `rtx.antiCulling.object.enable` is the cheaper half measure: it retains
 objects it has already seen rather than stopping them being dropped.
 
-**Local lights (game-side, off by default — turn them on).** Aurora does not
+**Effect lights (game-side, on by default — leave them on).** Aurora does not
 forward GX lights to D3D9, so Remix sees no light from the game itself;
 outdoors the sun/moon light covers that, but interiors and night fall through
-to Remix's fallback light. `rtx.dusklight.game.localLights` mirrors the game's
-live point-light list — torches, braziers, lanterns, campfires, Midna, bomb
-flashes and the dungeon lights — into Remix sphere lights. Keep
+to Remix's fallback light. `rtx.dusklight.game.effectLights` puts a sphere
+light at the **origin of the effect that draws the fire** — the point the flame
+is generated from — and takes its colour, and where the game authored one its
+reach, from whatever light the game registered nearby. Keep
 `rtx.fallbackLightMode = 1` so the fallback light yields to them.
+Tested in game 2026-08-07. Design and settings:
+[`effect-lights.md`](effect-lights.md).
 
-**Tested 2026-07-29 and the shipped defaults are too conservative.** The
+**Local lights — the previous system. Leave it off.** Its switch is still
+`rtx.dusklight.game.localLights`, and it mirrors the same point-light list at
+the position the game put each light. That is where the faked placements live:
+under a rasterizer a point light casts no shadow, so the artists could offset
+it from the flame, sink it into geometry, or use one light for three, and none
+of it reads as wrong until a path tracer casts a real shadow from the exact
+point. It is kept only so the two can be compared. **Running both gives every
+fire two lights**, and if you tuned the old system you have `localLights = True`
+saved — remove it.
+
+**On the old system's numbers, which the new one inherited.** The
 intensity default of 1.0 uses `mPow` as the light's reach. It is not: `mPow` is
 where the game's attenuation curve falls to 1/11 of peak, so the light carries
 about 4.3× further, which is ~19× the radiance. Testing found 19 to be the

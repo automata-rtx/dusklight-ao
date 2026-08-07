@@ -601,12 +601,21 @@ bullet says so.
   only one sky. Tested good 2026-07-28. Probing the vrbox raster draws was
   dropped rather than investigated to a conclusion: a generated dome is exact
   and is a light source, which a captured LDR probe is not.
-- **Local point lights** (implemented — see
-  [`remix-open-issues.md`](remix-open-issues.md)). The design
-  originally scoped this to the dungeon lights; the right list turned out
-  to be `g_env_light.pointlight[100]`, which the dungeon lights register
-  into along with every torch, brazier, lantern, campfire, Midna glow and
-  bomb flash in the game (`dKy_plight_set`).
+- **Effect lights** — a sphere light at the **origin of the effect that draws
+  the fire**, rather than at the position of any light the game registered.
+  This is what lights interiors and night, and it is the only fine-grained
+  light source indoors: the sun/moon is gated off there, and Remix has no dome
+  light type so a sky is never NEE-sampled at all. Design, and the reasons the
+  anchor is the JPA emitter rather than the actor or the particle:
+  [`effect-lights.md`](effect-lights.md). **Tested in game 2026-08-07.**
+- **Local point lights** — the *previous* system, now off by default and kept
+  only as the comparison path. It mirrored `g_env_light.pointlight[100]`
+  (`dKy_plight_set`) — every torch, brazier, lantern, campfire, Midna glow and
+  bomb flash — at the position the game put the light. That works under a
+  rasterizer, where a point light casts no shadow and can sit anywhere the
+  shading looks best, and reads as wrong under a path tracer, which casts a
+  real shadow from the exact point the light occupies. Do not run both: every
+  fire gets two lights, one of them in the old place.
 
 ---
 

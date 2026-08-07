@@ -22,8 +22,9 @@ Format and reading guide for the material lines:
 *The backlog is not "what to build" — it is "what to run". This section is the
 recipe, so a session does not have to be reconstructed from scratch.*
 
-**§§1–5 were run on 2026-07-29: four passed and §5 ran partially. §0 is the
-outstanding one** — it covers everything that landed on 2026-08-04, all of which
+**§§1–5 were run on 2026-07-29: four passed and §5 ran partially. §3b passed on
+2026-08-07 but its diagnostics were not read — see the note under that heading.
+§0 is the outstanding one** — it covers everything that landed on 2026-08-04, all of which
 is CI-green and untested in game. The passed sections are kept rather than
 deleted because they are the re-run recipe when something regresses, and because
 §3 and §5 both ended with a setting change that the next session needs to
@@ -347,7 +348,21 @@ issue 0. If `drawn > 0` but the room is still dark, that is intensity rather
 than plumbing — try **Local Intensity 19** (the alternative reading of the
 attenuation curve, `remix_bridge.cpp:640-670`).
 
-### 3b. Effect lights — NEW, NEVER RUN
+### 3b. Effect lights — RAN 2026-08-07, PASSED; the diagnostics were not read
+
+> **PASSED 2026-08-07.** The owner's report is "it works", and it was merged on
+> the strength of that. Because the system emits nothing unless the rule accepts
+> an emitter, this also retires the design's one load-bearing inference: this
+> game does author its fire additively, at least for whatever was on screen.
+>
+> **Nothing below this line was run**, and the section is kept whole rather than
+> trimmed because none of it has been answered. In particular **no classification
+> report was read**, so which effects light and which are silently refused is
+> still unknown — and an effect that never lights is indistinguishable from an
+> effect that has no light without it. Same for `effLightsVanilla` (is the spot
+> registry being adopted?) and `effLightsOrphans` (how many of the game's lights
+> is the policy dropping?). Every one is a single glance at the Dusklight tab.
+
 
 The system that replaced the mirror above. Design: [`effect-lights.md`](effect-lights.md).
 It defaults **on**, and `localLights` now defaults **off** — do not run both, or
