@@ -82,20 +82,40 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 8.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
 
 **Effect lights landed 2026-08-06, were TESTED IN GAME 2026-08-07 — "it works" —
 and merged.** Sphere lights at the origin of the game's own fire and glow
 effects, replacing the local-light mirror (which now defaults off and is kept as
 the comparison path). Design and citations:
-[`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 36
+[`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 42
 behavioural checks under ASan and UBSan.
 
 **CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
 `70a6d482`. (dusklight's run reads "failure" because its MSVC **arm64** job was
 *cancelled* without ever being given a runner; every other config passed and the
 x86_64 artifact is real. See `CLAUDE.md` — that state is capacity, not code.)
+
+**A longer session on 2026-08-07 found three false positives, two of which are
+now fixed.** Lights stuck in the ground in Hyrule Field (wolf **dig-spot
+markers**, invisible in human form — `collectSimple` applied none of the sweep's
+liveness gates, so an effect the game had hidden by zeroing its alpha still made
+a light); the **Deku Baba** lighting rooms from its jaw joints (drool, which the
+actor hides by ramping global particle *scale* to zero — a mechanism nothing was
+watching); and the Gerudo **Sand Worm** (`d_a_e_sw.cpp`), which is **not fixed**
+because whether its sand is additive cannot be read from this repo.
+
+Two more turned up while reading and were fixed: `Class::Lava` matched **zero**
+of 3,205 effect names (the game spells it `yogan`, not `lava`), and the simple
+path's colour test was a **tautology** — it judged the caller's global colour,
+which all 27 call sites pass as `g_whiteColor`, so `readsAsGlow` was always true
+and `isAdditive` decided alone on the path carrying every wall torch.
+
+The design lost an assumption to this: **additive blending is weaker evidence of
+emission than §3 claimed.** Drool is authored additively so it reads as glossy.
+"Does not occlude what is behind it" is true of a flame and equally true of
+saliva. Full write-up: [`effect-lights.md`](effect-lights.md) §4 and §10.
 
 **The pass retires one inference and leaves four questions open.** Because the
 system emits nothing at all unless the rule accepts an emitter, this game

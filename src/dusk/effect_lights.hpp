@@ -26,6 +26,11 @@ enum class Class : uint8_t {
     Glow,
     Lava,
     Burst,
+    // Named by the game as a substance that is never a light source - drool, body fluid.
+    // Unlike every other class this one DOES decide: an Excluded effect never earns a light.
+    // It is still recorded in the classification report, so a wrong exclusion is visible
+    // rather than silent. See docs/effect-lights.md section 4.
+    Excluded,
     Count,
 };
 
@@ -99,6 +104,12 @@ struct Stats {
     int colorFromGame = 0;  // sites whose colour did (always >= derived)
     int orphans = 0;     // vanilla lights no site adopted
     int culled = 0;      // dropped by distance or budget
+
+    // Passed the additive+glow rule and were then refused because the game names the substance
+    // as something that is never a light source (Class::Excluded). Watch this rather than trust
+    // it: a non-zero count in a room that reads under-lit is the signal the list is too wide,
+    // and the classification report names every one of them.
+    int excluded = 0;
 
     // Split by which of the game's two light registries they came from. These exist to settle
     // one thing we could not settle by reading: whether the spot list's per frame "in use" flag

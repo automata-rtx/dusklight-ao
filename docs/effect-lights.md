@@ -356,15 +356,43 @@ from data rather than from argument.
 ### 3.1 Class, offset and defaults come from the name
 
 The rule above decides **whether**. The effect's own name decides **what kind**,
-which drives only the vertical offset and the fallback radius/reach:
+which drives the vertical offset and the fallback radius/reach — and, for one
+value only, whether a light exists at all:
 
 | Class | Name evidence | Why it is a separate class |
 | :-- | :-- | :-- |
-| `Fire` | `fire`, `honoo`, `kaen`, `taimatsu`, `maki`, `kantera` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
-| `Glow` | `hikari`, `light`, `kira`, `pika`, `aura`, `shine` | no offset; usually smaller and cooler |
-| `Lava` | `lava`, `magma`, `youdo` | large, dim, wide |
-| `Burst` | `bakuha`, `explo`, `bomb`, `hit` | one-shot; **off by default**, because a two-frame light reads as a flicker |
+| `Lava` | `lava`, `magma`, `youdo`, **`yogan`, `yougan`** | large, dim, wide |
+| `Excluded` | `yoda`, `taieki` | **refused outright.** The game names it as a substance that is never a light source |
+| `Burst` | `bakuha`, `explo`, `bomb`, `baku` | one-shot; **off by default**, because a two-frame light reads as a flicker |
+| `Fire` | `fire`, `honoo`, `kaen`, `taimatsu`, `maki`, `kantera`, `torch`, `flame`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
+| `Glow` | `hikari`, `light`, `kira`, `pika`, `aura`, `shine`, `glow`, `spark` | no offset; usually smaller and cooler |
 | `Other` | anything else that passed §3 | global defaults |
+
+**Two corrections to what this table said before 2026-08-07**, both of which
+mattered:
+
+- It said class "never decides whether a light exists". That is no longer true —
+  `Excluded` decides. Nothing else does.
+- `lava`/`magma`/`youdo` match **zero** of the game's 3,205 effect names. This
+  game spells it **yogan/yougan**, so `Class::Lava` was unreachable dead code
+  and every lava column was classified `Other`. It also listed `hit` as Burst
+  evidence, which the code never had.
+
+**The table is in precedence order, and that order is load-bearing**, because a
+great many names carry two of these words. Each step was derived by replaying
+the lists over all 3,205 names rather than chosen by ear:
+
+- **`Lava` outranks everything.** `yoganshibuki` is lava *splash* — splash being
+  exactly what a negative list wants, and this one molten. Nothing may override
+  a name that says the substance is hot. No name collides today; the invariant
+  is what stops a future addition to `Excluded` putting out the lava.
+- **`Excluded` outranks `Burst`.** Three names: `ZI_S_bq_bombdamageYodare_a/b/c`,
+  drool off a bomb-damaged creature. That is drool, not an explosion.
+- **`Burst` outranks `Fire`.** Ten names, e.g. `ZF_S_bombRoom00_fire`,
+  `ZF_S_HBomb02_fire00`. This one predates the rest and is deliberate. Moving
+  `Fire` above `Burst` turns every explosion into a persistent fire — which is
+  exactly what happened while this section was being written, and the test suite
+  caught it.
 
 Reading the effect's *name* is not tagging in the sense rule 1 forbids: the
 name is the game's own identity for the effect, shipped in the game's own
@@ -375,14 +403,48 @@ asset the game never named and hand-authoring an answer.
 
 ## 4. Exclusions — and which ones you may want to overrule
 
-Four exclusions are structural and should stay:
+Five exclusions are structural and should stay:
 
-1. **Not drawn** (§3). The game's own on/off, for free.
+1. **Not drawn** (§3). The game's own on/off, for free — and as of 2026-08-07
+   this means all four of the things the game does to turn an effect off, on
+   **both** collection paths rather than only on the sweep. `emitterIsLive`
+   is the single implementation: `StopDraw`/`Delete`, zero particles, global
+   alpha below `minAlpha`, and **global particle scale at zero**.
+
+   That last one and the both-paths part are the fixes for two of the three
+   defects seen in game on 2026-08-07. `collectSimple` applied *none* of these
+   gates, so wolf-only dig markers — which the game hides by setting the shared
+   emitter's alpha to zero (`dPa_fsenthPcallBack`, `d_particle.cpp:1955`) — were
+   lighting the ground in Hyrule Field while invisible. And `d_a_e_db` hides the
+   Deku Baba's drool by ramping global particle scale to zero
+   (`d_a_e_db.cpp:1871-1877`) while leaving alpha at `0xFF` for the emitter's
+   whole life, so no alpha test could ever have caught it.
 2. **2D and menu groups.** Emitters in the groups drawn by `draw2Dgame`,
    `draw2Dfore`, `draw2Dback`, `draw2DmenuFore`, `draw2DmenuBack` are screen
    space — a "position" for them is meaningless. Excluded by group ID.
 3. **Non-additive.** §3.
-4. **Distance and budget.** Beyond `maxDistance` from the camera, or past
+4. **Named as a substance that is never a light** — `Class::Excluded`, §3.1.
+   Two words, `yoda` and `taieki`, 48 names between them, both unambiguous:
+   drool and body fluid.
+
+   This one exists because of an observation, and it is worth recording what it
+   cost the design. The Deku Baba was seen lighting rooms from its jaw joints on
+   2026-08-07. Its drool reaches the rule through the *level* path, where the
+   real resource colour is used — so it genuinely passed `additive && glow`,
+   which means **drool is authored additively** (inference from it passing, not
+   read: the `.jpa` is not in this repo). §3 leans on additive blending as the
+   thing that separates fire from smoke. A wet surface is authored additively
+   too, so it reads as glossy. **Additive means "does not occlude what is behind
+   it", which is true of a flame and equally true of saliva** — the clause is
+   weaker evidence of emission than §3 claims.
+
+   Kept deliberately narrow for that reason. The plausible next words are much
+   bigger hammers — `smoke` alone is 161 names, `sand` 121, `shibuki` 69 — and
+   widening this is a decision to take with a classification report in hand, not
+   from a list of words that sound like substances. `effLightsExcluded` counts
+   what this refuses each frame; a non-zero count in a room that reads under-lit
+   is the signal it is too wide.
+5. **Distance and budget.** Beyond `maxDistance` from the camera, or past
    `maxLights` this frame, ordered by weight. A light that contributes nothing
    still costs a light-manager entry and an RTXDI slot. Both settings treat
    **0 as "no limit"**, which is worth knowing before dragging `maxLights` down
@@ -390,16 +452,16 @@ Four exclusions are structural and should stay:
    opposite. The budget bounds what is *returned*, grace-period sites included,
    not merely what is refreshed.
 
-Two are judgement calls, and are **options** rather than constants because
+The last two are judgement calls, and are **options** rather than constants because
 they are the ones most likely to be overruled:
 
-5. **One-shot bursts are off by default.** An explosion's fire emitter lives
+6. **One-shot bursts are off by default.** An explosion's fire emitter lives
    for a handful of frames. A light that appears and vanishes inside a fifth
    of a second is a flash — sometimes exactly right (a bomb *should* flash),
    often a flicker artefact. Turn `effectLightBursts` on to include them.
    *This is the exclusion most likely to be wrong for this game*: TP's bomb
    and Ball-and-Chain impacts are dramatic enough that a flash may read well.
-6. **Vanilla lights with no effect at all are not forwarded.** §5 adopts a
+7. **Vanilla lights with no effect at all are not forwarded.** §5 adopts a
    vanilla light's *parameters* when it corroborates an effect. A vanilla
    light with no effect near it is the case the old mirror got wrong — it is
    where the faked placements live — so by default nothing is emitted for it.
@@ -640,9 +702,34 @@ not exist. `tools/check-remix-protocol.py` now fails on that class of mistake.
 
 Following [rule 5](../CLAUDE.md#5-say-what-was-verified-and-what-was-not).
 
-**Tested in game 2026-08-07 — it works.** That is the whole report, and it is
-worth being exact about what it settles, because it is easy to read it as more
-than it is.
+**Tested in game 2026-08-07 — it works, and then it found three real defects.**
+The first report was "it works"; a longer session named three places where it
+lit something it should not have. All three are fixed below, and the design lost
+an assumption in the process — see §4 exclusion 4.
+
+| Reported | Cause, read from source | Fix |
+| :-- | :-- | :-- |
+| Hyrule Field: lights stuck in the ground, no visible source | Wolf **dig-spot markers**. `d_a_obj_digholl.cpp:76-80` and `d_a_obj_digplace.cpp:108-113` request `ZI_J_O_digTga_a`/`_b` every frame at ground level for every dig spot within 1000 units of the player, ungated on wolf form. The game hides them by setting the shared emitter's alpha to zero, and `collectSimple` checked no liveness state at all | §4 exclusion 1: one `emitterIsLive` for both paths |
+| Gerudo Desert: sand-swimming enemies emit light | `d_a_e_sw.cpp`, the **Sand Worm** — 15 `ZM_S_SandWorm*` effects, all `Class::Other`, all spawned at alpha `0xFF` | **not fixed.** Needs the report: whether these are additive is unreadable here |
+| Baba: lights at odd parts | `d_a_e_db.cpp`, the **Deku Baba**. Its three drool emitters are anchored to the **jaw joints** (`p_idx[] = {2,2,6}` = `MOUTH_1, MOUTH_1, MOUTH_2` per `assets/GZ2E01/res/Object/E_db.h`), a drip effect goes on the ground under `current.pos` — which for a Baba is the *head* — and a body-fluid effect at stalk node 4 of 12 | §4 exclusion 4, plus the zero-scale gate |
+
+Two further defects turned up while reading, neither reported:
+
+- **`Class::Lava` was unreachable.** `lava`/`magma`/`youdo` match zero of 3,205
+  names; the game spells it `yogan`. Every lava column was `Class::Other`.
+- **The simple path's colour test was a tautology.** `recordSimple` stored the
+  caller's global colour and never multiplied in the resource's own, unlike the
+  sweep — and all 27 `dComIfGp_particle_setSimple` call sites pass
+  `g_whiteColor`. So the colour judged was literally `(1,1,1)`: chroma 0.00,
+  luma 1.00, `readsAsGlow` unconditionally true. **`isAdditive` was deciding
+  alone on the entire path that carries every wall torch in the game.**
+
+That last one is why the obvious first move — tighten the colour thresholds —
+would have done nothing for the reported ground lights and could have put out
+the bonfire while leaving the torches lit.
+
+It is worth being exact about what the original "it works" settles, because it
+is easy to read it as more than it is.
 
 *What it does settle:* lights appear, at the effect origins, and the result is
 good enough that the owner is merging it. Since the system produces nothing at
@@ -701,7 +788,7 @@ MSVC-ism and nothing at link time; **CI remains the authority.**
 `tests/effect_lights/run.sh` compiles the module against *stub* headers and
 runs it under ASan and UBSan. It **cannot** catch a stub that has drifted from
 the real declaration — only the reading above says those match, which is why
-the MinGW check exists alongside it. 36 assertions cover: a bonfire's five emitters merging to one
+the MinGW check exists alongside it. 42 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect
 being rejected and a white-hot one accepted; a nearby game light being adopted
 for colour and reach *without* moving the light off the effect origin; a

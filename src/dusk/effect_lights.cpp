@@ -67,6 +67,12 @@ constexpr int kMaxReportEntries = 256;
 // those would create and destroy a Remix light in a loop.
 constexpr int kSiteGraceFrames = 6;
 
+// Below this the emitter's particles have no visible size, so it is drawing nothing however
+// healthy its other state looks. Not a tuning value: it is a "is this exactly zero" test with
+// room for the float ramp that gets it there (d_a_e_db.cpp:1871-1877 uses cLib_addCalc towards
+// 0.0, which approaches rather than arrives).
+constexpr float kMinParticleScale = 0.001f;
+
 struct Candidate {
     float pos[3];
     float color[3];   // 0..1, the effect's own colour
@@ -179,8 +185,43 @@ Class classifyByName(uint16_t id) {
         return Class::Other;
     }
 
-    if (nameHas(name, "lava") || nameHas(name, "magma") || nameHas(name, "youdo")) {
+    // ORDER IS LOAD-BEARING. Names collide - a great many carry two of these words - so the
+    // order is what actually decides, and each step of it was derived by replaying the lists
+    // over all 3205 names in d_particle_name.cpp rather than chosen by ear:
+    //
+    //   Lava > all       "yoganshibuki" is lava SPLASH. Splash is exactly what a negative list
+    //                    wants, and this one is molten. Lava naming the substance as hot is the
+    //                    strongest claim available, so nothing may override it. (No name
+    //                    currently collides, but this is the invariant that keeps a future
+    //                    addition to the negative list from putting out the lava.)
+    //   Excluded > Burst 3 names: ZI_S_bq_bombdamageYodare_a/b/c, drool off a bomb-damaged
+    //                    creature. That is drool, not an explosion.
+    //   Burst > Fire     10 names, e.g. ZF_S_bombRoom00_fire, ZF_S_HBomb02_fire00. Pre-dates
+    //                    this ordering and is deliberate: a light that lives a handful of
+    //                    frames is a flash, which is sometimes right and sometimes a flicker
+    //                    artefact, so it is held apart from Fire and off by default. Moving
+    //                    Fire above Burst turns every explosion into a persistent fire; the
+    //                    test suite catches it, which is how this comment came to exist.
+    //
+    // The negative list collides with Lava, Fire and Glow zero times today. If that ever stops
+    // being true the order has to be revisited - re-run the collision scan, do not guess.
+
+    // "lava"/"magma"/"youdo" match ZERO of the 3205 names - this game spells it yogan/yougan,
+    // so Class::Lava was unreachable dead code until 2026-08-07 and every lava column was
+    // classified Other. "yogan" is not a substring of "yougan"; both are needed.
+    if (nameHas(name, "lava") || nameHas(name, "magma") || nameHas(name, "youdo") ||
+        nameHas(name, "yogan") || nameHas(name, "yougan")) {
         return Class::Lava;
+    }
+
+    // Substances that are never a light source. Deliberately NARROW: two words, 48 names, and
+    // both of them unambiguous. It exists because the Deku Baba was observed lighting the room
+    // in game on 2026-08-07 from its drool emitters, which is the case that showed additive
+    // blending alone does not mean "emits light" - a wet surface is authored additively too,
+    // to read as glossy. Widening this is a decision to take with the classification report in
+    // hand, not from a list of plausible words: "smoke" alone would be 161 names.
+    if (nameHas(name, "yoda") || nameHas(name, "taieki")) {
+        return Class::Excluded;
     }
 
     // One-shot violence. Kept apart from Fire because a light that lives for a handful of
@@ -432,6 +473,49 @@ bool isSharedSimpleEmitter(uint16_t effectId, const JPABaseEmitter* emitter) {
     return simple != nullptr && simple->mEmitter == emitter;
 }
 
+// Is this emitter actually putting light into the world right now?
+//
+// ONE implementation, called from both collectors. It used to be four inline tests in
+// collectEmitters and NOTHING at all in collectSimple, and that asymmetry was a real defect
+// rather than an oversight in style: the game hides an effect by setting the shared emitter's
+// alpha to zero and calling stopDrawParticle (dPa_fsenthPcallBack, src/d/d_particle.cpp:1955),
+// and collectSimple looked at neither. Wolf-only dig markers - invisible in human form - were
+// lighting the ground in Hyrule Field because of it (reported in game 2026-08-07).
+//
+// The scale test is the newest and has the same shape. d_a_e_db hides the Deku Baba's drool by
+// ramping the emitter's global particle scale to zero (d_a_e_db.cpp:1871-1877, fed to
+// setGlobalSRTMatrix at :1894) while leaving alpha at 0xFF for the emitter's whole life. A
+// zero-size particle draws nothing; treating it as a light source is the same mistake as
+// ignoring alpha, one field along.
+bool emitterIsLive(const JPABaseEmitter* emitter, const Params& params) {
+    if (emitter == nullptr) {
+        return false;
+    }
+
+    // The game's own on/off. This one test is why the lantern needs no special case:
+    // daAlink_c::setLight gates the flame on the oil meter and calls stopDrawParticle when it
+    // runs out (src/d/actor/d_a_alink.cpp:14874).
+    if (emitter->checkStatus(JPAEmtrStts_StopDraw) || emitter->checkStatus(JPAEmtrStts_Delete)) {
+        return false;
+    }
+
+    if (emitter->getParticleNumber() == 0) {
+        return false;
+    }
+
+    if (emitter->getGlobalAlpha() * (1.0f / 255.0f) < params.minAlpha) {
+        return false;
+    }
+
+    JGeometry::TVec3<f32> pscl;
+    emitter->getGlobalParticleScale(&pscl);
+    if (std::fabs(pscl.x) < kMinParticleScale && std::fabs(pscl.y) < kMinParticleScale) {
+        return false;
+    }
+
+    return true;
+}
+
 // --- source 1: the emitter table -------------------------------------------------------
 //
 // Every level and one-shot emitter in the world is <= 250 pointers away, hanging off the
@@ -467,22 +551,16 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
                 continue;
             }
 
-            // The game's own on/off. This one test is why the lantern needs no special case:
-            // daAlink_c::setLight gates the flame on the oil meter and calls stopDrawParticle
-            // when it runs out (src/d/actor/d_a_alink.cpp:14874).
-            if (emitter->checkStatus(JPAEmtrStts_StopDraw) ||
-                emitter->checkStatus(JPAEmtrStts_Delete)) {
+            if (!emitterIsLive(emitter, params)) {
                 continue;
             }
 
-            if (emitter->getParticleNumber() == 0) {
-                continue;
-            }
-
+            // Re-read after the gate: alpha is a liveness test above and a merge WEIGHT here,
+            // so a fainter layer of the same fire contributes less to where the site lands.
+            // (collectSimple does not do this - it has no per-instance alpha to use, only the
+            // shared emitter's. Noted rather than "fixed": making them match would change which
+            // member wins a merged site, which is a behaviour change and not this one.)
             const float alpha = emitter->getGlobalAlpha() * (1.0f / 255.0f);
-            if (alpha < params.minAlpha) {
-                continue;
-            }
 
             s_stats.considered++;
 
@@ -525,7 +603,12 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             // AFTER the report, deliberately. This exclusion is the one the report exists to
             // settle - "is a two frame flash right for this game's bombs" - and excluding
             // bursts before recording them meant the default hid every explosion from the log
-            // that was supposed to decide it.
+            // that was supposed to decide it. The same reasoning applies to Excluded.
+            if (cls == Class::Excluded) {
+                s_stats.excluded++;
+                continue;
+            }
+
             if (cls == Class::Burst && !params.bursts) {
                 continue;
             }
@@ -559,6 +642,15 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         const SimpleRecord& rec = s_simple[i];
 
         s_stats.emitters++;
+
+        // The same liveness gates the sweep applies. rec.emitter is the SHARED emitter for this
+        // effect id, and that is exactly the right object to ask: the game turns a simple effect
+        // off by acting on the shared emitter, so its StopDraw / alpha / particle count / scale
+        // are the game's statement about every instance of it this frame.
+        if (!emitterIsLive(rec.emitter, params)) {
+            continue;
+        }
+
         s_stats.considered++;
 
         const Class cls = cachedClass(rec.effectId);
@@ -568,13 +660,42 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
                                                                      : nullptr;
         const bool additive = isAdditive(shape);
 
+        // Multiply the RESOURCE colour in, exactly as the sweep does. Without this the colour
+        // tested here is the caller's global alone - and all 27 dComIfGp_particle_setSimple call
+        // sites in the game pass g_whiteColor, so it was literally (1,1,1) every time: chroma
+        // 0.00, luma 1.00, readsAsGlow unconditionally true. The colour half of the rule was a
+        // no-op on this entire path and isAdditive was deciding alone, which is not what any of
+        // the design says. The two paths now ask the same question of the same colour.
+        float prm[3];
+        float env[3];
+        if (rec.emitter != nullptr) {
+            float rp[3];
+            float re[3];
+            byteColor(rec.emitter->mPrmClr, rp);
+            byteColor(rec.emitter->mEnvClr, re);
+            multiplyColor(rp, rec.prm, prm);
+            multiplyColor(re, rec.env, env);
+        } else {
+            for (int k = 0; k < 3; k++) {
+                prm[k] = rec.prm[k];
+                env[k] = rec.env[k];
+            }
+        }
+
         float color[3];
-        pickColor(rec.prm, rec.env, color);
+        pickColor(prm, env, color);
         const bool glow = readsAsGlow(color, params);
 
-        noteForReport(rec.effectId, shape, rec.prm, rec.env, cls, additive, glow, true);
+        noteForReport(rec.effectId, shape, prm, env, cls, additive, glow, true);
 
         if (!additive || !glow) {
+            continue;
+        }
+
+        // AFTER the report, like the Burst test below it, so an exclusion that turns out to be
+        // wrong is visible in the log rather than silent.
+        if (cls == Class::Excluded) {
+            s_stats.excluded++;
             continue;
         }
 
@@ -710,6 +831,7 @@ const char* className(Class cls) {
     case Class::Glow: return "glow";
     case Class::Lava: return "lava";
     case Class::Burst: return "burst";
+    case Class::Excluded: return "excl";
     default: return "other";
     }
 }

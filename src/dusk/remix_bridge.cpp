@@ -1598,7 +1598,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "7");
+    push("rtx.dusklight.env.protocol", "8");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1720,6 +1720,8 @@ void pushLightStatus() {
     push("rtx.dusklight.env.effLightsOrphans", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.culled);
     push("rtx.dusklight.env.effLightsCulled", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.excluded);
+    push("rtx.dusklight.env.effLightsExcluded", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d/%d", s_effectDebug.stats.vanillaPoint,
                   s_effectDebug.stats.vanillaSpot);
     push("rtx.dusklight.env.effLightsVanilla", buffer);

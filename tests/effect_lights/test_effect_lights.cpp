@@ -61,15 +61,35 @@ JPABaseShape* JPAResource::getBsp() const {
 u16 JPAResource::getUsrIdx() const { return reinterpret_cast<const FakeRes*>(this)->usrIdx; }
 
 static u32 g_status[64];
+// Per-emitter global particle scale. 1.0 is the ordinary case; a case sets it to 0 to express
+// an emitter the game has hidden by shrinking rather than by alpha or StopDraw, which is how
+// d_a_e_db hides the Deku Baba's drool (d_a_e_db.cpp:1871-1877).
+static float g_pscale[64];
 static int emitterIndex(const JPABaseEmitter* e) {
     for (size_t i = 0; i < g_emitters.size(); i++) {
         if (g_emitters[i] == e) return static_cast<int>(i);
     }
     return -1;
 }
-u32 JPABaseEmitter::checkStatus(u32 mask) const { return g_status[emitterIndex(this)] & mask; }
+// emitterIndex returns -1 for any emitter not in the sweep list, and the SHARED simple emitter
+// legitimately is not in it - collectEmitters skips it on purpose, and collectSimple reaches it
+// through the records instead. Both accessors have to tolerate that rather than index by -1.
+// ASan caught the old checkStatus doing exactly that the moment collectSimple started asking
+// about liveness; the production code was never affected, but a test double that reads out of
+// bounds cannot be trusted to report anything.
+u32 JPABaseEmitter::checkStatus(u32 mask) const {
+    const int i = emitterIndex(this);
+    return (i >= 0 ? g_status[i] : 0u) & mask;
+}
 u8 JPABaseEmitter::getGlobalAlpha() const { return mGlobalPrmClr.a; }
 u32 JPABaseEmitter::getParticleNumber() const { return 4; }
+void JPABaseEmitter::getGlobalParticleScale(JGeometry::TVec3<f32>* out) const {
+    const int i = emitterIndex(this);
+    const float s = (i >= 0) ? g_pscale[i] : 1.0f;
+    out->x = s;
+    out->y = s;
+    out->z = 1.0f;
+}
 void JPABaseEmitter::calcEmitterGlobalPosition(JGeometry::TVec3<f32>* out) const {
     *out = mGlobalTrs;
 }
@@ -122,6 +142,7 @@ struct EmitterSpec {
     u8 r = 255, g = 120, b = 30;
     u8 alpha = 255;
     u32 status = 0;
+    float pscale = 1.0f;  // 0 = hidden by shrinking, the Deku Baba's drool trick
 };
 
 static void buildScene(const std::vector<EmitterSpec>& specs) {
@@ -151,6 +172,7 @@ static void buildScene(const std::vector<EmitterSpec>& specs) {
         e->mGlobalEnvClr = {255, 255, 255, 255};
         e->pRes = reinterpret_cast<JPAResource*>(&g_res[i]);
         g_status[i] = s.status;
+        g_pscale[i] = s.pscale;
         g_emitters.push_back(e);
     }
 
@@ -379,6 +401,17 @@ int main() {
         JPABaseEmitter shared;
         std::memset(&shared, 0, sizeof(shared));
         shared.pRes = reinterpret_cast<JPAResource*>(&torchRes);
+        // The shared emitter has to carry realistic state now, and that is the point of the
+        // 2026-08-07 fix rather than an inconvenience: collectSimple asks it for liveness and
+        // multiplies its RESOURCE colour into the verdict, exactly as the sweep does. Before,
+        // only the caller's global colour was tested - and every real caller passes
+        // g_whiteColor, so the colour half of the rule was dead on this whole path.
+        // White here models a resource whose hue lives in its texture; the caller's warm prm
+        // below then survives the multiply unchanged.
+        shared.mPrmClr = {255, 255, 255, 255};
+        shared.mEnvClr = {255, 255, 255, 255};
+        shared.mGlobalPrmClr = {255, 255, 255, 255};
+        shared.mGlobalEnvClr = {255, 255, 255, 255};
         g_names[0x3A6] = "ZI_S_o_lv1d_fire_a.jpa";
 
         const float prm[3] = {1.0f, 0.42f, 0.26f};
@@ -451,6 +484,79 @@ int main() {
         buildScene({});
         resetSites();
         check(collect(p).empty(), "and reset() drops it without waiting for the grace period");
+    }
+
+    // 13. The three fixes that came out of the 2026-08-07 in-game session. Each of these was a
+    //     real light the owner saw and none of them should have existed.
+
+    // 13a. Drool is additive and can be bright, and it is not a light. The Deku Baba lit rooms
+    //      from its jaw joints. This is the case that showed additive blending alone does not
+    //      mean "emits" - a wet surface is authored additively too, to read as glossy.
+    clearLights();
+    resetSites();
+    buildScene({{0x81C4, "ZI_S_db_yodareM1_a.jpa", 0, 0, 0}});
+    {
+        const std::vector<Site>& sites = collect(p);
+        check(sites.empty(), "drool earns no light however bright and additive it is");
+        check(stats().excluded == 1, "and the refusal is counted rather than silent");
+    }
+
+    // 13b. An emitter hidden by shrinking to nothing is not lit. d_a_e_db hides the drool by
+    //      ramping global particle scale to zero while leaving alpha at 0xFF for the emitter's
+    //      whole life, so alpha alone could never catch it.
+    clearLights();
+    resetSites();
+    buildScene({{dPa_RM(0x204), "ZI_S_maki_fire_a.jpa", 0, 0, 0, true, 255, 120, 30, 255, 0, 0.0f}});
+    {
+        check(collect(p).empty(), "an emitter shrunk to zero scale is not a light source");
+    }
+    buildScene({{dPa_RM(0x204), "ZI_S_maki_fire_a.jpa", 0, 0, 0, true, 255, 120, 30, 255, 0, 1.0f}});
+    {
+        resetSites();
+        check(collect(p).size() == 1, "and the same emitter at full scale still is");
+    }
+
+    // 13c. Lava classifies as lava. Until 2026-08-07 the keywords were lava/magma/youdo, which
+    //      match ZERO of the game's 3205 effect names - it spells the word yogan - so
+    //      Class::Lava was unreachable and every lava column was Class::Other.
+    clearLights();
+    resetSites();
+    buildScene({{dPa_RM(0x2E0), "ZI_S_yoganbashira_foot_a.jpa", 0, 0, 0}});
+    {
+        const std::vector<Site>& sites = collect(p);
+        check(sites.size() == 1 && sites[0].cls == Class::Lava,
+              "a yogan effect classifies as lava, not as other");
+    }
+
+    // 13d. THE SIMPLE-PATH COLOUR FIX. Every one of the game's 27 setSimple call sites passes
+    //      g_whiteColor, and collectSimple used to test that global alone - never multiplying
+    //      in the resource's own colour the way the sweep does. The tested colour was therefore
+    //      literally (1,1,1) every time: luma 1.0, so readsAsGlow was a tautology and
+    //      isAdditive decided by itself. Here the resource is neutral grey, which is what a
+    //      smoke-like effect looks like; before the fix this passed on the caller's white.
+    clearLights();
+    resetSites();
+    buildScene({});
+    {
+        collect(p);  // arm the recorder
+        FakeRes greyRes;
+        greyRes.usrIdx = dPa_RM(0x70F);
+        greyRes.shape.dst = GX_BL_ONE;
+        JPABaseEmitter shared;
+        std::memset(&shared, 0, sizeof(shared));
+        shared.pRes = reinterpret_cast<JPAResource*>(&greyRes);
+        shared.mPrmClr = {128, 128, 128, 255};
+        shared.mEnvClr = {0, 0, 0, 255};
+        shared.mGlobalPrmClr = {255, 255, 255, 255};
+        shared.mGlobalEnvClr = {255, 255, 255, 255};
+        g_names[0x70F] = "ZI_J_O_digTga_a.jpa";
+
+        const float white[3] = {1.0f, 1.0f, 1.0f};  // g_whiteColor, as every caller passes
+        const float black[3] = {0.0f, 0.0f, 0.0f};
+        recordSimple(dPa_RM(0x70F), &shared, 0.0f, 0.0f, 0.0f, white, black);
+
+        check(collect(p).empty(),
+              "a neutral simple-path effect is refused - the caller's white no longer decides");
     }
 
     std::printf("\n%s (%d failures)\n", g_failures == 0 ? "ALL PASS" : "FAILURES", g_failures);

@@ -12,6 +12,10 @@ public:
     u32 checkStatus(u32) const;
     u8 getGlobalAlpha() const;
     u32 getParticleNumber() const;
+    // Signature copied verbatim from libs/JSystem/include/JSystem/JParticle/JPAEmitter.h:172.
+    // The real one returns (mGlobalPScl.x, mGlobalPScl.y, 1.0f); the test double lets a case
+    // set it, so a hidden-by-zero-scale emitter can be expressed.
+    void getGlobalParticleScale(JGeometry::TVec3<f32>*) const;
     void calcEmitterGlobalPosition(JGeometry::TVec3<f32>*) const;
     JPAEmitterCallBack* getEmitterCallBackPtr() const;
     JGeometry::TVec3<f32> mGlobalTrs;
