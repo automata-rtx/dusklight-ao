@@ -684,6 +684,12 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
     // intensity ramp (d_a_obj_fireWood2.cpp:144). Treating that as metres would make every
     // torch and the lantern black. So the field is used as what the callers clearly mean by it,
     // an on/strength signal, and the reach comes from the settings.
+    // SIX, not eight, even though field_0x0c18 is BOSS_LIGHT[8]. Do not "fix" this to 8:
+    // field_0x26 is only a per-frame liveness flag for the slots exeKankyo clears, and its loop
+    // runs 0..5 (src/d/d_kankyo.cpp:4768). Slots 6 and 7 are written by neither setter -
+    // dKy_WolfEyeLight_set takes slot 0 (:10223-10225) and dKy_BossLight_set allocates in
+    // [1, 6 - stage_light_info_num) (:10064) - so they hold whatever they were left with and
+    // their flag never expires. Reading them would resurrect a light from an old room.
     for (int i = 0; i < 6; i++) {
         const BOSS_LIGHT& b = env->field_0x0c18[i];
         if (b.field_0x26 == 1 && b.mRefDistance > 0.0f) {

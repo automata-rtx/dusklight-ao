@@ -204,8 +204,31 @@ family's authored values are consistent — colour `BC6642`, `mPow` 500,
 **Spot lights.** `BOSS_LIGHT field_0x0c18[8]` (`d_kankyo.h:260`), written by
 `dKy_BossLight_set` (`d_kankyo.cpp:10028`) and, for slot 0,
 `dKy_WolfEyeLight_set` (`d_kankyo.cpp:10213`). `field_0x26` is a **per-frame
-liveness flag** — `exeKankyo` clears all six at the top of the frame
-(`d_kankyo.cpp:4769`) and whoever registers a light sets it again.
+liveness flag** — whoever registers a light sets it, and `exeKankyo` clears it
+at the top of the next frame.
+
+**We read six of the eight slots, and that is not an off-by-one.** Three loops
+have to agree and all three stop at 6:
+
+| Slot | Written by | Cleared by `exeKankyo`? |
+| :-- | :-- | :-- |
+| 0 | `dKy_WolfEyeLight_set` — Link's lantern, wolf eyes. It writes `field_0x0c18[var_r29]` with `var_r29` fixed at 0 (`d_kankyo.cpp:10223-10225`) | yes |
+| 1 … 5 | `dKy_BossLight_set`, which allocates in `[1, 6 - stage_light_info_num)` (`d_kankyo.cpp:10064`) | yes |
+| 6, 7 | **nothing** | **no** — its loop runs `i < 6` (`d_kankyo.cpp:4768`) |
+
+Slots 6 and 7 are written by neither setter and cleared by nobody, so their
+liveness flag never expires. Reading them would resurrect a light from a room
+you left. `gatherVanillaLights` stops at 6 for that reason, and the loop
+carries a comment saying so.
+
+The `6 - stage_light_info_num` bound is worth its own line, because it is a
+**real capacity limit rather than a formality**: `stage_light_info_num` is the
+current room's own authored light count, clamped to 0..6
+(`d_kankyo.cpp:10044`). A room with six authored lights leaves the range empty,
+and **no BossLight torch in it can register at all**. So "this torch has no
+vanilla light" is not always an authoring choice — sometimes the registry was
+simply full. One more reason the position had to stop coming from the registry,
+and one more thing `effLightsOrphans` will be counting.
 
 This list is not optional. Every candle actor has a stage parameter that
 chooses between the two registries, and when it picks this one
