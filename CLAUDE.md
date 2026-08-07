@@ -227,3 +227,8 @@ still builds today and breaks the moment that branch is cleaned up.
   `RTX_OPTION` declarations. **No compiler can see that class of mistake** — a
   mistyped name silently falls back to `config.json` forever, and a readout
   nothing pushes silently reads as its default.
+  It also checks **the protocol number**: that the game's push matches the
+  fork's `kRequiredProtocol`, and that every doc across both repos stating the
+  *current* number agrees with it (statements like "landed at protocol 5" are
+  history and are left alone). Two docs had drifted to 6 while the wire was at
+  7, which is exactly how someone ends up debugging a skew that is not there.
