@@ -482,6 +482,52 @@ open-ended linear radiance, and none of them mean what they meant.
   **`config.json` is not rewritten**, so the same config moves between a
   modded build and a D3D9 test build with no edits either way. Remix's path
   tracer replaces the graphics mods' effects wholesale.
+- **HD texture replacement packs work in this mode** as of 2026-08-05,
+  **tested good 2026-08-06**. Drop `.dds` files named the usual
+  `tex1_{w}x{h}_{hash}_{fmt}.dds` way into `<ConfigPath>/texture_replacements/`
+  and launch on the D3D9 backend with our fork's `d3d9.dll`. Nothing else to
+  turn on: `game.enableTextureReplacements` and `game.remixTextureReplacements`
+  both default to true, and both are read at launch — there is no live toggle.
+
+  **The pack's bytes never go through D3D9.** The game hands each file to Remix
+  through the API and tags each draw with which replacement it wants; Remix
+  loads the file itself and swaps it in. That matters for one reason above all:
+  Remix's texture hash — the key for the categorization grid, for every
+  `rtx.conf` category list and for every USD material binding — is the hash of
+  the D3D9 texture, which stays the game's own. **Installing, changing or
+  removing a pack does not move a single hash.** Tags authored without a pack
+  stay valid with one.
+
+  Two consequences to plan around:
+
+  - **`.dds` only.** Remix's asset loader rejects `.png`, which the game's own
+    registry accepts. PNG entries are skipped and logged
+    (`texrep: skipping <file> - Remix loads .dds only`). BC1/BC3/BC7/BC5 are all
+    fine — D3D9's format limits do not apply, because D3D9 never sees them.
+  - **Packs shipped inside a mod still do not load**, because mod discovery is
+    skipped wholesale on this backend (see the mods bullet above). The user
+    directory is the only route.
+
+  This also sharpens the **HUD**, which a Remix USD mod cannot: Remix rasterizes
+  UI draws instead of path-tracing them, so they never reach material
+  replacement. Turn `rtx.dusklight.texrep.applyToRaster` off to isolate a
+  HUD-only regression.
+
+  **Expect a slow first launch.** With a pack installed the first run spends a
+  long period at poor performance before the replacements appear; later runs
+  have them immediately. Expected, not a fault — but note that *every* first
+  launch of this runtime is slow, pack or no pack, because Remix compiles
+  shaders and caches the result to disk. The pack adds its own cost on top
+  (Remix keeps no on-disk cache of textures, so every `.dds` is re-read each
+  launch), and which of the two dominates has not been measured. A reboot
+  separates them: it clears the OS file cache while keeping the shader cache.
+  `extern/aurora/docs/dx9/texture-replacements.md` §9.
+
+  If a pack appears to do nothing, the Dusklight tab's **HD Texture Pack**
+  section says which half is at fault — it reports the game's counts and Remix's
+  separately, because "never handed over" and "handed over then ignored" look
+  identical otherwise. Design and failure modes:
+  `extern/aurora/docs/dx9/texture-replacements.md`.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),
