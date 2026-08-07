@@ -1457,11 +1457,17 @@ void updateEffectLights() {
 
         tracked->seen = true;
 
-        // Re-create on a real change but not on float noise. This matters more than it looks:
-        // re-creating a light resets the entry in Remix's light manager, and with it the light's
-        // place in the RTXDI index map - so every update costs one frame of temporal reuse for
-        // every pixel the light touches. A fire whose radiance is re-sent every tick never
-        // accumulates any, and is visibly noisier than a static one.
+        // Re-create on a real change but not on float noise. Each re-create crosses the API lock
+        // and re-enters the light manager, so this is worth doing on cost alone.
+        //
+        // It used to be worth much more than that: re-creating a light reset its entry in Remix's
+        // light manager and with it its place in the RTXDI index map, costing one frame of
+        // temporal reuse for every pixel the light touched - so a fire whose radiance was re-sent
+        // every tick never accumulated any and was visibly noisier than a static one. Our fork
+        // fixes that at the source: LightManager::addExternalLight carries the buffer index across
+        // the overwrite (rtx_light_manager.cpp), the way the game-light path already did. Against
+        // a STOCK Remix runtime the old cost is back, and this epsilon is the only thing between
+        // an animating flame and permanent temporal noise.
         //
         // The radiance test is RELATIVE, unlike the local light mirror's. Radiance here is solved
         // from a reach and a radius and routinely lands in the hundreds, so a fixed 0.01 would

@@ -88,7 +88,7 @@ and merged.** Sphere lights at the origin of the game's own fire and glow
 effects, replacing the local-light mirror (which now defaults off and is kept as
 the comparison path). Design and citations:
 [`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 36
-behavioural assertions under ASan and UBSan.
+behavioural checks under ASan and UBSan.
 
 **CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
 `70a6d482`. (dusklight's run reads "failure" because its MSVC **arm64** job was
@@ -348,21 +348,26 @@ Added **2026-07-29**:
    and depends on the untested caveat; painting into the dome removes the
    object entirely.
 
-3. **Local light defaults are wrong in the shipped build.** Testing settled
+3. **CLOSED 2026-08-06 — local light defaults.** Testing settled
    `localLightIntensity` at **19** (from 1.0) and `localLightRadius` at **10**
-   (from 4.0), and neither is the default, so a fresh install still comes up
-   with lights too dim to be worth having. The intensity value is not a taste
-   call — it is the derived reading of the game's own attenuation curve, and it
-   is now the one with evidence behind it.
+   (from 4.0); at the time neither was the default, so a fresh install came up
+   with lights too dim to be worth having. **Both are the defaults now.** The
+   intensity value is not a taste call — it is the derived reading of the game's
+   own attenuation curve.
 
    Note the two interact: the radiance is solved so the light still reaches the
    same distance, so a larger radius needs *less* radiance. 19 and 10 were
-   tested together and should ship together rather than being applied one at a
-   time.
+   tested together and should be applied together rather than one at a time.
 
-   Open question alongside it: whether `localLights` should now default **on**.
-   It is proven working and it is the only thing lighting interiors and night,
-   but it is also the newest of the light paths.
+   **Both numbers carry straight over to effect lights** and are the defaults
+   there too, as `effectLightDerivedIntensity` and `effectLightDerivedRadius` —
+   the solve is the same one, so the measurement did not have to be repeated.
+
+   The open question this entry used to carry — *should `localLights` default
+   on?* — is answered, and not the way it was leaning. It defaults **off**.
+   Effect lights replaced it (see the top of this document), because working was
+   exactly what exposed the problem: the mirror faithfully reproduces placements
+   that were authored for a renderer where a point light casts no shadow.
 
 4. **The fog medium dims the generated sky.** Reported 2026-07-29 at frozen
    noon with `physicalSky` on, and again — worse — in Lake Hylia morning fog
@@ -950,11 +955,13 @@ everything tested now lives in "Confirmed working in-game" above.*
   is not blocked** and is how this should be tested: bloom tables 1/2 drive the
   same golden tint, 37.5 % desaturation and 0xD2 base dim.
 
-**Remaining unknowns for local lights**, now that they work (open issue 3
-carries the settings): the churn cost in a busy room is still unmeasured, and
-`mFluctuation` — the per-light flicker amount, 1.0 on every torch and 100 on
-bombs — is still ignored, because applying it would mean a re-create every frame
-for every flickering light.
+**Remaining unknowns for local lights**, now that they work — and these carried
+over to effect lights rather than being retired with the mirror: the churn cost
+in a busy room is still unmeasured, and `mFluctuation` — the per-light flicker
+amount, 1.0 on every torch and 100 on bombs — is still ignored, because applying
+it would mean a re-create every frame for every flickering light. Effect lights
+inherit both; [`effect-lights.md`](effect-lights.md) §10 "Not built yet" carries
+the current statement.
 
 **"The sun seems tied to Link" — investigated 2026-07-26, no tie found, and
 since narrowed.** Four things were checked and none can carry a dependency on

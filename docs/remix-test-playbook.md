@@ -314,7 +314,16 @@ Warp tab. No config.
 | Nothing happens, log line present | `dComIfGp_setNextStage` fired and the game ignored it — game-side |
 | Warps by itself on connect | commit priming failed — report immediately |
 
-### 3. Local point lights — RESOLVED
+### 3. Local point lights — RESOLVED, then SUPERSEDED
+
+> **Do not run this section as a test of the current build.** The mirror it
+> exercises defaults **off** since 2026-08-06 and is kept only for A/B against
+> §3b. Turning it on without turning effect lights off gives every fire two
+> lights, one of them in the old place — which looks exactly like §3b being
+> broken. The Dusklight tab warns when both are on.
+>
+> Kept in full because the A/B is the whole reason the mirror still exists, and
+> because the two numbers it settled are now effect lights' defaults too.
 
 > **PASSED 2026-07-29.** Forest Temple, first room:
 > `Registered by the game: 5   drawn this frame: 4   tracked: 4`.

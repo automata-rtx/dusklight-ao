@@ -21,7 +21,7 @@ statement: `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 below exists **only in our dxvk-remix fork**
 (`src/dxvk/rtx_render/rtx_dusklight_*`). Stock Remix will run the game and
 path-trace it, but those keys are simply unknown to it. The game and the DLL are
-also a single protocol — currently **6** — so build both from the same commit
+also a single protocol — currently **7** — so build both from the same commit
 point and read the Dusklight tab's protocol line before debugging anything else.
 
 The complete design, GX→D3D9 mapping spec, architecture notes, and the living
@@ -197,6 +197,11 @@ rtx.dusklight.game.hideSkyBillboards = True
 # rtx.dusklight.game.*), NOT in the game - the game's debug UI is not drawn
 # at all in this mode. With fallbackLightMode = 1 the Remix fallback light
 # yields automatically while the sun/moon exists.
+#
+# Keep it at 1 rather than 0. Indoors the sun/moon is gated off and the only
+# lights are the effect lights above, so a room whose fires the classifier
+# refuses goes black at 0 - which is the right setting when you are DEBUGGING
+# effect lights (see the test playbook section 3b) and the wrong one for play.
 rtx.fallbackLightMode = 1
 ```
 

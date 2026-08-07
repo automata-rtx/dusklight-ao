@@ -94,8 +94,8 @@ from the API's shape.
   (`src/d/d_particle.cpp:732-761`), then resets the count to zero.
 
 The Forest Temple and Goron Mines torch stands are all the second kind
-(`d_a_obj_lv1Candle00.cpp:171`, `lv1Candle01.cpp:136`, `lv2Candle.cpp:261`,
-`lv3Candle.cpp:153`, `TvCdlst.cpp:157`). **A sweep of the emitter table sees
+(`d_a_obj_lv1Candle00.cpp:171`, `d_a_obj_lv1Candle01.cpp:136`, `d_a_obj_lv2Candle.cpp:261`,
+`d_a_obj_lv3Candle.cpp:153`, `d_a_obj_TvCdlst.cpp:157`). **A sweep of the emitter table sees
 exactly one of them — whichever was drawn last — and its position is
 meaningless.** Ten torches in a room would produce one light in a random one
 of them.
@@ -207,9 +207,9 @@ liveness flag** — `exeKankyo` clears all six at the top of the frame
 This list is not optional. Every candle actor has a stage parameter that
 chooses between the two registries, and when it picks this one
 `dKy_plight_set` is never called at all (`d_a_obj_fireWood2.cpp:144`,
-`lv1Candle00.cpp:144`, `lv1Candle01.cpp:121`, `lv2Candle.cpp:229`,
-`poCandle.cpp:124`, `TvCdlst.cpp:137`, `lv3Candle.cpp:149`, and the carried
-torch at `obj_carry.cpp:1687`). **Link's lantern is here too**, at slot 0, with
+`d_a_obj_lv1Candle00.cpp:144`, `d_a_obj_lv1Candle01.cpp:121`, `d_a_obj_lv2Candle.cpp:229`,
+`d_a_obj_poCandle.cpp:124`, `d_a_obj_TvCdlst.cpp:137`, `d_a_obj_lv3Candle.cpp:149`, and the carried
+torch at `d_a_obj_carry.cpp:1687`). **Link's lantern is here too**, at slot 0, with
 its position already at the flame — `dKy_WolfEyeLight_set(&spB8, …)` where
 `spB8 = mKandelaarFlamePos` (`d_a_alink.cpp:14957`) — and colour
 `(181, 112, 40)` from `daAlinkHIO_huLight_c1`
@@ -631,7 +631,7 @@ MSVC-ism and nothing at link time; **CI remains the authority.**
 `tests/effect_lights/run.sh` compiles the module against *stub* headers and
 runs it under ASan and UBSan. It **cannot** catch a stub that has drifted from
 the real declaration — only the reading above says those match, which is why
-the MinGW check exists alongside it. 32 assertions cover: a bonfire's five emitters merging to one
+the MinGW check exists alongside it. 36 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect
 being rejected and a white-hot one accepted; a nearby game light being adopted
 for colour and reach *without* moving the light off the effect origin; a
@@ -661,7 +661,7 @@ neighbouring torches. That 32 lights is a sensible budget.
    **Resolved by reading, 2026-08-06.** Processes execute in ascending list-ID
    order (`cTrIt_Method`, `c_tree_iter.cpp:12-21`, over the 16 lists of
    `g_fpcLn_Queue`). Kankyo is **list 1** (`d_kankyo.cpp:8420`); the torch
-   actors are **list 3** (`d_a_obj_lv1Candle00.cpp`, `fireWood2`, `maki`) and
+   actors are **list 3** (`d_a_obj_lv1Candle00.cpp`, `d_a_obj_fireWood2.cpp`, `d_a_obj_maki.cpp`) and
    Link is **list 5** (`d_a_alink.cpp`). So `exeKankyo` clears the flags before
    any of them run, the actors set them, and `dusk::remix::tick()`
    (`m_Do_main.cpp:327`) runs after all of it. The flags are live.
@@ -694,7 +694,18 @@ neighbouring torches. That 32 lights is a sensible budget.
 local-light mirror. They are starting points chosen to be visible rather than
 correct.
 
-**Not built yet:** the `orphanPolicy` setting described in §4.6 is plumbed
-through `Params` but does nothing — orphans are counted and dropped. It is
-there so the readout can prove whether it is needed before the behaviour is
-written.
+**Not built yet:**
+
+- The `orphanPolicy` setting described in §4.6 is plumbed through `Params` but
+  does nothing — orphans are counted and dropped. It is there so the readout can
+  prove whether it is needed before the behaviour is written.
+- **Flicker.** `LIGHT_INFLUENCE::mFluctuation` (§2.4) is read past and ignored,
+  exactly as the old mirror ignored it. It is 1.0 on every torch and 100 on
+  bombs, so it carries little signal on the surfaces that get lights, and
+  honouring it would defeat the bridge's radiance epsilon by definition — every
+  flickering light would re-enter the light manager every frame. That is a cost
+  question rather than a quality one **on our fork**, since
+  `addExternalLight` now carries the RTXDI buffer index across an overwrite; on
+  a stock Remix runtime it would also be permanent temporal noise. Listed here
+  because "the game flickers its torches and we do not" is a real difference
+  from vanilla, and one nobody has yet decided is wrong.
