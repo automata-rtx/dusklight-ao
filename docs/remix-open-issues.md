@@ -121,10 +121,17 @@ line, so none of them is a question for the owner:
    `dKy_plight_set`, and Link's lantern only through the former. Its "in use"
    flag is cleared at the top of `exeKankyo` and set again by the actors, so
    whether it survives to the bridge depends on where the kankyo process falls
-   in the frame — which this pass did not settle by reading.
+   in the frame.
+
+   **The reading says yes**, and was done on 2026-08-06: processes run in
+   ascending list-ID order, kankyo is list 1, the torch actors are list 3, Link
+   is list 5, and the bridge tick runs after all of them —
+   [`effect-lights.md`](effect-lights.md) §10 hole 2 has the citations. So this
+   is no longer an open *question*; it is a reading awaiting a measurement, and
+   this project has a standing preference for the second.
    `effLightsVanilla` reports `point/spot`; a spot count that is always zero
-   while a torch burns is the answer. The failure is safe (those sites fall
-   back to configured defaults) but costs the game's own colour.
+   while a torch burns would contradict the reading. The failure is safe (those
+   sites fall back to configured defaults) but costs the game's own colour.
 3. **How many of the game's lights is the new policy throwing away?**
    `effLightsOrphans` counts the registered lights no effect corroborated.
    Those are dropped, because their placement is exactly what this system
