@@ -179,7 +179,10 @@ game's torches.
 `{ cXyz mPosition; GXColorS10 mColor; f32 mPow; f32 mFluctuation; int mIndex; }`,
 registered into `g_env_light.pointlight[100]` and `efplight[5]`
 (`d_kankyo.h:245`) through `dKy_plight_set`. A bonfire's is authored right next
-to its fire (`d_a_obj_maki.cpp:226`):
+to its fire (`d_a_obj_maki.cpp:226`) — which is what makes it a good *example*
+of the authored values, and a bad example of a light to adopt: it is cut again
+one frame later, and in Bulblin Camp never registered at all. Hole 3 in §10
+has the reading:
 
 ```cpp
 a_this->mLightObj.mPosition = a_this->current.pos;
@@ -667,12 +670,34 @@ neighbouring torches. That 32 lights is a sensible budget.
    (`m_Do_main.cpp:327`) runs after all of it. The flags are live.
    `effLightsVanilla` is kept anyway — it costs nothing and it turns a reading
    into a measurement, which this project has reason to prefer.
-3. **A burning bonfire may have no registered point light at all.**
-   `d_a_obj_maki` registers one in create and then cuts it on the first
-   `Execute` frame while burning (`d_a_obj_maki.cpp:107-110`, and `Execute` is
-   called at the end of create at `:235`). Read directly from source; whether
-   that matches retail or is a decomp artefact is **unverified**. If it holds,
-   bonfires run undetermined.
+3. **A burning bonfire has no registered point light at all**, by two
+   independent routes, and the reading is stronger than "may" —
+   `d_a_obj_maki.cpp` says so twice.
+
+   *It cuts the light it just registered.* Create registers one at `:232` and
+   then calls `daObj_Maki_Execute` at the end of create (`:235`). The
+   `field_0x57e == 0` branch of Execute — `57e` is 0 exactly while the fire is
+   **burning** (`:51`, and it is set to 1 when the fire is hit at `:80` or
+   already switched off at create, `:202`) — cuts the light on that very first
+   frame: `if (mLightObj.mPow > 0.1f) { dKy_plight_cut(...); mPow = 0.0f; }`
+   (`:107-110`). Create set `mPow` to 500 at `:230`, so the guard passes.
+
+   *And in Bulblin Camp it is never registered.* The `dKy_plight_set` at `:232`
+   sits behind `strcmp(dComIfGp_getStartStageName(), "F_SP118") != 0 &&
+   field_0x57e != 1` (`:225`). `F_SP118` is Bulblin Camp
+   (`src/dusk/map_loader_definitions.h:277`). The five fire emitters at `:56`
+   (`0x8204`-`0x8208`) carry **no** such check — they spawn on the burning
+   branch on every stage.
+
+   So a Bulblin Camp bonfire burns with five fire emitters and nothing in the
+   registry, and every other bonfire burns with five emitters and a light that
+   was cut a frame after it was made. This is the clearest single case for the
+   system existing, and it is why bonfires run *undetermined*: §5.2's settings
+   supply their size, and their colour comes from the effect.
+
+   Read directly from source and not observed running; whether it matches
+   retail or is a decomp artefact is **unverified**. `effLightsOrphans` and the
+   classification report settle it in one session.
 4. **Lights lead geometry by one frame.** Actor draw methods enter models into
    J3D draw buffers; the GX/D3D9 commands for them are issued by
    `mDoGph_Painter` at the *start* of the next iteration
