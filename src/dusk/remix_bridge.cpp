@@ -67,6 +67,9 @@ remixapi_Interface s_interface = {};
 typedef uint32_t(*PFN_getRtxOptionValue)(const char* key, char* outValue, uint32_t valueSize);
 PFN_getRtxOptionValue s_getOption = nullptr;
 
+// Set by the horse each frame it dashes, cleared when pushed. See noteHorseDashing().
+bool s_horseDashing = false;
+
 // Reads a Remix option, or returns false if this Remix build has no getter or
 // does not know the key.
 bool readOption(const char* key, std::string& outValue) {
@@ -1315,6 +1318,15 @@ void pushKankyoState() {
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
     push("rtx.dusklight.env.protocol", "6");
+    // Diagnostic state. Neither drives any rendering; both exist so Remix's log can say
+    // when something happened, in the same file as the material report. Read and cleared
+    // rather than latched, so dismounting reads as not dashing instead of leaving the last
+    // value standing. push() only sends on change, so a stationary player costs nothing.
+    const bool dashing = s_horseDashing;
+    s_horseDashing = false;
+    push("rtx.dusklight.env.dash", formatBool(dashing));
+    push("rtx.dusklight.env.camInWater", formatBool(dKy_camera_water_in_status_check() != 0));
+
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1614,6 +1626,10 @@ bool& celestialLockDirection() {
 
 const LocalLightsDebug& localLightsDebug() {
     return s_localDebug;
+}
+
+void noteHorseDashing() {
+    s_horseDashing = true;
 }
 
 }  // namespace remix

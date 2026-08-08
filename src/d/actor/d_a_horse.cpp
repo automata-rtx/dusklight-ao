@@ -23,6 +23,7 @@
 #if TARGET_PC
 #include "dusk/dusk.h"
 #include "dusk/frame_interpolation.h"
+#include "dusk/remix_bridge.hpp"
 #include "dusk/settings.h"
 
 namespace {
@@ -2381,6 +2382,12 @@ void daHorse_c::setEffect() {
     JPABaseEmitter* sp50;
     int sp4C;
     if (checkEndResetStateFlg0(ERFLG0_UNK_400)) {
+#if TARGET_PC
+        // Reported even when the effect itself is suppressed above - the marker is about
+        // when the player dashed, not about whether anything was drawn for it, and the
+        // diagnostic run is precisely the one where the effect is turned off.
+        dusk::remix::noteHorseDashing();
+#endif
         setDashEffect(&field_0x1738[field_0x16bd]);
         sp4C = field_0x16bd;
         field_0x16bd ^= (u8)1;
