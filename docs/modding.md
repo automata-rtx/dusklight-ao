@@ -613,6 +613,11 @@ If multiple sources replace the same file or texture, the last one wins: runtime
 `textures/` or `overlay/` files, and later-loaded mods override earlier ones. Cross-mod conflicts log warnings.
 **All** mod-provided texture replacements override the user's `texture_replacements/`.
 
+> **Not on the D3D9 (RTX Remix) backend.** Mods are disabled wholesale there — every search directory is dropped at
+> startup — so neither `overlay/` nor `textures/` registers, and neither of the services below runs. The user's own
+> `<ConfigPath>/texture_replacements/` directory *does* work on that backend; it takes a different route to the
+> renderer, described in `docs/dx9-fixed-function.md`.
+
 To configure overlays and texture replacements at runtime instead, see [OverlayService](#overlayservice-modssvcoverlayh)
 and [TextureService](#textureservice-modssvctextureh).
 

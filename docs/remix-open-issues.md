@@ -20,7 +20,7 @@ correctly, and where the D3D9 stream cannot carry something the answer is to
 implement it in the fork rather than to approximate it in D3D9. Full statement:
 `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 
-## State, as of 2026-08-05
+## State, as of 2026-08-06
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
@@ -40,9 +40,10 @@ instrumentation fixes and the blend reporting.
 had documented 40 of the 130 `rtx.dusklight.*` options for weeks. Reconciled
 against the `RTX_OPTION*` declarations in `src/`: nothing declared is missing,
 the four emissive options this session removed are gone, and the three it added
-are present. One caveat noted in the file itself: the build that produced it
-also carried the unmerged `claude/dx9-high-res-textures` branch, so eight
-`texrep` rows describe options not on this branch yet.
+are present. The caveat it carried is now spent: the build that produced it also carried the
+then-unmerged HD texture pack branch, so eight `texrep` rows described options
+that did not exist here yet. That branch is merged, so those eight rows
+(`rtx.dusklight.texrep.*` and `rtx.dusklight.env.texrep*`) are accurate.
 
 It is **generated, never hand-edited**. A row that reads badly means the
 `RTX_OPTION` description string in `src/` reads badly — fix it there and
@@ -68,8 +69,30 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 6.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
+
+**HD texture replacement packs work on the D3D9 backend — tested good
+2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each
+`.dds` to Remix through `remixapi_CreateMaterial` and aurora tags each draw with
+its index, so the game's own textures remain what Remix hashes and **texture
+tagging, `rtx.conf` category lists and USD bindings are unaffected by installing
+or changing a pack.** Substituted at two sites — the material for path-traced
+draws, the texture bind for the rasterized HUD — because a UI draw never reaches
+material resolution. Not an open issue; recorded here because it changes what
+authoring a remaster involves (albedo comes for free; author roughness/normal/
+metalness only). `extern/aurora/docs/dx9/texture-replacements.md`.
+
+Its one known characteristic is a **long first-launch warm-up**. Expected, not a
+fault — but the cause is **not established**, and the first write-up of it was
+wrong: it inferred "the OS file cache" from the (correct) fact that Remix keeps
+no on-disk *texture* cache, overlooking that DXVK does keep an on-disk
+*pipeline* cache and that every first launch is slow for that reason regardless
+of the pack. Both contribute; which dominates is unmeasured, and the pack's
+lateness is partly a symptom of slow frames rather than their cause. **One
+reboot separates them** — it clears the OS page cache and keeps `.dxvk-cache`.
+Candidate fixes, to be taken only if that test implicates I/O, are in §9 of
+`extern/aurora/docs/dx9/texture-replacements.md`.
 
 **The two live rendering defects:**
 
