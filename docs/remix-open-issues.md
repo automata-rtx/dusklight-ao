@@ -76,6 +76,25 @@ number — the one loose end. The generalisable rule: **a Remix performance
 problem that does not respond to texture categorisation is a draw-count
 problem**, and `dx9.draws` is where you look.
 
+**Captures now contain the sky, the API lights and the HD textures
+(2026-08-08) — CI-green, NOT run in game.** Three unrelated causes, all read in
+the fork: `GameCapturer` never walked the API light collections at all, so the
+sun and every `remixapi_CreateLight` light were absent; `captureDistantLight`
+consulted the wrong map, zeroing a captured sun's intensity across a multi-frame
+capture (an upstream bug worth carrying back); and a capture's sky comes from a
+probe baked out of sky-camera geometry, which this game never draws, so there
+was no sky at all. Separately, `captureMaterial` dumped the game's original
+textures rather than the HD pack, which is fatal for deriving normal, roughness
+or displacement maps from a capture. Issue 14 has the detail and the one caveat
+that matters — **the captured sky's azimuth is derived, not verified.**
+
+**Characters still capture as dozens of meshes with invented skeletons — issue
+15, diagnosed and designed, not fixed.** The important finding is narrower than
+it first looks: the *deformation* is correct, and only the skeleton's appearance
+and the fragmentation are wrong. The fix needs the game's joint tree and a
+global joint index space, so it is a three-repo feature rather than a fork
+change. `capture.geometry` in the log now measures it.
+
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
@@ -989,6 +1008,196 @@ Added **2026-08-08**:
     **false** by default — so with performance already acceptable this is an
     optimisation to try, not a fix to chase.
     `extern/aurora/docs/dx9/unsupported-effects.md` R7.
+
+14. **Captures were missing the sky, the API lights and the HD textures.**
+    Reported 2026-08-08 by the owner, working in the Remix Toolkit: an asset
+    pulled out of a capture could not be judged against the game's lighting,
+    because the capture had none of it; and the textures in the capture were
+    the game's originals rather than the HD pack, so normal, roughness and
+    displacement maps derived from them would not line up with the albedo they
+    would sit beside in game.
+
+    **Three separate causes, all read in the fork's source, all fixed
+    2026-08-08. CI-green; none of it run in game yet.**
+
+    - **API lights were never captured at all.** `LightManager` keeps four
+      collections and `GameCapturer::captureLights` walked two of them.
+      `m_externalLights` + `m_externalActiveLightList` — everything created
+      through `remixapi_CreateLight`, which for this game is the sun and every
+      analytical light `remix_bridge.cpp` places — was not one of them, and
+      neither was `m_externalDomeLights`. They also cannot simply be iterated
+      where they sit: `LightManager::prepareSceneData` clears both active lists
+      at its end, and `SceneManager` calls the capturer's `step` long after
+      that, so a capture would have seen empty lists anyway. The fork now
+      snapshots the frame's active API lights just before that reset, keyed by
+      the application's *handle* rather than the light's parameter hash — a
+      light the game re-submits every frame as it moves changes the hash, and a
+      capture wants one moving light rather than one light per frame.
+    - **`captureDistantLight` tested the wrong map** — an upstream typo, worth
+      carrying back. It asked whether a hash was already in `sphereLights` to
+      decide whether a *distant* light was new, which can never be true, so the
+      initialisation block re-ran every frame and left `firstTime` holding the
+      **last** captured frame. `exportDistantLights` then wrote an intensity of
+      zero from t=0 up to that frame, so a multi-frame capture opened in the
+      toolkit with no sun. Single-frame captures were unaffected, which is how
+      it survived upstream.
+    - **The sky is a dome light, and captures have no dome-light path.** A
+      capture's sky comes from a probe baked out of geometry drawn with a sky
+      camera (`cameraType == Sky`). This game draws no such geometry — the sky
+      is the fork's own Hillaire atmosphere, injected as an external dome light
+      — so `bakeSkyProbe` never fired and `exportSky` returned early on an empty
+      path. The active dome light's texture is now written as the capture's sky
+      when no probe was baked, carrying its radiance so the scene is lit at the
+      brightness the runtime was using.
+
+    **Read the confidence on the sky's orientation.** The vertical mapping is
+    certain: `dusklight_sky.comp.slang` writes `v = acos(dir.z)/pi` in light
+    space, so the top row is the zenith, which is what every latlong consumer
+    expects. The **azimuth is derived, not verified.** The generator uses
+    `atan2(x, y)` while Remix's own `cube_to_latlong` pass uses `atan2(y, x)`,
+    and those differ by a mirror as well as a quarter turn, and USD's own
+    dome-light convention could not be settled from the code in this checkout.
+    So `rtx.capture.skyDomeYawDegrees` exists to correct a rotation without
+    editing a capture. **How it fails:** the sun's glow in the captured sky sits
+    somewhere other than where the captured distant light points. If it is
+    *mirrored* rather than rotated — the glow tracks the wrong way across a
+    day — that is the two `atan2` orders, and the fix belongs in the generator.
+    Either way the sky's brightness, colour and vertical structure are right,
+    which is most of what the capture is being opened for.
+
+    **The textures were deliberate and still wrong.** The pack never travels
+    through D3D9 — that is load-bearing, because the D3D9 texture is what Remix
+    hashes, and uploading the pack would re-key every texture tag, `rtx.conf`
+    category and USD binding (issue 17 in aurora's catalogue,
+    `texture-replacements.md`). `captureMaterial` therefore dumped
+    `materialData.getColorTexture()`, the original. The material's *name* must
+    keep coming from that original, and it still does; what changed is only
+    which pixels are written into the `.dds`. `rtx.dusklight.texrep.captureReplaced`
+    (default on) turns it off. Hashes are byte-identical either way.
+
+    `resolveAlbedoForCapture` is deliberately not `resolveAlbedo`: it leaves the
+    per-frame counters alone, and it insists the **top mip** is resident
+    (`ManagedTexture::m_currentMip_begin == 0`). The streamer sizes a texture
+    from what the renderer asked for, so a texture that looks right on screen
+    can still be sitting several mips down, and writing that quietly
+    half-resolution copy into a capture is exactly the kind of thing nobody
+    notices until the normal maps are baked off it.
+
+    **Instrumentation, so none of the above has to be asked about again.** Two
+    bounded lines at export: `capture.lights sphere=… distant=… sky=…`, which
+    says whether the sky came from a dome light, a probe, or nothing at all; and
+    `capture.texrep … replaced=… notResident=… missing=…`, because a capture
+    taken while the pack was still streaming is otherwise indistinguishable from
+    one taken with no pack installed.
+
+    **Regression signature:** a capture that opens *darker* than before would
+    mean the dome light's radiance is being applied twice (once in the generated
+    texture, once as the USD intensity — the generator already scales by the
+    intensity option, so the exported intensity must stay a plain multiplier).
+    A capture whose sun is at the wrong angle is the azimuth caveat above, not
+    this.
+
+15. **A character captures as dozens of meshes, each with its own invented
+    skeleton.** Reported 2026-08-08. **Diagnosed by reading, not fixed** — the
+    fix is a three-repo feature and is designed below rather than built.
+
+    **What is actually happening, read in the source:**
+
+    - **One D3D9 draw is one mesh in a capture, and the game draws a character
+      as many draws.** J3D issues one `GXCallDisplayList` per shape packet
+      (`J3DShapePacket::drawFast` → `J3DShapeDraw::draw`), packets split per
+      material and per matrix group, and aurora submits each `GXBegin` block as
+      its own `DrawIndexedPrimitiveUP`. Remix gives each one its own BLAS and
+      its own geometry hash. Nothing is going wrong here; this is the game's own
+      structure arriving intact.
+    - **"Each chunk gets a single bone" is the matrix-palette path.** Two
+      skinning paths reach Remix and they behave differently.
+      *Envelope models* go through `dusk::gpu_skin` → `GXSetSkinning` →
+      aurora's `draw.skinned` branch, which loads the model's **whole** joint
+      palette into `WORLDMATRIX(0..n)` for every draw, with global indices. Those
+      chunks all carry the same complete bone list.
+      *Matrix-palette models* (`hasPnMtxIdx`, the rigid-per-joint J3D case) go
+      through the other branch, which compacts the palette down to **only the
+      matrices that packet references** (`dx9_vertex.cpp`, `pnMtxSlots`) because
+      fixed-function indexed blending reaches only
+      `D3DCAPS9::MaxVertexBlendMatrixIndex`. A packet that references one matrix
+      therefore arrives at Remix with exactly one bone. That is the "single
+      bone per chunk" the owner saw, and the bone histogram in the new
+      `capture.geometry` log line distinguishes the two paths at a glance.
+    - **The exported skeleton is synthesised, and it is synthesised per mesh.**
+      `game_exporter.cpp` writes one `UsdSkelSkeleton` per mesh
+      (`exportSkeletons` loops over `exportData.meshes`), and `generateSkeleton`
+      invents its contents: joints are named `root`, `root/joint1`,
+      `root/joint2` … — a **flat list, every joint a direct child of root** —
+      and their bind and rest transforms are **translation-only, placed at the
+      weighted centroid of the vertices each bone influences**. There is no
+      hierarchy, no orientation and no relation to the game's joint tree. So a
+      forty-packet character produces forty skeletons, each a flat handful of
+      unnamed joints. This is upstream Remix, not something this fork did.
+
+    **The one piece of good news, and it is load-bearing for the fix.** The
+    *deformation* is correct, and the invented bind pose is a display
+    convenience that cancels out of it. UsdSkel computes
+    `skinningXform_i = inverse(bindTransform_i) · jointSkelXform_i`, and
+    `sanitizeBoneXforms` writes `jointSkelXform_i = bindPose_i · M_i ·
+    worldFromRoot` where `M_i` is the D3D9 bone matrix — so `bindPose_i`
+    cancels and what remains is exactly the D3D9 skinning matrix. **This is
+    derived from reading both functions, not observed**, but if it holds then
+    *whatever* bind transforms we supply, the mesh still deforms correctly, and
+    supplying real ones is a purely additive, low-risk change. That is worth
+    confirming before building on it.
+
+    **Why it cannot be fixed in the fork alone.** Both halves need something
+    only the game has:
+
+    - *Merging chunks* needs a **global joint index space**. Envelope models
+      already have one; matrix-palette models do not, because a GX position-matrix
+      slot is reused across packets — slot 3 is a different joint in the next
+      packet. Only the game knows which joint it loaded into which slot.
+    - *A real skeleton* needs joint **names, parents and bind transforms**,
+      which live in `J3DJointTree` and never enter the D3D9 stream.
+
+    Aurora's compaction map is needed too: the fork sees D3D9 blend index `i`,
+    aurora knows `i → pnMtxSlots[i]`, and the game knows `slot → joint`.
+
+    **The design, if it is wanted.** Three stages, each shippable on its own:
+
+    1. **Transport.** The game supplies, per model asset once, the joint tree
+       (names, parent indices, bind transforms); and per draw, a model-instance
+       key plus the blend-index → global-joint map. `D3DMATERIAL9` cannot carry
+       it — the side-channel table has only `Ambient.a` and `Power` spare — so
+       this wants a Dusklight-specific export on `d3d9.dll`, resolved the same
+       way `remix_bridge.cpp` already resolves `getRtxOptionValue`, called from
+       `J3DShapePacket::drawFast` where `dusk::gpu_skin::begin_shape` already
+       hooks. Aurora ships its compaction map through the same export. Protocol
+       bump.
+    2. **Real skeletons.** Replace `generateSkeleton`'s invention with the
+       game's joint tree, and expand every chunk's skeleton to the model's
+       *whole* tree with the blend indices remapped to global. Every piece of a
+       character then carries the same, correctly named armature — which is most
+       of what "make it look like Blender" means, and makes the pieces trivially
+       re-parentable to one armature on import.
+    3. **Merging.** Group instances by (model asset, model instance, material)
+       in the capturer and concatenate their buffers. **Per material, not per
+       model** — that keeps one material per mesh, which is all the USD exporter
+       supports today, and is the granularity a Blender artist wants anyway. A
+       forty-chunk character becomes roughly one mesh per material.
+
+    **The trap to state plainly before anyone starts stage 3.** Remix binds a
+    replacement to the **per-draw** mesh hash. A merged mesh has a hash no
+    runtime draw produces, so a replacement authored against a merged capture
+    would not bind to anything unless the runtime merges identically. Stage 3
+    is therefore a *capture-side* convenience for extraction, and full body
+    replacement needs either a matching runtime-side merge or a group-hash
+    replacement concept in the fork. Do not let stage 3 ship advertised as
+    "body replacement now works".
+
+    **Measurement landed 2026-08-08 even though the fix did not.** The capture
+    export now logs `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:…
+    5-16:… 17+:…] maxBones=…`. A histogram piled up at `1:` is the
+    matrix-palette path; large equal counts are the envelope path. That single
+    line answers "how bad is it, and which path", which previously needed the
+    owner to open a capture and count.
 
 #### Built and CI-green but NEVER RUN
 
