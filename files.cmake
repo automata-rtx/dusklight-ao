@@ -1504,6 +1504,7 @@ set(DUSK_FILES
         src/dusk/mods/svc/ui.hpp
         src/dusk/mouse.cpp
         src/dusk/remix_bridge.cpp
+        src/dusk/remix_skeleton.cpp
         src/dusk/remix_bridge.hpp
         src/dusk/scope_guard.hpp
         src/dusk/settings.cpp

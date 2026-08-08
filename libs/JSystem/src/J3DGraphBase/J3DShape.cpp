@@ -1,5 +1,9 @@
 #include "JSystem/JSystem.h" // IWYU pragma: keep
 
+#if TARGET_PC
+#include "dusk/remix_skeleton.hpp"
+#endif
+
 #include "JSystem/J3DGraphBase/J3DShape.h"
 
 #include <dolphin/gd.h>
@@ -335,6 +339,12 @@ void J3DShape::drawFast() const {
         for (u16 n = mMtxGroupNum, i = 0; i < n; i++) {
             if (mShapeMtx[i] != NULL)
                 mShapeMtx[i]->load();
+#if TARGET_PC
+            // One matrix group is one GXCallDisplayList and therefore one D3D9 draw, so this is
+            // the only point at which "which joint is in which GX slot" is both known and still
+            // true for the draw about to be issued. See dusk/remix_skeleton.hpp.
+            dusk::remix_skeleton::set_matrix_group(mShapeMtx[i]);
+#endif
             if (mShapeDraw[i] != NULL)
                 mShapeDraw[i]->draw();
         }

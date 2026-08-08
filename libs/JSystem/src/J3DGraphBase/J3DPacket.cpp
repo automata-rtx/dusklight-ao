@@ -13,6 +13,7 @@
 
 #if TARGET_PC
 #include "dusk/gpu_skinning.h"
+#include "dusk/remix_skeleton.hpp"
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -413,6 +414,9 @@ void J3DShapePacket::drawFast() {
         if (duskSkin) {
             dusk::gpu_skin::end_shape();
         }
+        // Drop the model identity with the packet. Leaving it set would attribute the next
+        // unrelated draw to this character and merge it into the body in a capture.
+        dusk::remix_skeleton::end_shape();
 #endif
     }
 }
