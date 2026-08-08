@@ -3226,28 +3226,43 @@ void dKyr_drawRain(Mtx drawMtx, u8** tex) {
             TGXTexObj texobj;
             dKyr_set_btitex(&texobj, (ResTIMG*)tex[0]);
 #endif
+#if TARGET_PC
+            // Dusklight optimization: enable draw call merging by carrying the
+            // per-drop alpha in vertex color instead of GX_TEVREG0, so every
+            // drop shares one GX primitive. See dKyr_drawSnow / dKyr_drawHousi.
+            GXSetNumChans(1);
+            GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_CLAMP, GX_AF_NONE);
+#else
             GXSetNumChans(0);
             GXSetTevColor(GX_TEVREG0, color_reg0);
+#endif
             GXSetNumTexGens(1);
             GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
             GXSetNumTevStages(1);
-            GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
-            GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_C0, GX_CC_TEXC, GX_CC_ZERO);
+            GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, DUSK_IF_ELSE(GX_COLOR0A0, GX_COLOR_NULL));
+            GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, DUSK_IF_ELSE(GX_CC_RASC, GX_CC_C0), GX_CC_TEXC, GX_CC_ZERO);
             GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-            GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_A0, GX_CA_TEXA, GX_CA_ZERO);
+            GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, DUSK_IF_ELSE(GX_CA_RASA, GX_CA_A0), GX_CA_TEXA, GX_CA_ZERO);
             GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
             GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_SET);
             GXSetAlphaCompare(GX_GREATER, 0, GX_AOP_OR, GX_GREATER, 0);
             GXSetZMode(GX_ENABLE, GX_LEQUAL, GX_DISABLE);
             GXSetClipMode(GX_CLIP_DISABLE);
             GXSetNumIndStages(0);
-            dKr_cullVtx_Set();
+            dKr_cullVtx_Set(IF_DUSK(true));
 
             Mtx rotMtx;
             MTXRotRad(rotMtx, 'Z', DEG_TO_RAD(rot));
             MTXConcat(camMtx, rotMtx, camMtx);
             GXLoadPosMtxImm(drawMtx, GX_PNMTX0);
             GXSetCurrentMtx(GX_PNMTX0);
+
+#if TARGET_PC
+            // Dusklight optimization: one draw call for the whole rain field,
+            // rather than 4 per drop. GX_AUTO because drops with alpha <= 0 are
+            // skipped, so the vertex count is not known up front.
+            GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+#endif
 
             for (int i = 0; i < rain_packet->raincnt; i++) {
                 f32 temp_f30 = -1.0f;
@@ -3261,7 +3276,7 @@ void dKyr_drawRain(Mtx drawMtx, u8** tex) {
                         color_reg0.a = 20.0f * rain_packet->mRainEff[i].mAlpha;
                     }
 
-                    GXSetTevColor(GX_TEVREG0, color_reg0);
+                    IF_NOT_DUSK(GXSetTevColor(GX_TEVREG0, color_reg0));
                     sp3C.x = rain_packet->mRainEff[i].mBasePos.x + rain_packet->mRainEff[i].mPosition.x;
                     sp3C.y = rain_packet->mRainEff[i].mBasePos.y + rain_packet->mRainEff[i].mPosition.y;
                     sp3C.z = rain_packet->mRainEff[i].mBasePos.z + rain_packet->mRainEff[i].mPosition.z;
@@ -3319,19 +3334,27 @@ void dKyr_drawRain(Mtx drawMtx, u8** tex) {
                             cXyz(45.0f, 480.0f, 45.0f),
                         };
 
-                        GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                        IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                         GXPosition3f32(pos[0].x + add_table[j].x, pos[0].y + add_table[j].y, pos[0].z + add_table[j].z);
+                        IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0, 0);
                         GXPosition3f32(pos[1].x + add_table[j].x, pos[1].y + add_table[j].y, pos[1].z + add_table[j].z);
+                        IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0xFF, 0);
                         GXPosition3f32(pos[2].x + add_table[j].x, pos[2].y + add_table[j].y, pos[2].z + add_table[j].z);
+                        IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0xFF, 0xFF);
                         GXPosition3f32(pos[3].x + add_table[j].x, pos[3].y + add_table[j].y, pos[3].z + add_table[j].z);
+                        IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0, 0xFF);
-                        GXEnd();
+                        IF_NOT_DUSK(GXEnd());
                     }
                 }
             }
+
+#if TARGET_PC
+            GXEnd();
+#endif
 
             GXSetClipMode(GX_CLIP_ENABLE);
             J3DShape::resetVcdVatCache();
@@ -3427,6 +3450,13 @@ void dKyr_drawSibuki(Mtx drawMtx, u8** tex) {
         scale = 0.2f;
     }
 
+#if TARGET_PC
+    // Dusklight optimization: one draw call for the whole splash field rather
+    // than one per splash. Nothing in the loop touches GX state, so the quads
+    // merge without any TEV rework.
+    GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+#endif
+
     for (int i = 0; i < g_env_light.raincnt >> 1; i++) {
         cXyz pos[4];
         f32 size = scale * (15.0f + cM_rndF(10.0f));
@@ -3456,7 +3486,7 @@ void dKyr_drawSibuki(Mtx drawMtx, u8** tex) {
         pos[3].y = sp20.y;
         pos[3].z = sp20.z + size;
 
-        GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+        IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
         GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
         GXTexCoord2s16(0, 0);
 
@@ -3468,8 +3498,12 @@ void dKyr_drawSibuki(Mtx drawMtx, u8** tex) {
 
         GXPosition3f32(pos[3].x, pos[3].y, pos[3].z);
         GXTexCoord2s16(0, 0x1FF);
-        GXEnd();
+        IF_NOT_DUSK(GXEnd());
     }
+
+#if TARGET_PC
+    GXEnd();
+#endif
 
     GXSetClipMode(GX_CLIP_ENABLE);
     J3DShape::resetVcdVatCache();
@@ -4002,6 +4036,16 @@ void dKyr_drawSnow(Mtx drawMtx, u8** tex) {
                         sp50 = 1.0f;
                     }
 
+#if TARGET_PC
+                    // Dusklight optimization: one draw call for the whole snow
+                    // field (including the room-reflection copies below) rather
+                    // than one per flake per layer. The per-flake colour already
+                    // travels in vertex CLR0, so no state changes separate them.
+                    // GX_AUTO because inactive flakes are skipped, so the vertex
+                    // count is not known up front.
+                    GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+#endif
+
                     for (int i = 0; i < sp54; i++) {
                         for (int j = 0; j < 2; j++) {
                             f32 sp44 = -1.0f;
@@ -4089,7 +4133,7 @@ void dKyr_drawSnow(Mtx drawMtx, u8** tex) {
                                 pos[3].z = sp7C.z + sp88.z;
 
                                 for (int k = 0; k < spC; k++) {
-                                    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                                    IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                                     GXPosition3f32(pos[0].x + (temp_f31 * add_table[k].x), pos[0].y + (temp_f31 * add_table[k].y), pos[0].z + (temp_f31 * add_table[k].z));
                                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                                     GXTexCoord2s16(0, 0);
@@ -4102,7 +4146,7 @@ void dKyr_drawSnow(Mtx drawMtx, u8** tex) {
                                     GXPosition3f32(pos[3].x + (temp_f31 * add_table[k].x), pos[3].y + (temp_f31 * add_table[k].y), pos[3].z + (temp_f31 * add_table[k].z));
                                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                                     GXTexCoord2s16(0, 0xFF);
-                                    GXEnd();
+                                    IF_NOT_DUSK(GXEnd());
                                 }
 
                                 if ((g_env_light.field_0xe90 != 0 && dComIfGp_roomControl_getStayNo() == 0 && sp7C.z < 3000.0f) || dComIfGp_roomControl_getStayNo() == 3 || dComIfGp_roomControl_getStayNo() == 6 || dComIfGp_roomControl_getStayNo() == 9 || dComIfGp_roomControl_getStayNo() == 13) {
@@ -4160,7 +4204,7 @@ void dKyr_drawSnow(Mtx drawMtx, u8** tex) {
                                     pos[3].y = sp34 + sp88.y;
                                     pos[3].z = sp7C.z + sp88.z;
 
-                                    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                                    IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                                     int var_r27 = 0;
                                     GXPosition3f32(pos[0].x + (temp_f31 * add_table[var_r27].x), pos[0].y + (temp_f31 * add_table[var_r27].y), pos[0].z + (temp_f31 * add_table[var_r27].z));
                                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
@@ -4174,11 +4218,15 @@ void dKyr_drawSnow(Mtx drawMtx, u8** tex) {
                                     GXPosition3f32(pos[3].x + (temp_f31 * add_table[var_r27].x), pos[3].y + (temp_f31 * add_table[var_r27].y), pos[3].z + (temp_f31 * add_table[var_r27].z));
                                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                                     GXTexCoord2s16(0, 0xFF);
-                                    GXEnd();
+                                    IF_NOT_DUSK(GXEnd());
                                 }
                             }
                         }
                     }
+
+#if TARGET_PC
+                    GXEnd();
+#endif
 
                     GXSetClipMode(GX_CLIP_ENABLE);
                     J3DShape::resetVcdVatCache();
@@ -5682,6 +5730,14 @@ void dKyr_odour_draw(Mtx drawMtx, u8** tex) {
     GXSetClipMode(GX_CLIP_DISABLE);
     GXSetNumIndStages(0);
 
+#if TARGET_PC
+    // Dusklight optimization: one draw call for the whole scent trail rather
+    // than one per puff. The per-puff colour already travels in vertex CLR0,
+    // so no state changes separate them. GX_AUTO because inactive and
+    // distance-culled puffs are skipped.
+    GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+#endif
+
     for (int i = 0; i < 2000; i++) {
         EF_ODOUR_EFF* effect = &odour_packet->mOdourEff[i];
         camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
@@ -5750,7 +5806,7 @@ void dKyr_odour_draw(Mtx drawMtx, u8** tex) {
                     pos[3].y = sp70.y + sp58.y;
                     pos[3].z = sp70.z + sp58.z;
 
-                    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                    IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                     GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0, 0);
@@ -5767,11 +5823,15 @@ void dKyr_odour_draw(Mtx drawMtx, u8** tex) {
                     IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0, 0xFF);
                     GXTexCoord2s16(0, 0xFF);
-                    GXEnd();
+                    IF_NOT_DUSK(GXEnd());
                 }
             }
         }
     }
+
+#if TARGET_PC
+    GXEnd();
+#endif
 
     GXSetClipMode(GX_CLIP_ENABLE);
     J3DShape::resetVcdVatCache();

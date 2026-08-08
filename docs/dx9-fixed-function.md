@@ -135,6 +135,13 @@ rtx.dusklight.game.hideSkyBillboards = True
 # paid on the CPU in dense grass. Turn it on when you want grass that Remix can
 # identify: stable per-blade hashes make the blades taggable, replaceable with
 # authored geometry, and able to hold denoiser history.
+#
+# Note this trades the opposite way from the weather particles, which were
+# batched in 2026-08-08 to fix exactly the draw-call cost this option spends.
+# The difference is whether there is a stable identity to lose: grass has a
+# per-blade display list whose positions do not move, particles move every
+# vertex every frame and never had one. Batching is wrong for the first and
+# right for the second.
 #rtx.dusklight.game.perBladeGrass = True
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
@@ -333,6 +340,19 @@ Notes:
   investigating (`rtx.ignoreTextures`, `ignoreTransparencyLayerTextures`,
   `terrainTextures`, …) persist across runs and silently hide or reclassify
   textures in later sessions. Clear them before judging a new build.
+- **`rtx.particleTextures` is not a performance control**, and expecting it to
+  be one cost a session (2026-08-07). It decides which TLAS a draw lands in and
+  how the resolve loop treats it — nothing about per-draw cost. If a dense
+  effect is slow and tagging it as a particle changes nothing, the cost is
+  **per draw, not per pixel**; read `dx9.draws` in the log
+  (`extern/aurora/docs/dx9/material-report.md`) rather than reaching for
+  another category.
+- **Tagging something as UI is a diagnostic, not a fix.** UI draws are
+  rasterized and never enter the raytraced scene, so if that makes the frame
+  rate fine, the answer is draw count. As a *setting* it costs the effect its
+  path-traced lighting, and for anything the game draws twice — snow, whose
+  planar-reflection copies are real geometry — a screen overlay composites both
+  copies unconditionally and it looks wrong.
 
 > **The table below is now automatic.** With the kankyo bridge active
 > (`game.remixKankyoBridge`, on by default under Remix) the game pushes its

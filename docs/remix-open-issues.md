@@ -20,7 +20,7 @@ correctly, and where the D3D9 stream cannot carry something the answer is to
 implement it in the fork rather than to approximate it in D3D9. Full statement:
 `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 
-## State, as of 2026-08-06
+## State, as of 2026-08-08
 
 CI baselines: dusklight/aurora green on all 8 targets (Windows MSVC x86_64 +
 arm64, macOS x3, Linux x2, Android); the Remix fork green on its 3 Windows
@@ -63,6 +63,18 @@ shadow drawn on top of a traced one — transfers to them word for word, and it 
 now a confirmed reading rather than a prediction. Not done because nobody has
 asked and Link's shadow is a far more visible change than a rupee's; it is the
 same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
+
+**Dense weather particles are fixed, and it is TESTED (2026-08-08):** rain in
+Hyrule Field and snow in the Snowpeak areas were unusably slow, and the cause
+was neither shading nor the particle category — the kankyo weather effects were
+emitting **one `GXBegin`/`GXEnd` per quad**, up to ~1000 draw calls a frame. One
+`GXBegin` block is one D3D9 draw, and Remix charges per draw rather than per
+pixel. Batching them (issue 13) made it "far better than previously". **The
+counter added alongside it, `dx9.draws`, has not been read back**, so the
+predicted draw-count collapse is confirmed by its effect rather than by the
+number — the one loose end. The generalisable rule: **a Remix performance
+problem that does not respond to texture categorisation is a draw-count
+problem**, and `dx9.draws` is where you look.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -188,6 +200,15 @@ Added **2026-07-29**:
   `DusklightAtmosphere.md` §13 about what this does and does not close.
 - **No further crashes on level entry** across a long session that included
   many warps and room transitions.
+
+Added **2026-08-08**:
+
+- **Dense weather particles.** Rain in Hyrule Field and snow in the Snowpeak
+  areas, previously unusable, are "far better than previously" after the
+  weather emitters were batched into one draw each (issue 13). No visual
+  regression reported, so the per-particle fade and colour survived the move
+  into vertex `CLR0`. The `dx9.draws` figures were not read back, so the size
+  of the draw-count drop is still unmeasured.
 
 #### Open issues
 
@@ -860,6 +881,114 @@ Added **2026-07-29**:
     stage's alpha to build the alpha test. Regression signature: alpha-tested
     foliage, grates or grass going solid or vanishing. That would outrank every
     other result in the session.
+
+13. **CLOSED 2026-08-08 — dense weather particles were a draw-call problem.**
+    Reported 2026-08-07: rain in Hyrule Field and snow in the Snowpeak
+    exteriors and Snowpeak Ruins ran at unusable frame rates. **Fixed and
+    tested in game 2026-08-08 — the owner reports particle performance "far
+    better than previously."**
+
+    **Read the confidence precisely.** The *outcome* is tested. The
+    `dx9.draws` counter added alongside the fix was **not** read back, so the
+    predicted collapse from ~1000 draws a frame to one is confirmed by its
+    effect and not by the number. That is a one-minute gap for anyone with a
+    log from a rainy Hyrule Field session, and worth closing because the
+    counter is also the regression alarm.
+
+    Two owner observations frame the whole entry, and both turned out to be
+    diagnostic:
+
+    - **Tagging the textures as particles in Remix's categorization UI changes
+      nothing.** That category only decides *which TLAS a draw lands in and how
+      the resolve loop treats it* — `rtx_instance_manager.cpp` sets
+      `m_isUnordered` and `VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR` for
+      it. It does nothing about per-draw scene-management cost, so if the cost
+      is per draw rather than per pixel the tag is a no-op. It was.
+    - **Tagging rain as UI made it smooth**, and the pathtraced image survived
+      it. UI draws never enter the raytraced scene at all, so that swap removes
+      exactly the per-draw cost and nothing else. Snow under the same tag broke,
+      because `dKyr_drawSnow` emits a second Y-mirrored quad per flake for the
+      room reflection (the `sp30 - sp34` copy) and a rasterized screen overlay
+      composites both sets unconditionally — which is the owner's "two sets
+      going in opposite directions", and is the game's geometry, not Remix's.
+
+    **Cause, read in the source rather than inferred.** The kankyo weather
+    effects are immediate-mode GX and were emitting **one `GXBegin`/`GXEnd` per
+    quad**. `dKyr_drawRain` draws `raincnt` drops (`RAIN_EFF mRainEff[250]`)
+    × 4 offset layers, so up to **1000 draw calls per frame**; `dKyr_drawSnow`
+    has `SNOW_EFF mSnowEff[500]` × 2 passes × 1–2 layers plus the reflection
+    copy. Aurora submits each `GXBegin` block as its own `DrawIndexedPrimitiveUP`
+    (`command_processor.cpp` decodes and submits immediately; there is no
+    batching layer), so each quad becomes a separate draw in Remix.
+
+    That is expensive in Remix specifically. A draw too small for its own BLAS
+    is merged into a shared bucket, but it still contributes its own
+    `VkAccelerationStructureGeometryKHR` and its own surface, and the bucket's
+    BLAS is rebuilt whenever the geometry moves — which for weather is every
+    frame. Read in the fork at `rtx_accel_manager.cpp`
+    (`buildInfo.geometryCount = bucket->geometries.size()`, and the bucket's
+    `originalInstances`). So the cost scales with *draws*, not with pixels or
+    with quads, which is why opacity micromaps were working and not helping:
+    they were never the bottleneck.
+
+    **Fixed 2026-08-07 by hoisting `GXBegin`/`GXEnd` out of the per-quad loops**
+    in `dKyr_drawRain`, `dKyr_drawSnow`, `dKyr_drawSibuki` and
+    `dKyr_odour_draw`, using `GX_AUTO` because inactive particles are skipped
+    and the vertex count is not known up front. Rain additionally needed its
+    per-drop alpha moved out of `GX_TEVREG0` into vertex `CLR0`
+    (`GX_CC_RASC`/`GX_CA_RASA`, `dKr_cullVtx_Set(true)`) — a state change inside
+    a `GXBegin` block is what forced the split in the first place. **Nothing
+    about particle simulation, spawning or pathing is touched; this is purely
+    how the same quads are submitted.**
+
+    **Worth knowing: this was half-done already.** `dKyr_drawSnow` and
+    `dKyr_odour_draw` already carried their per-particle colour in vertex
+    `CLR0`, with a comment saying "enable draw call merging" — but the
+    `GXBegin`/`GXEnd` hoist that would have collected the win never landed, so
+    they had paid the cost of the rework and got none of the benefit.
+    `dKyr_drawHousi` and `dKyr_drawStar` are the two that were finished, and
+    they are the pattern the rest now follow.
+
+    **Instrumentation, so this is measurable rather than judged by eye.** Aurora
+    now logs `dx9.draws frames=600 mean=N peak=M` once every 600 frames
+    (`lib/dx9/dx9_draw.cpp`). Stand in Hyrule Field in the rain and in Snowpeak
+    and read `peak`; the expectation is a drop of roughly a thousand draws per
+    frame in rain. If `peak` does not move, the batching is not taking effect
+    and the diagnosis above is wrong.
+
+    **Regression signature:** rain or snow vanishing, drawing in a single flat
+    colour, or losing its per-particle fade (all three would mean the vertex
+    colour is not reaching the TEV stage); or a `GXEnd: vertex count mismatch`
+    / `GX_AURORA_DRAW_SIZED` assertion in the log (would mean a `GXBegin` block
+    is unbalanced). The 2026-08-08 session showed none of these, so the visual
+    result is as intended and not merely faster.
+
+    **This does not contradict `perBladeGrass`, which spends draw calls
+    deliberately** — and the distinction is the durable lesson here. Batching
+    destroys asset-hash identity, because
+    `rtx.geometryAssetHashRuleString` is `positions,indices,…`. Grass *has* an
+    identity to lose (a per-blade display list whose positions do not move), so
+    batching it trades something real for frame rate. Particles have none:
+    every drop moves every vertex every frame, so the hash churned before and
+    churns after, and collapsing the draws cost nothing that was not already
+    gone. Texture *tagging* is unaffected either way, because tags key on the
+    texture hash rather than the geometry hash. **The question is never "does
+    this batch?" but "is there a stable identity here to destroy?"**
+
+    **Still open, and deliberately:** `dKyr_mud_draw` and `dKyr_evil_draw2`
+    still emit per-quad and still set `GX_TEVREG0` per particle, so they need
+    the same TEV→vertex-colour rework rain got. They are bounded (mud is 100
+    effects) and situational rather than weather, so they were left rather than
+    changed blind alongside a change that was untested at the time. Now that
+    the pattern is tested, they are safe to do when someone wants them —
+    `dKyr_drawRain` is the worked example.
+
+    **Also unexercised:** Remix's billboard/intersection-primitive path, which
+    only now has batched instances to work with. It is gated on the Particle
+    category *and* on `rtx.useIntersectionBillboardsOnPrimaryRays`, which is
+    **false** by default — so with performance already acceptable this is an
+    optimisation to try, not a fix to chase.
+    `extern/aurora/docs/dx9/unsupported-effects.md` R7.
 
 #### Built and CI-green but NEVER RUN
 
