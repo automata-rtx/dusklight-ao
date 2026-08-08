@@ -1321,7 +1321,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "6");
+    push("rtx.dusklight.env.protocol", "7");
     // Diagnostic state. Neither drives any rendering; both exist so Remix's log can say
     // when something happened, in the same file as the material report. Read and cleared
     // rather than latched, so dismounting reads as not dashing instead of leaving the last

@@ -4,6 +4,15 @@
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/JKernel/JKRHeap.h"
 
+#if TARGET_PC
+#include "JSystem/J3DGraphAnimator/J3DModel.h"
+#include "JSystem/J3DGraphAnimator/J3DModelData.h"
+#include "JSystem/JUtility/JUTNameTab.h"
+#include "dusk/water_materials.hpp"
+#include <aurora/gfx.hpp>
+#include <cstring>
+#endif
+
 J3DColorBlock* J3DMaterial::createColorBlock(u32 flags) {
     J3DColorBlock* rv = NULL;
     switch (flags) {
@@ -216,9 +225,49 @@ void J3DMaterial::makeSharedDisplayList() {
     makeDisplayList_private(mSharedDLObj);
 }
 
+#if TARGET_PC
+// Tells the backend whether the material about to be programmed is water.
+//
+// Done here rather than from dKy_bg_MAxx_proc, which is where the game already reads these
+// names, because that runs while the draw is being *scheduled* - J3D enters models into a
+// draw buffer walked later - and a hint set there would not bracket the draws it meant to.
+// This is the point the material's GX state is actually programmed. It is the same lesson
+// that removed the material report's grp= field: in this engine, scheduling a draw and
+// issuing one are far apart.
+//
+// The name is looked up rather than cached because a cache keyed on the material pointer
+// goes stale when a room's archive is freed and the allocator hands the address to
+// something else - which, in a game that changes rooms constantly, would silently make an
+// unrelated material refractive.
+static void noteDusklightWaterMaterial(u32 materialID) {
+    J3DModel* model = j3dSys.getModel();
+    if (model == NULL) {
+        aurora::gfx::set_dusklight_water(false);
+        return;
+    }
+
+    J3DModelData* modelData = model->getModelData();
+    if (modelData == NULL || materialID >= modelData->getMaterialNum()) {
+        aurora::gfx::set_dusklight_water(false);
+        return;
+    }
+
+    JUTNameTab* nameTable = modelData->getMaterialName();
+    if (nameTable == NULL) {
+        aurora::gfx::set_dusklight_water(false);
+        return;
+    }
+
+    const char* name = nameTable->getName((u16)materialID);
+    aurora::gfx::set_dusklight_water(
+        name != NULL && dusk::water::isWaterMaterialName(name, (int)strlen(name)));
+}
+#endif
+
 void J3DMaterial::load() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
+    noteDusklightWaterMaterial(mMaterialID);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {
@@ -229,6 +278,7 @@ void J3DMaterial::load() {
 void J3DMaterial::loadSharedDL() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
+    noteDusklightWaterMaterial(mMaterialID);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {
