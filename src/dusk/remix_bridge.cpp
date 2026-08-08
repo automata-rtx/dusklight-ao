@@ -52,6 +52,13 @@ bool s_celestialLock = false;
 
 LocalLightsDebug s_localDebug = {};
 
+// Set by the horse on each frame it dashes, read and cleared when pushed. Declared with
+// the other debug state above the support guard, not with the Remix plumbing below it:
+// noteHorseDashing() is part of the unconditional interface - the horse calls it on every
+// platform - so the flag it writes has to exist on every platform too, whether or not
+// there is a bridge to push it through.
+bool s_horseDashing = false;
+
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
 
@@ -66,9 +73,6 @@ remixapi_Interface s_interface = {};
 // values are the fallback then.
 typedef uint32_t(*PFN_getRtxOptionValue)(const char* key, char* outValue, uint32_t valueSize);
 PFN_getRtxOptionValue s_getOption = nullptr;
-
-// Set by the horse each frame it dashes, cleared when pushed. See noteHorseDashing().
-bool s_horseDashing = false;
 
 // Reads a Remix option, or returns false if this Remix build has no getter or
 // does not know the key.
