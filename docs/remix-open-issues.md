@@ -88,12 +88,14 @@ textures rather than the HD pack, which is fatal for deriving normal, roughness
 or displacement maps from a capture. Issue 14 has the detail and the one caveat
 that matters — **the captured sky's azimuth is derived, not verified.**
 
-**Characters still capture as dozens of meshes with invented skeletons — issue
-15, diagnosed and designed, not fixed.** The important finding is narrower than
-it first looks: the *deformation* is correct, and only the skeleton's appearance
-and the fragmentation are wrong. The fix needs the game's joint tree and a
-global joint index space, so it is a three-repo feature rather than a fork
-change. `capture.geometry` in the log now measures it.
+**Characters now capture as one mesh with their real armature, and a
+replacement authored from that capture binds to the whole body — issue 15,
+built across all three repos 2026-08-08, CI-green on every target, NOT tested in
+game.** The game publishes its joint tree and slot mapping, aurora composes it
+with its palette compaction, and the fork merges the draws and resolves one
+replacement for the character at runtime. **Envelope-skinned models work; rigid
+multi-matrix models capture correctly but would skin wrongly if replaced**, and
+the remaining aurora change is named in the entry.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -1098,8 +1100,10 @@ Added **2026-08-08**:
     this.
 
 15. **A character captures as dozens of meshes, each with its own invented
-    skeleton.** Reported 2026-08-08. **Diagnosed by reading, not fixed** — the
-    fix is a three-repo feature and is designed below rather than built.
+    skeleton.** Reported 2026-08-08. **Built across all three repos the same
+    day — CI-green on every target, NOT tested in game.** The diagnosis that
+    follows is what the work was built from; what was actually built, and the
+    one case it does not yet cover, is at the end of this entry.
 
     **What is actually happening, read in the source:**
 
@@ -1192,12 +1196,74 @@ Added **2026-08-08**:
     replacement concept in the fork. Do not let stage 3 ship advertised as
     "body replacement now works".
 
-    **Measurement landed 2026-08-08 even though the fix did not.** The capture
-    export now logs `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:…
-    5-16:… 17+:…] maxBones=…`. A histogram piled up at `1:` is the
-    matrix-palette path; large equal counts are the envelope path. That single
-    line answers "how bad is it, and which path", which previously needed the
-    owner to open a capture and count.
+    **What was built.** The three stages above, plus the runtime binding that
+    makes them worth having:
+
+    - The game declares each model's joint tree once (`remix_skeleton.cpp`) and
+      publishes, per matrix group, which joint sits in each GX slot. Hooked in
+      `J3DShape::drawFast`'s matrix-group loop — one group is one
+      `GXCallDisplayList` and therefore one D3D9 draw, so it is the only point
+      where that mapping is both known and still true for the draw.
+    - Aurora composes it with its own palette compaction and calls the fork once
+      per emitted draw. Neither side could do this alone, which is the whole
+      reason the transport is shaped this way.
+    - The fork merges a character's draws into one captured mesh with one
+      reproducible hash, weights standardised to four influences, materials kept
+      as `UsdGeomSubset` face ranges, and the game's real armature.
+    - **The runtime looks that same hash up.** One draw per character per frame
+      instantiates the replacement and the siblings are dropped, so an asset
+      authored from a capture binds to the whole body.
+
+    **Two facts that were expensive to get right, both recorded because a
+    plausible-sounding wrong version of each was written down first:**
+
+    - **The merged hash must come from the model key alone.** The first revision
+      mixed in the ordered member draw set, to stop two instances showing
+      different packets from colliding. That hash is computable by the capture
+      and by nothing else — a replacement is resolved per draw, where the member
+      set for the frame is not yet known — so an asset authored against it would
+      have bound to nothing, silently, forever. `groupMeshHash(modelKey)` is now
+      shared by both sides so they cannot drift.
+    - **The bone palette is not compacted on the path that matters, it is
+      truncated.** An earlier account here claimed the triggering draw carried a
+      compacted subset needing reconstruction. It does not: aurora loads the
+      model's entire joint palette, in joint order, on every skinned draw, so
+      the indices already align. What was wrong is that `processSkinning`
+      derives `numBones` from the joints the *original* packet references, so a
+      body weighted to joint 45 triggered from a packet whose highest joint is
+      12 skins against bones nobody copied. Raising that floor is the fix — and
+      it is **gated on a replacement existing**, because `RtSurface` bakes a
+      single-bone draw's matrix into the transform and skips skinning entirely
+      (`rtx_types.cpp`, `minBoneIndex + 1 == numBones`), and an ungated floor
+      would defeat that for every rigid packet of every character in the game.
+
+    **The one case not covered: rigid multi-matrix models.** Their palette *is*
+    compacted per draw, so their blend indices do not align with the joint tree.
+    Their captures are correct — the merge remaps through the published table —
+    but a replacement authored from one would skin wrongly at runtime. The fix
+    is aurora skipping the compaction for draws carrying a model identity and
+    emitting global joint indices: R5 already records that Remix ignores
+    `MaxVertexBlendMatrixIndex`, and the raw D3D9 image is not a design goal, so
+    the only cost is that those models scatter in an image nobody sees.
+    Envelope-skinned models — which is what animated characters are — are
+    unaffected and work today.
+
+    **Measurement, so none of this needs to be judged by eye.**
+    `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…]`
+    says how fragmented a scene is and which skinning path a model came down: a
+    histogram piled up at `1:` is the matrix-palette path, large equal counts
+    are the envelope path. `capture.merge groups=… merged=… rejected=…
+    firstReject="…"` says whether a character merged and why not.
+    `skeleton.rmx … boundDraws=… bodiesReplaced=… drawsSuppressed=…` separates
+    "the game is not publishing" from "it published and the merge refused" from
+    "it claimed and something downstream went wrong".
+
+    **Regression signature:** a character arriving *scattered* means a group
+    merged that should not have — `capture.merge` names it. A character drawn
+    twice, new body through old, means suppression is not firing —
+    `drawsSuppressed` will be zero. A replaced body posed rigidly as one lump
+    means the bone floor is not being applied, which is `hasGroupReplacement`
+    answering "no".
 
 #### Built and CI-green but NEVER RUN
 
