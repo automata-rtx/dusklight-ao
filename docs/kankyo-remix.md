@@ -21,6 +21,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |
+| Work out why something is **slow** | Read `dx9.draws` in the log first (`extern/aurora/docs/dx9/material-report.md`). Remix charges per draw, not per pixel, so a problem that does not respond to texture categorisation is usually draw count — [`remix-open-issues.md`](remix-open-issues.md) issue 13 is the worked example |
 | Change the overlay / the option wire | `dxvk-remix/documentation/DusklightOverlay.md` |
 
 **The three repos.** `dusklight-ao` is the game; `aurora-ao` is the GX→D3D9

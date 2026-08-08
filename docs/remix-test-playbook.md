@@ -316,6 +316,35 @@ Not exercised by the 2026-08-06 run, so still worth covering if a session has
 room: a BC7 or BC5 pack, a deliberately-`.png` entry, a window resize (materials
 should be re-created), and palette-animated art.
 
+### 0c. Dense weather particles — PASSED 2026-08-08, one number still missing
+
+> **PASSED 2026-08-08.** Rain and snow, previously unusable, are "far better
+> than previously". **But the `dx9.draws` figures were never read**, so the
+> draw-count drop the fix predicts is confirmed only by its effect. Step 2
+> below closes that in about a minute and is the reason this recipe is kept.
+
+Nothing to enable. Needs weather: **Hyrule Field in rain**, and **Snowpeak
+exteriors or Snowpeak Ruins** for snow. Use the clock (§1) if the weather is
+time-gated.
+
+1. Stand in each, look at the particles, and move the camera through them.
+2. **Read `dx9.draws` in the game log.** It prints once every 600 frames:
+   `dx9.draws frames=600 mean=412 peak=1387 - D3D9 draw calls per frame`.
+   Capture `peak` while the weather is heavy on screen. This is the whole
+   measurement.
+
+| What you find | Reading |
+| :-- | :-- |
+| `peak` in the low hundreds during heavy rain | **Working as designed** — the whole rain field is one draw. Record the number; it is the baseline every later change is compared against. |
+| `peak` in the thousands during heavy rain | The batching is not taking effect and the diagnosis in issue 13 is wrong. Nothing else in this recipe matters until that is explained. |
+| Rain or snow invisible, flat-coloured, or with every particle at the same opacity | The per-particle colour is not reaching the TEV stage — the vertex `CLR0` path. This is the regression the batching could plausibly cause. |
+| `GXEnd: vertex count mismatch` or a `GX_AURORA_DRAW_SIZED` assertion in the log | A `GXBegin` block is unbalanced. Names the emitter; it is a game-side fix in `d_kankyo_rain.cpp`. |
+| Snow shows two sets of flakes moving in opposite directions | **Not a regression** — those are the game's own planar-reflection copies, and they are correct geometry. It only looks wrong if the texture has been tagged as UI, which rasterizes them as a screen overlay. Clear the tag. |
+
+Re-run this whenever anything touches `d_kankyo_rain.cpp`, the immediate-mode
+GX path in aurora, or Remix's BLAS/instance handling. Issue 13;
+`extern/aurora/docs/dx9/progress.md` §3.32.
+
 ### 1. Clock — do this first, it is the tool the rest want
 
 > **PASSED 2026-07-29** — slider, presets and Freeze Time all "work flawlessly
