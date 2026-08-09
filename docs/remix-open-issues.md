@@ -1321,6 +1321,43 @@ Added **2026-08-08**:
     model's pose for a frame, or as a crash inside the command processor at
     `end_frame` rather than in the draw path.
 
+    **Still open, and it is the one that decides whether the Blender round trip
+    is pleasant: a merged character's vertices are in two different spaces.**
+    Found while fixing the crash, by reading `J3DMtxBuffer::calcDrawMtx`
+    (`J3DMtxBuffer.cpp:412`). **Read, not observed — no capture has been opened
+    in Blender yet.**
+
+    - A **rigid** draw matrix is `MTXCopy(getAnmMtx(joint), drawMtx)` — the
+      joint's own matrix, with no inverse bind in it. For the draw to land in
+      the right place, the vertices behind it must be stored in that **joint's
+      local space**, which is how J3D stores them.
+    - An **envelope** draw matrix is `Σ wᵢ · anmᵢ · invBindᵢ`
+      (`calcWeightEnvelopeMtx`), which only makes sense against vertices stored
+      in **model/bind space**.
+
+    So one J3D model's shared position array holds both, and concatenating the
+    draws produces a mesh whose rigid pieces sit around their own joints'
+    origins rather than around the character. **The deformation is still
+    correct** — each vertex reaches its bone through the matrix that matches its
+    space — so the posed character is right in Remix and right in Blender once
+    the captured animation is applied. What is wrong is the **rest pose**: open
+    the USD, look at it unposed, and the rigid pieces are piled near the origin.
+    That is not a regression (each unmerged chunk had the same property, and
+    upstream's invented centroid bind pose hid it), but it is not the "duplicate
+    the mesh and subdivide it" surface the merge was built for.
+
+    **The fix, worked out but not built.** Normalise at merge time in the fork:
+    multiply a rigid member's positions by that joint's `bindTransform` so every
+    vertex is in model space, and pre-multiply `inverse(bindTransform_j)` into
+    that bone's exported matrix so the deformation is unchanged. The algebra:
+    UsdSkel evaluates `P · inverse(bindᵢ) · jointSkelXformᵢ`, and
+    `sanitizeBoneXforms` sets `jointSkelXformⱼ = bindⱼ · Mⱼ · worldFromRoot`, so
+    feeding it `M'ⱼ = inverse(bindⱼ) · Mⱼ` leaves `P_model · inverse(bindⱼ) ·
+    Mⱼ · worldFromRoot`, which is exactly what the joint-local vertex produced
+    before. **This algebra is derived from reading `game_exporter.cpp` and the
+    UsdSkel definition; it has not been run.** Envelope members need no change —
+    they are already in model space with identity-equivalent binds.
+
     **Measurement, so none of this needs to be judged by eye.**
     `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…]`
     says how fragmented a scene is and which skinning path a model came down: a
