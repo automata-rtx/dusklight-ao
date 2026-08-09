@@ -79,6 +79,61 @@ rtx.dusklight.rampMaterials = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
+### 00. Water — translucent, refracting (2026-08-09, UNTESTED IN GAME)
+
+**Run this first.** It is the only untested thing whose diagnosis is already
+fully in the log, so it costs one walk and no judgement calls.
+
+**What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
+Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
+raise or lower it once. Quit, send both logs. Nothing here needs the clock.
+
+**What to report:** whether anything that is *not* water became see-through.
+That is the one failure the log cannot describe on its own, and it is the
+failure that has happened before. Everything else is in the log.
+
+**What the logs will say.** Four lines trace the mark end to end, so the first
+one that is missing is where it died:
+
+| Line | Which log | Means |
+| :-- | :-- | :-- |
+| `dusk.matname name=… water=1` | game | the game recognised the material |
+| `dx9.water: first water mark decoded from the FIFO` | game | it survived the FIFO |
+| `dx9.water: first water-marked draw translated` | game | a draw carried it to the device |
+| `dusklight.water tex0hash=… texXform=… proj=…` | Remix | Remix built a translucent material |
+
+A fifth, `dusklight.water.replaced`, means the mark arrived and a hand-authored
+replacement material claimed the draw first. That is intended — it is how a
+normal map gets onto the surface — but it is not the water path, so it is
+counted separately rather than being silent.
+
+`texXform=` and `proj=` on the `dusklight.water` line say which layer each draw
+is: a texture transform means a scrolling ripple overlay, `proj=1` means the
+projected reflection layer (MA02/MA10), neither means the still base surface.
+**The open question this answers** is how many marked layers a single body of
+water has. Three stacked refracting sheets is a stack of windows, not water; if
+the log shows that, the reflection layer gets split out of the water set.
+
+**Controls, all under F1 → Dusklight → Water:** *Translucent Water* turns the
+whole thing off for an A/B. Index of refraction is 1.33 and should not need
+touching. **Transmittance measurement distance defaults to 200 and is an
+uncalibrated guess** — if the water reads as invisible rather than transparent,
+or as too strongly tinted, this is the one number to move, and the value that
+looked right is the result worth reporting.
+
+**Regression signature, worst first:** materials that are not water turning
+translucent (the mark leaking — this happened on 2026-08-08 and made every
+material in the game see-through); water invisible rather than transparent
+(measurement distance); a second refracting sheet over the surface (MA02/MA10).
+
+**Still expected to be wrong, and separate from this:** the ripple *warp* comes
+from indirect texturing, which aurora drops, and the TEV two-constants-per-stage
+ceiling still bites. Water can be correctly translucent and still animate wrong.
+Remix's own dual-layer animated normals (`rtx.translucent.animatedWaterEnable`,
+plus the texture hash in `rtx.animatedWaterTextures`) are the intended route,
+and they need an authored normal map to do anything —
+`translucent_surface_material_interaction.slangh:61`.
+
 ### 0. Materials — colour, emission, vertex colour (2026-08-05, UNTESTED IN GAME)
 
 **This is the section to run.** Everything below it has already been run. Four
