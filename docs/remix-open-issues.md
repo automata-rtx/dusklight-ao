@@ -887,21 +887,38 @@ Added **2026-07-29**:
     on top of a correctly traced one. **Untested in game.** Full account:
     `extern/aurora/docs/dx9/remix-material-interface.md` §11.
 
-    **Still unanswered, and deliberately not guessed at:** the *surface* also
-    arrives as more than one draw — 5 scrolling passes (`texXform=2`) and 2
-    still ones (`texXform=0`) in that session — and only one of them should be
-    the refracting interface. Whether they separate by name or need the blend
-    state (an **additive** pass is light over a surface, not a second surface)
-    is unknown, so `dusklight.water` now reports `blend=`, `blendSrcDst=` and
-    `alphaTest=` and nothing is built on it yet.
+    **The layer split worked — measured 2026-08-09 10:30.** Two
+    `dusklight.water.projected … hidden=1` lines, seven surfaces still
+    translucent, and water reported as "far more consistent". Same session
+    reported it **bland**: with no textures bound at all, water is featureless
+    glass. The draw's own texture now goes in the **normal** slot
+    (`rtx.dusklight.water.surfaceDetailFromGameTexture`, default on), which is
+    both where the game's scroll animates it — the scroll is a texture transform
+    on the draw, so it runs at the game's rate — and where a replacement normal
+    map lands. **Untested.** Until such a map is authored it is a *colour*
+    texture decoded as a tangent normal: an animated perturbation, not real
+    ripples. `rtx.translucentMaterial.normalIntensity` scales it.
+
+    **A dead end, recorded so it is not re-derived.** The idea that an additive
+    pass marks "light over a surface" and would separate the base water pass
+    from the scrolling one is **wrong for this game.** Measured over that
+    session's seven surfaces: `SRC_COLOR,ZERO` ×2,
+    `SRC_ALPHA,ONE_MINUS_SRC_ALPHA` ×1, `SRC_ALPHA,ONE` ×4 — and that last group
+    holds both a still pass (`texXform=0`) and scrolling ones. Alpha test does
+    not split them either. Separating those passes would need geometry
+    coincidence, not material state, and nothing needs it while water reads as
+    consistent.
 
     **Regression signature, in order of severity:** materials that are not water
     turning translucent (the mark leaking again — the 20:35 failure); water
-    geometry *vanishing* (the projected mark leaking, the new mirror of that
-    failure); water invisible rather than transparent
-    (`transmittanceMeasurementDistance`, 200 and **an uncalibrated guess**); a
-    water body losing its reflection entirely rather than gaining a traced one
-    (turn `hideProjectedLayer` off to confirm).
+    geometry *vanishing* (the projected mark leaking, the mirror of that
+    failure); water reading as uniformly tilted or noisy rather than rippled
+    (the colour-texture normal decode showing through — lower
+    `rtx.translucentMaterial.normalIntensity`, or turn
+    `surfaceDetailFromGameTexture` off); water invisible rather than transparent
+    (`transmittanceMeasurementDistance`, 200 and **still an uncalibrated
+    guess**); a water body losing its reflection entirely rather than gaining a
+    traced one (turn `hideProjectedLayer` off to confirm).
 
     **What a test session produces.** Four log lines trace the mark end to end,
     so one session says where it died rather than only that it did:

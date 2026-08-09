@@ -84,21 +84,29 @@ before testing anything, or every result is noise.
 **Run this first.** It is the only untested thing whose diagnosis is already
 fully in the log, so it costs one walk and no judgement calls.
 
-**Where this stands.** The 2026-08-08 23:47 session got water marked end to end
-for the first time — 11 distinct water materials reached Remix, all translucent
-— and it still did not read as one continuous surface. The log said why: 4 of
-the 11 were the game's camera-projected reflection overlay (MA02/MA10), turned
-into a second refracting sheet just above the surface. Those are now hidden.
-**What this session is checking is whether removing that layer is what water
-was missing.**
+**Where this stands.** Two things are now measured rather than hoped for: the
+mark reaches Remix (2026-08-08 23:47, 11 water materials), and removing the
+camera-projected reflection layer made water read as **consistent** (2026-08-09
+10:30). That session found it *bland* instead — with no textures bound, water is
+featureless glass. **What this session checks is the fix for that:** the game's
+own ripple texture now drives the water's normal, scrolling at the game's rate.
+
+Until a real normal map is authored over it, that is a *colour* texture decoded
+as a tangent normal — an animated perturbation, not real ripples. Judge it as
+"is there visible, moving surface detail", not as "does this look like water".
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
 raise or lower it once. Quit, send both logs. Nothing here needs the clock.
 
-**What to report:** whether anything that is *not* water became see-through.
-That is the one failure the log cannot describe on its own, and it is the
-failure that has happened before. Everything else is in the log.
+**What to report:** whether anything that is *not* water became see-through or
+disappeared. Those are the two failures the log cannot describe on its own, and
+the first has happened before. Everything else is in the log.
+
+If the ripples read as noise or as a uniform tilt rather than as movement, that
+is the colour-texture normal decode showing through — slide **Normal Intensity**
+in the Water panel down until it reads as surface rather than static, and report
+the value that worked. That number is a result, not a complaint.
 
 **What the logs will say.** Four lines trace the mark end to end, so the first
 one that is missing is where it died:
@@ -111,20 +119,21 @@ one that is missing is where it died:
 | `dusklight.water tex0hash=… texXform=… proj=… blend=…` | Remix | Remix built a translucent material |
 
 `PROJECTED` has the same three game-side lines and ends at
-`dusklight.water.projected … hidden=1` — that is the reflection overlay being
-dropped, and seeing those lines is the point of this run.
+`dusklight.water.projected … hidden=1` — the reflection overlay being dropped.
+`normalTex=` on the surface line says whether that draw got the game's texture
+in its normal slot; a surface with `normalTex=0` stayed featureless glass and
+that is visible in the log rather than guessed at from how calm the water is.
 
 A fifth, `dusklight.water.replaced`, means the mark arrived and a hand-authored
 replacement material claimed the draw first. That is intended — it is how a
 normal map gets onto the surface — but it is not the water path, so it is
 counted separately rather than being silent.
 
-**The open question this session answers** is the one thing deliberately not
-guessed at: the *surface* still arrives as more than one draw (5 scrolling and
-2 still, last session), and only one of them should be the refracting
-interface. `blend=`, `blendSrcDst=` and `alphaTest=` are on the water line for
-exactly that — an **additive** pass is light over a surface, not a second
-surface. Nothing acts on them yet; the log decides it.
+**That open question is now closed, negatively.** Blend state does not separate
+the base water pass from the scrolling one in this game — the `SRC_ALPHA,ONE`
+group holds both a still pass and scrolling ones, and alpha test does not split
+them either. The fields stay on the line because they are cheap, but no rule is
+coming out of them.
 
 **Controls, all under F1 → Dusklight → Water:** *Translucent Water* turns the
 whole thing off for an A/B, and *Hide Projected Reflection Layer* puts the
