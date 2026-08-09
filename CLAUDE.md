@@ -256,6 +256,18 @@ recall does not surface.
   tag, `rtx.conf` category and USD binding. If you ever find yourself making
   aurora upload replacement pixels, that is the trap.
   `extern/aurora/docs/dx9/texture-replacements.md`.
+- **Character identity goes to Remix through two `d3d9.dll` exports, not the
+  option wire** (`src/dusk/remix_skeleton.cpp`, hooked in `J3DShape::draw`'s
+  matrix-group loop and `J3DShapePacket::drawFast`). So it needs **no protocol
+  bump** — protocol is still 7 — but it does need both sides built from the same
+  commit point, because the exports are resolved by `GetProcAddress` and a
+  rename or a signature change fails **silently**: `dx9.skeleton model identity
+  export not present` in the log is the only symptom. **Built, CI-green, never
+  run**; the first build crashed on launch. `docs/remix-open-issues.md` issue 15.
+- The joint palette handed to aurora is read at **`end_frame`**, not at the call,
+  because only its address crosses the GX FIFO. It must be a per-model buffer
+  that outlives the frame — a per-draw scratch buffer is the trap, and was the
+  first implementation.
 - Verify D3D9 code with the MinGW syntax harness described in
   `extern/aurora/docs/dx9/progress.md` §"How to resume"; full builds happen on
   the owner's Windows machine and in CI.

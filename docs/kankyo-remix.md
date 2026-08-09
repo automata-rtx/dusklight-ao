@@ -22,6 +22,8 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |
 | Work out why something is **slow** | Read `dx9.draws` in the log first (`extern/aurora/docs/dx9/material-report.md`). Remix charges per draw, not per pixel, so a problem that does not respond to texture categorisation is usually draw count — [`remix-open-issues.md`](remix-open-issues.md) issue 13 is the worked example |
+| Pull a character out of a capture, or replace a body | [`remix-open-issues.md`](remix-open-issues.md) issue 15. A three-repo feature — the game publishes its joint tree (`src/dusk/remix_skeleton.cpp`), aurora composes it with its palette compaction, the fork merges and binds. **Built, CI-green, never run**, and the first build of it crashed on launch |
+| Work out what a capture will and will not contain | [`remix-open-issues.md`](remix-open-issues.md) issue 14 (sky, API lights, HD textures) and issue 15 (character geometry). Neither is exercised yet |
 | Change the overlay / the option wire | `dxvk-remix/documentation/DusklightOverlay.md` |
 
 **The three repos.** `dusklight-ao` is the game; `aurora-ao` is the GX→D3D9

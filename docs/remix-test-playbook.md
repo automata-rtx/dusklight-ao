@@ -272,6 +272,84 @@ Nothing to describe by eye here, and nothing that can regress the image: if this
 is inconvenient to run, it can wait for a session that is already taking
 captures for another reason.
 
+#### 0g. It launches at all — do this before anything else in this section
+
+The 2026-08-08 build of the character-merge work (`b1467d13`) **crashed on
+launch**: black screen, shaders compile, exit to desktop before any scene is
+visible. Cause was read in the source afterwards — the game took each joint's
+bind pose from `J3DJointTree::getInvJointMtx`, which is a **null pointer** for
+any model without an EVP1 envelope block, so the first rigid model drawn read
+address `0x0`. Fixed 2026-08-09 by composing the bind pose from
+`J3DTransformInfo`, which every joint of every model carries. **The fix is
+untested.**
+
+So: start the game, get to a scene with a character in it, and stop there. If
+it exits to desktop, send the crash block — `Fault addr: 0x0` with the same
+shape means the diagnosis was wrong and the RVAs need symbolicating against the
+artifact rather than reasoned about. Everything below is unreachable until this
+passes, which is why it is first.
+
+Also worth one glance at the log before playing further:
+
+| Line | Reading |
+| :-- | :-- |
+| `dx9.skeleton model identity export found` | The two halves are talking. |
+| `dx9.skeleton model identity export not present` | The DLL and the game are from different commit points, or the export was renamed. The feature is **silently inert**, not broken — nothing else in this section will mean anything. |
+
+#### 0h. A character as one mesh with its real skeleton (issue 15) — NEVER RUN
+
+Built across all three repos 2026-08-08/09, CI-green, **never run**. The point
+is asset extraction and body replacement: a character should arrive in a capture
+as **one** mesh with **one** reproducible hash, carrying the game's own named,
+parented armature, instead of dozens of pieces each with an invented flat
+skeleton.
+
+**What to do**, with a character on screen (Link is fine):
+
+1. Take a Remix capture.
+2. Send the log and the capture's USD listing.
+3. If you can, open the USD in Blender and look at it **twice** — once as
+   imported, and once with the captured animation applied.
+
+| What you find | Reading |
+| :-- | :-- |
+| `capture.merge groups=N merged=N rejected=0` | Every character merged. |
+| `merged=0 rejected=N` with `firstReject="…"` | The reason is in the line; it is a refusal, not an approximation. A rejected group keeps its original per-draw meshes, so the capture is no worse than before. |
+| `capture.merge` absent entirely | The game published nothing. Check 0g's export line first. |
+| `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…] maxBones=…` piled up at `1:` | Still the old per-chunk single-bone shape — the merge did not take. |
+| In Blender: one mesh, named bones in a hierarchy | Working as intended. |
+| In Blender: the body is right **when posed** but the unposed rest pose has pieces piled near the origin | **Expected, and already diagnosed** — a merged character's vertices are in two spaces (rigid packets joint-local, envelope packets model-space). Deformation is correct; only the rest pose is wrong. The fix is worked out and deliberately not built until this confirms it is real: `remix-open-issues.md` issue 15. |
+
+**Regression signature elsewhere:** a character drawn twice, a new body showing
+through an old one, means the sibling suppression is not firing —
+`drawsSuppressed=` will be zero. Set `rtx.dusklight.skeleton.report = True` for
+one bounded frame of
+
+```
+skeleton.rmx enable=1 merge=1 declared=N rejected=N boundDraws=N unboundDraws=N
+             replaceBodies=1 bodiesReplaced=N drawsSuppressed=N
+skeleton.rmx   model=0x… joints=N root=…
+```
+
+which separates "the game is not publishing" (`boundDraws=0`) from "it published
+and the merge refused" (`rejected` climbing) from "it claimed and something
+downstream went wrong" (`bodiesReplaced` non-zero, body still wrong). The option
+is `NoSave` and clears itself after reporting.
+
+#### 0i. What a capture contains: sky, sun, HD textures (issue 14) — NEVER RUN
+
+Same capture as 0h answers this; it is listed separately because it fails
+independently.
+
+| What you find | Reading |
+| :-- | :-- |
+| `capture.lights sphere=… distant=… sky=domeLight skyRadiance=(…) skyYawDeg=…` | The API sun and sky dome reached the capture. Upstream they do not — `GameCapturer::step` runs after the active light lists are reset, which is what the snapshot exists to fix. |
+| `sky=skyProbe` | Sky-camera geometry won, which is correct when it exists and is deliberately preferred over the dome light. |
+| `sky=none` **and** `distant=0` | Nothing lights the capture but its sphere lights. This is the failure the whole change exists to prevent. |
+| The capture has a dome light but the sky is oriented wrong | **Known and unverified:** the azimuth is derived, not confirmed. `rtx.capture.skyDomeYawDegrees` is the knob, and `skyYawDeg=` in the line reports what it used; send the value that looks right rather than describing the error. |
+| `capture.texrep enabled=1 … replaced=N` with N > 0 | What the whole point was — normal/roughness/displacement can be authored from the capture's diffuse. |
+| `replaced=0 notResident=N` with a pack installed | The residency check refused: it insists on the top mip, so a texture still streaming in is skipped rather than dumped blurry. Re-take the capture after standing still a moment. |
+
 ### 0b. HD texture packs — PASSED 2026-08-06, kept as the regression recipe
 
 > **PASSED 2026-08-06, first try.** Replacements appear, and texture tagging is

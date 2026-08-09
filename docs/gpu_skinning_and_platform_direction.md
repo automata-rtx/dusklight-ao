@@ -126,6 +126,18 @@ USD skeletons). Requirements for Remix to swap a skinned character:
 - **Per-vertex bone indices + weights** (≤4).
 - **Per-instance bone transforms** supplied separately each frame.
 
+> **A fourth requirement, found 2026-08-08 and not visible when this list was
+> written.** Meeting all three above gets a character *skinned* correctly under
+> Remix. It does not get one *replaceable*, because Remix keys a replacement on
+> the **per-draw** geometry hash and J3D issues one draw per matrix group — so a
+> body arrives as dozens of independent hashes, each with its own invented
+> skeleton, and there is no hash that names "the character". Closing that needed
+> a global joint index space published by the game, composed with aurora's
+> palette compaction, and a merge plus a group-hash lookup in the fork: ~1600
+> lines across all three repos. Read the "~90% of the way there" in §6 as being
+> about skinning, not about replacement.
+> [`remix-open-issues.md`](remix-open-issues.md) issue 15.
+
 If the game hands Remix **CPU-deformed** (already-posed) vertices, the mesh hash
 is unstable every frame → per-asset replacement breaks for exactly the characters
 you'd most want to remaster, and motion vectors are missing (ghosting). So Remix
