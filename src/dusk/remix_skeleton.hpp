@@ -42,6 +42,12 @@ void set_matrix_group(const J3DShapeMtx* shapeMtx);
 // to this character - which would merge it into the body.
 void end_shape();
 
+// Called once per frame, immediately after aurora_begin_frame. Must be a point where aurora's GX
+// FIFO has been drained: this is where per-model state is released, and a joint palette's address
+// travels through the FIFO, so freeing one mid-frame would hand the command processor a dangling
+// pointer at drain time.
+void begin_frame();
+
 // Drops every cached declaration. Model data is freed and reallocated across a stage change, and a
 // stale pointer key could otherwise match a different model.
 void reset();

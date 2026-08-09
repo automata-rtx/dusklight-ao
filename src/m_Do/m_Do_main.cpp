@@ -66,6 +66,7 @@
 #include "dusk/main.h"
 #include "dusk/os.h"
 #include "dusk/remix_bridge.hpp"
+#include "dusk/remix_skeleton.hpp"
 #include "dusk/ui/menu_bar.hpp"
 #include "dusk/ui/overlay.hpp"
 #include "dusk/ui/prelaunch.hpp"
@@ -272,6 +273,10 @@ void main01(void) {
             DuskLog.debug("aurora_begin_frame returned false, skipping draw this frame");
             continue;
         }
+
+        // Safe only here: aurora drained its GX FIFO in the previous end_frame, so no queued
+        // command can still name a joint palette this may release. See remix_skeleton.hpp.
+        dusk::remix_skeleton::begin_frame();
 
         VIWaitForRetrace();
 

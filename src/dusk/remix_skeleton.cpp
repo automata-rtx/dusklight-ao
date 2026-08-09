@@ -18,6 +18,8 @@
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "JSystem/J3DGraphBase/J3DShapeMtx.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
+#include "JSystem/J3DGraphBase/J3DTransform.h"
+#include "JSystem/JMath/JMath.h"
 #include "JSystem/JUtility/JUTNameTab.h"
 
 #ifdef _WIN32
@@ -100,11 +102,60 @@ u64 model_key(J3DModelData* modelData) {
     return hash == 0 ? 1ull : hash;
 }
 
-// J3DJoint stores its first child and next sibling but not its parent, so the tree is walked from
-// the root to derive them. Iterative rather than recursive because a malformed tree would
-// otherwise take the stack with it, and this runs on data loaded from disc.
-void derive_parents(J3DJointTree& tree, u16 jointNum, std::vector<s32>& parents) {
+// A joint's own transform, in its parent's space: translate-rotate, then a column scale. This is
+// the composition J3DMtxCalcCalcTransformBasic and ...Maya perform on the same fields, so the
+// tree built from it is the model's rest pose as J3D itself would compute it with no animation
+// bound.
+void local_transform(const J3DTransformInfo& info, Mtx out) {
+    J3DGetTranslateRotateMtx(info, out);
+    JMAMTXApplyScale(out, out, info.mScale.x, info.mScale.y, info.mScale.z);
+}
+
+void store_3x4(const Mtx& src, f32* out12) {
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            out12[row * 4 + col] = src[row][col];
+        }
+    }
+}
+
+void load_3x4(const f32* in12, Mtx out) {
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            out[row][col] = in12[row * 4 + col];
+        }
+    }
+}
+
+// Walk the joint tree from the root, filling in each joint's parent and its model-space transform
+// in the bind pose - what USD calls skel:bindTransforms and what Blender draws as the rest
+// armature.
+//
+// The obvious source for the bind pose is J3DJointTree::getInvJointMtx, and revision 1 of this
+// file used it. That was a crash: J3DModelLoader::readEnvelop is the ONLY place mInvJointMtx is
+// ever assigned (J3DModelLoader.cpp:581), and it runs only for models carrying an EVP1 envelope
+// block - J3DJointTree's constructor leaves the pointer NULL for every other model
+// (J3DJointTree.cpp:21). Reading it faulted at address 0 on the first rigid model drawn, which is
+// before any scene is visible. J3DTransformInfo is loaded for every joint of every model, so
+// composing the tree from it has no such gap.
+//
+// Iterative rather than recursive: a malformed tree would otherwise take the stack with it, and
+// this runs on data loaded from disc. The visit cap is the same guard for a cycle.
+void build_bind_pose(J3DJointTree& tree, u16 jointNum, std::vector<s32>& parents,
+                     std::vector<f32>& bindTransforms) {
     parents.assign(jointNum, -1);
+    bindTransforms.assign(static_cast<size_t>(jointNum) * 12, 0.f);
+
+    // bindTransforms doubles as the working store for the walk: a joint's model-space matrix IS
+    // its bind transform, and the parent's is always already written when a child reads it.
+    for (u16 i = 0; i < jointNum; ++i) {
+        Mtx identity;
+        MTXIdentity(identity);
+        store_3x4(identity, bindTransforms.data() + static_cast<size_t>(i) * 12);
+    }
+
+    // Depth-first, so a parent is always processed before its children and its world matrix is
+    // ready when they need it.
     std::vector<J3DJoint*> stack;
     if (J3DJoint* root = tree.getRootNode()) {
         stack.push_back(root);
@@ -114,25 +165,29 @@ void derive_parents(J3DJointTree& tree, u16 jointNum, std::vector<s32>& parents)
         J3DJoint* joint = stack.back();
         stack.pop_back();
         ++visited;
+
+        const u16 jntNo = joint->getJntNo();
+        if (jntNo < jointNum) {
+            Mtx local;
+            local_transform(joint->getTransformInfo(), local);
+            Mtx world;
+            const s32 parent = parents[jntNo];
+            if (parent >= 0 && static_cast<u16>(parent) < jointNum) {
+                Mtx parentWorld;
+                load_3x4(bindTransforms.data() + static_cast<size_t>(parent) * 12, parentWorld);
+                MTXConcat(parentWorld, local, world);
+            } else {
+                MTXCopy(local, world);
+            }
+            store_3x4(world, bindTransforms.data() + static_cast<size_t>(jntNo) * 12);
+        }
+
         for (J3DJoint* child = joint->getChild(); child != nullptr; child = child->getYounger()) {
             const u16 childNo = child->getJntNo();
             if (childNo < jointNum) {
-                parents[childNo] = static_cast<s32>(joint->getJntNo());
+                parents[childNo] = static_cast<s32>(jntNo);
             }
             stack.push_back(child);
-        }
-    }
-}
-
-// Invert the 3x4 inverse-bind matrix J3D stores, giving the joint's model-space transform in the
-// bind pose - which is what USD calls skel:bindTransforms and what Blender draws as the rest
-// armature.
-void bind_transform(const Mtx& invBind, f32* out12) {
-    Mtx bind;
-    MTXInverse(const_cast<MtxPtr>(invBind), bind);
-    for (int row = 0; row < 3; ++row) {
-        for (int col = 0; col < 4; ++col) {
-            out12[row * 4 + col] = bind[row][col];
         }
     }
 }
@@ -165,16 +220,12 @@ bool declare(J3DModelData* modelData, u64& modelKeyOut) {
     }
 
     std::vector<s32> parents;
-    derive_parents(tree, jointNum, parents);
+    std::vector<f32> bindTransforms;
+    build_bind_pose(tree, jointNum, parents, bindTransforms);
 
-    std::vector<f32> bindTransforms(static_cast<size_t>(jointNum) * 12, 0.f);
     std::string packedNames;
     JUTNameTab* names = tree.getJointName();
     for (u16 i = 0; i < jointNum; ++i) {
-        Mtx invBind;
-        tree.getInvJointMtx(i).to_host(invBind);
-        bind_transform(invBind, bindTransforms.data() + static_cast<size_t>(i) * 12);
-
         const char* name = names != nullptr ? names->getName(i) : nullptr;
         packedNames.append(name != nullptr && name[0] != '\0' ? name : "joint");
         packedNames.push_back('\0');
@@ -198,30 +249,63 @@ bool declare(J3DModelData* modelData, u64& modelKeyOut) {
 // because it reaches them through its own slots, and a replacement that does index one gets a
 // bone that does not move rather than one that moves wrongly.
 //
-// Invalidated in end_shape, so it is rebuilt once per shape packet rather than once per matrix
-// group. It CANNOT be cached across frames: these are animated draw matrices and they change every
-// frame, so a cache keyed on the model alone would pin a character in whatever pose it held when
-// it was first seen.
+// THE BUFFER IS PER MODEL AND ITS ADDRESS NEVER MOVES. That is not tidiness, it is required:
+// GXSetModelIdentity writes the palette's *address* into the GX FIFO, and the FIFO is not drained
+// until aurora::end_frame (lib/gx/fifo.cpp drain(), called from aurora.cpp end_frame). Revision 1
+// used one shared std::vector rebuilt per shape packet, so by the time the command processor read
+// any of those addresses the vector had been reassigned - to a different model's matrices, and
+// after a size change to freed memory. A per-model buffer that is allocated once and only ever
+// overwritten in place is read-correct whenever it is drained.
 //
-// The pointer handed to aurora stays valid because the D3D9 backend consumes it synchronously -
-// it copies the matrices straight into D3D9 world matrix state inside the same call - so nothing
-// downstream holds it past the draw.
+// Contents are still refreshed per model per frame rather than cached across frames: these are
+// animated draw matrices. Overwriting in place is safe against the deferred drain because the
+// draw matrices are computed once per frame in the calc phase and do not change again during the
+// draw phase, so a command queued earlier in the same frame reads the values it was queued with.
+struct Palette {
+    std::vector<f32> values;
+    u16 jointNum = 0;
+};
+
+std::unordered_map<const J3DModel*, Palette> s_palettes;
 const J3DModel* s_paletteModel = nullptr;
-std::vector<f32> s_jointPalette;
 
 const f32* build_joint_palette(J3DModel* model, J3DModelData* modelData, u16 jointNum) {
-    if (s_paletteModel == model && s_jointPalette.size() == static_cast<size_t>(jointNum) * 12) {
-        return s_jointPalette.data();
-    }
-
     J3DMtxBuffer* mtxBuffer = model->getMtxBuffer();
     if (mtxBuffer == NULL) {
         return NULL;
     }
+    // A model with no draw matrices of its own reports them through a single shared "not in use"
+    // matrix (J3DMtxBuffer::setNoUseDrawMtx, taken for J3DMdlDataFlag_NoAnimation and for
+    // ConcatView loads). getDrawMtx(i) would index off the end of that one matrix, so there is
+    // nothing here to publish.
+    Mtx** drawMtxArr = mtxBuffer->getDrawMtxPtrPtr();
+    if (drawMtxArr == NULL || drawMtxArr == &J3DMtxBuffer::sNoUseDrawMtxPtr) {
+        return NULL;
+    }
+    Mtx* drawMtxBase = mtxBuffer->getDrawMtxPtr();
+    if (drawMtxBase == NULL || drawMtxBase == J3DMtxBuffer::sNoUseDrawMtxPtr) {
+        return NULL;
+    }
 
-    s_jointPalette.assign(static_cast<size_t>(jointNum) * 12, 0.f);
+    Palette& palette = s_palettes[model];
+    const size_t wanted = static_cast<size_t>(jointNum) * 12;
+    const bool sameModelThisPacket = (s_paletteModel == model) && palette.jointNum == jointNum &&
+                                     palette.values.size() == wanted;
+    if (sameModelThisPacket) {
+        return palette.values.data();
+    }
+
+    if (palette.values.size() != wanted) {
+        // The only resize this buffer ever takes. Anything already queued in the FIFO against the
+        // old address belongs to a model that no longer exists at this pointer.
+        palette.values.assign(wanted, 0.f);
+        palette.jointNum = jointNum;
+    }
     for (u16 j = 0; j < jointNum; ++j) {
-        f32* out = s_jointPalette.data() + static_cast<size_t>(j) * 12;
+        f32* out = palette.values.data() + static_cast<size_t>(j) * 12;
+        for (size_t k = 0; k < 12; ++k) {
+            out[k] = 0.f;
+        }
         out[0] = 1.f;
         out[5] = 1.f;
         out[10] = 1.f;
@@ -236,20 +320,17 @@ const f32* build_joint_palette(J3DModel* model, J3DModelData* modelData, u16 joi
         if (joint >= jointNum) {
             continue;
         }
-        const Mtx* drawMtx = mtxBuffer->getDrawMtx(i);
-        if (drawMtx == NULL) {
-            continue;
-        }
-        f32* out = s_jointPalette.data() + static_cast<size_t>(joint) * 12;
+        const Mtx& drawMtx = drawMtxBase[i];
+        f32* out = palette.values.data() + static_cast<size_t>(joint) * 12;
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 4; ++col) {
-                out[row * 4 + col] = (*drawMtx)[row][col];
+                out[row * 4 + col] = drawMtx[row][col];
             }
         }
     }
 
     s_paletteModel = model;
-    return s_jointPalette.data();
+    return palette.values.data();
 }
 
 } // namespace
@@ -322,10 +403,30 @@ void end_shape() {
     s_paletteModel = nullptr;
 }
 
+void begin_frame() {
+    s_paletteModel = nullptr;
+
+    // Both maps are keyed by pointers to objects the game frees - a model instance dies with its
+    // actor, model data with its archive - so entries accumulate over a session. Dropping them
+    // wholesale is only safe where no queued GX command can still name a palette address, which
+    // is exactly here: aurora drained the FIFO in the previous end_frame. Doing this from
+    // anywhere inside a frame would hand the command processor a freed pointer.
+    //
+    // The cost of a drop is one rebuilt palette and one re-declaration per live model, and the
+    // fork's declare is idempotent on the model key.
+    constexpr size_t kMaxTracked = 512;
+    if (s_palettes.size() > kMaxTracked) {
+        s_palettes.clear();
+    }
+    if (s_declared.size() > kMaxTracked) {
+        s_declared.clear();
+    }
+}
+
 void reset() {
     s_declared.clear();
     s_paletteModel = nullptr;
-    s_jointPalette.clear();
+    s_palettes.clear();
 }
 
 } // namespace dusk::remix_skeleton
@@ -335,6 +436,7 @@ void reset() {
 namespace dusk::remix_skeleton {
 void set_matrix_group(const J3DShapeMtx*) {}
 void end_shape() {}
+void begin_frame() {}
 void reset() {}
 } // namespace dusk::remix_skeleton
 

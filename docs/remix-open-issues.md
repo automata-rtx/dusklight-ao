@@ -93,9 +93,16 @@ replacement authored from that capture binds to the whole body — issue 15,
 built across all three repos 2026-08-08, CI-green on every target, NOT tested in
 game.** The game publishes its joint tree and slot mapping, aurora composes it
 with its palette compaction, and the fork merges the draws and resolves one
-replacement for the character at runtime. **Envelope-skinned models work; rigid
-multi-matrix models capture correctly but would skin wrongly if replaced**, and
-the remaining aurora change is named in the entry.
+replacement for the character at runtime. Both skinning paths — envelope and
+rigid multi-matrix — now present the same joint space.
+
+**The first build of it crashed on launch (2026-08-09) and the fix is also
+untested.** Null `mInvJointMtx` on any model without an EVP1 envelope block;
+the bind pose now comes from `J3DTransformInfo`, which every model has. A
+second defect found while fixing it — the joint palette was a scratch buffer
+whose address outlived it in the GX FIFO — is fixed in the same change and was
+**never observed**, only read. Both are written up at the end of issue 15,
+including what their regression signatures look like.
 
 **Two fork guards fire only in CI**, and both have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
@@ -1260,6 +1267,59 @@ Added **2026-08-08**:
     The joint palette is rebuilt per shape packet and **must not be cached
     across frames** — these are animated draw matrices, and holding one would
     freeze the character in the pose it was first seen in.
+
+    **It also must not be a scratch buffer, and the first version was one.**
+    `GXSetModelIdentity` writes the palette's *address* into the GX FIFO, and
+    aurora does not drain the FIFO until `end_frame` (`lib/gx/fifo.cpp`
+    `drain()`, called from `aurora.cpp` `end_frame`). One shared vector rebuilt
+    per shape packet therefore held some *later* model's matrices by the time
+    the command processor read any earlier address — and, whenever the joint
+    count changed, freed memory. The buffer is now per model instance,
+    allocated once, only ever overwritten in place, and released only from
+    `remix_skeleton::begin_frame`, which runs immediately after
+    `aurora_begin_frame` where the FIFO is known drained. **Read from the
+    source, not observed in a session** — the crash below fired first and would
+    have masked it.
+
+    **The build crashed on launch, and the fix narrowed the feature.** Reported
+    2026-08-09: black screen, shaders compile, exit to desktop before any scene
+    is visible; `EXCEPTION_ACCESS_VIOLATION`, **fault address `0x0`**, revision
+    `b1467d13`. Cause, read in the source: the first version took each joint's
+    bind transform by inverting `J3DJointTree::getInvJointMtx(i)`, and
+    `mInvJointMtx` is assigned in exactly one place —
+    `J3DModelLoader::readEnvelop` (`J3DModelLoader.cpp:581`), which runs only
+    for a model carrying an EVP1 envelope block. `J3DJointTree`'s constructor
+    leaves it `NULL` (`J3DJointTree.cpp:21`), so the first model without
+    envelopes to be drawn read address 0. **This is inference from the source
+    plus a matching fault address, not a debugger session** — no symbolicated
+    frame was available.
+
+    The bind pose is now composed from `J3DTransformInfo`, which every joint of
+    every model carries: local = translate-rotate then column scale, world =
+    parent × local, which is the same composition
+    `J3DMtxCalcCalcTransformBasic` performs on the same fields. That removes
+    the dependency rather than gating on it, so rigid-only models keep the
+    feature instead of being excluded from it.
+
+    Two second-order effects of the swap, both stated because neither is
+    verified:
+
+    - The composed rest pose and the EVP1 inverse-bind pose are the same
+      quantity for a well-formed model but are not the same *bytes*. It does
+      not affect deformation — `sanitizeBoneXforms` composes `bindPose · M` and
+      UsdSkel divides `bindPose` back out, so the bind pose cancels — but the
+      armature Blender draws now comes from the joint tree rather than from
+      EVP1.
+    - Scale compensation (`J3DJoint::getScaleCompensate`, the Maya path) is not
+      applied. It divides a joint's rotation basis by its parent's scale, so it
+      is a no-op wherever the rest pose has unit scale, which is the common
+      case and is not all cases.
+
+    **Regression signature for both of the above:** the crash is gone or it is
+    not — it fired on the first frame with a rigid model, so it cannot hide. A
+    wrong palette lifetime shows as characters whose bones jump to another
+    model's pose for a frame, or as a crash inside the command processor at
+    `end_frame` rather than in the draw path.
 
     **Measurement, so none of this needs to be judged by eye.**
     `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…]`
