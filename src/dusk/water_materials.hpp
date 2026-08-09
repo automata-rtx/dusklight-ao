@@ -47,13 +47,26 @@ inline bool isWaterMaterialName(const char* name, int nameLength) {
     }
 
     static const char* const kWaterTags[] = {
-        "MA02", "MA03", "MA06", "MA09", "MA10", "MA17", "MA19",
+        "MA02", "MA06", "MA09", "MA10", "MA17", "MA19",
     };
 
     for (const char* tag : kWaterTags) {
         if (std::memcmp(&name[3], tag, 4) == 0) {
             return true;
         }
+    }
+
+    // MA03 is the one tag that is not water on its own. dKy_bg_MAxx_proc gives it the same
+    // fog and shine treatment as MA09, so the game does not distinguish - but the names do,
+    // and the 2026-08-08 20:35 session showed why it matters: cc_MA03_Sunbeam_v is a light
+    // shaft, and turning a light shaft into refracting water is worse than leaving it alone.
+    // The water ones in that session named themselves: cd_MA03_Funsui_v (fountain),
+    // ce_MA03_FunsuiKasan_v_x and ce_MA03_WaterKasan_v_x.
+    //
+    // An MA03 rejected here still reports through dusk.matname with water=0, so a water
+    // surface named some third way shows up as a name to add rather than as absent water.
+    if (std::memcmp(&name[3], "MA03", 4) == 0) {
+        return std::strstr(name, "Water") != nullptr || std::strstr(name, "Funsui") != nullptr;
     }
 
     return false;

@@ -13,6 +13,7 @@
 
 #if TARGET_PC
 #include "dusk/gpu_skinning.h"
+#include <aurora/gfx.hpp>
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -244,6 +245,17 @@ void J3DMatPacket::draw() {
     }
 
     J3DShape::resetVcdVatCache();
+
+#if TARGET_PC
+    // Close the water bracket opened by mpMaterial->load() above.
+    //
+    // Without this the flag is not a property of a draw but a latch: it stayed set from the
+    // last water material until some later material happened to load, so everything drawn in
+    // between inherited it - particles and UI, which never load a J3D material at all, and
+    // the first draws of the next frame. The 2026-08-08 20:35 session marked 9 materials as
+    // water and Remix saw 64 distinct textures arrive as water, including terrain and UI.
+    aurora::gfx::set_dusklight_water(false);
+#endif
 
 #if DEBUG && TARGET_PC
     if (mpMaterial->mMaterialName != nullptr) {
