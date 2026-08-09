@@ -17,6 +17,9 @@
 // state is programmed and therefore the only place that brackets exactly its own draws.
 
 #include <cstring>
+#include <unordered_set>
+
+#include "dusk/logging.h"
 
 namespace dusk {
 namespace water {
@@ -54,6 +57,36 @@ inline bool isWaterMaterialName(const char* name, int nameLength) {
     }
 
     return false;
+}
+
+// One line per distinct material name, with the verdict.
+//
+// This exists because the first attempt at marking water produced no water at all, and the
+// two explanations - the hook never running, and the names not being what was expected -
+// are indistinguishable from the outside. Zero lines means the former; lines without a
+// water=1 among them means the latter, and says what the names actually are.
+//
+// Deduplicated by name pointer. Names live in the model's archive data, so the same
+// material re-drawn every frame reports once, while the same name in a second room reports
+// again - which is wanted, since that is how a room whose water is named differently shows
+// up. Capped, with a notice at the cap so a truncated list is never read as a short one.
+inline void reportMaterialName(const char* name, bool isWater) {
+    static std::unordered_set<const void*> s_seen;
+    static bool s_truncated = false;
+
+    if (name == nullptr || s_seen.count(name) != 0) {
+        return;
+    }
+    if (s_seen.size() >= 192) {
+        if (!s_truncated) {
+            s_truncated = true;
+            DuskLog.info("dusk.matname.trunc cap=192 - further distinct material names not reported");
+        }
+        return;
+    }
+
+    s_seen.insert(name);
+    DuskLog.info("dusk.matname name={} water={}", name, isWater ? 1 : 0);
 }
 
 }  // namespace water

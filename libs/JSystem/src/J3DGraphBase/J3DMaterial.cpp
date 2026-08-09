@@ -5,9 +5,6 @@
 #include "JSystem/JKernel/JKRHeap.h"
 
 #if TARGET_PC
-#include "JSystem/J3DGraphAnimator/J3DModel.h"
-#include "JSystem/J3DGraphAnimator/J3DModelData.h"
-#include "JSystem/JUtility/JUTNameTab.h"
 #include "dusk/water_materials.hpp"
 #include <aurora/gfx.hpp>
 #include <cstring>
@@ -194,6 +191,12 @@ void J3DMaterial::initialize() {
     mpOrigMaterial = NULL;
     mMaterialAnm = NULL;
     mSharedDLObj = NULL;
+#if TARGET_PC
+    // J3DModelLoader::AssignMaterialNames fills this for everything it loads, but a
+    // material built any other way never passes through there. Left uninitialised it is
+    // whatever the heap held, which the water check would hand to strlen.
+    mMaterialName = NULL;
+#endif
 }
 
 u32 J3DMaterial::countDLSize() {
@@ -235,39 +238,26 @@ void J3DMaterial::makeSharedDisplayList() {
 // that removed the material report's grp= field: in this engine, scheduling a draw and
 // issuing one are far apart.
 //
-// The name is looked up rather than cached because a cache keyed on the material pointer
-// goes stale when a room's archive is freed and the allocator hands the address to
-// something else - which, in a game that changes rooms constantly, would silently make an
-// unrelated material refractive.
-static void noteDusklightWaterMaterial(u32 materialID) {
-    J3DModel* model = j3dSys.getModel();
-    if (model == NULL) {
-        aurora::gfx::set_dusklight_water(false);
-        return;
-    }
+// Reads mMaterialName, which J3DModelLoader::AssignMaterialNames fills for every material
+// at load time on this platform. An earlier revision looked the name up through
+// j3dSys.getModel() and the model data's name table instead, and marked nothing at all:
+// J3DMatPacket::draw() sets the packet's texture before calling load() but does not set the
+// model, so that lookup was reading whatever model was last drawn, or none. The name is
+// already on the material - there was never a reason to go looking for it.
+static void noteDusklightWaterMaterial(const J3DMaterial* material) {
+    const char* name = material->mMaterialName;
+    const bool isWater =
+        name != NULL && dusk::water::isWaterMaterialName(name, (int)strlen(name));
 
-    J3DModelData* modelData = model->getModelData();
-    if (modelData == NULL || materialID >= modelData->getMaterialNum()) {
-        aurora::gfx::set_dusklight_water(false);
-        return;
-    }
-
-    JUTNameTab* nameTable = modelData->getMaterialName();
-    if (nameTable == NULL) {
-        aurora::gfx::set_dusklight_water(false);
-        return;
-    }
-
-    const char* name = nameTable->getName((u16)materialID);
-    aurora::gfx::set_dusklight_water(
-        name != NULL && dusk::water::isWaterMaterialName(name, (int)strlen(name)));
+    dusk::water::reportMaterialName(name, isWater);
+    aurora::gfx::set_dusklight_water(isWater);
 }
 #endif
 
 void J3DMaterial::load() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
-    noteDusklightWaterMaterial(mMaterialID);
+    noteDusklightWaterMaterial(this);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {
@@ -278,7 +268,7 @@ void J3DMaterial::load() {
 void J3DMaterial::loadSharedDL() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
-    noteDusklightWaterMaterial(mMaterialID);
+    noteDusklightWaterMaterial(this);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {
