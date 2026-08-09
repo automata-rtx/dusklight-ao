@@ -20,40 +20,58 @@
 #include <cstring>
 #include <unordered_set>
 
+#include <dolphin/gx/GXAurora.h>
+
 #include "dusk/logging.h"
 
 namespace dusk {
 namespace water {
 
-// The water surfaces, by the four characters dKy_bg_MAxx_proc keys on.
+// The water materials, by the four characters dKy_bg_MAxx_proc keys on, and which of the
+// two roles each one plays. Read from that function (d_kankyo.cpp:11418-11479) rather than
+// guessed - it is the game's own dispatch over these same names.
 //
-//   MA02, MA10  the projected reflection layer (dComIfGd_setListInvisisble + an effect
-//               matrix built from the camera, d_kankyo.cpp)
-//   MA03, MA09  the water surface, including the shine rate the environment drives
-//   MA06        the murky body (dKy_murky_set)
-//   MA17, MA19  further surface variants handled beside MA03/MA09
+//   MA03, MA09, MA17, MA19   the water surface. dKy_bg_MAxx_proc drives their fog type and,
+//                            for MA09, the shine rate (mWaterSurfaceShineRate).
+//   MA06                     the murky body (dKy_murky_set)
+//   MA02, MA10               NOT the surface. dKy_bg_MAxx_proc calls dComIfGd_setListInvisisble
+//                            and then installs a C_MTXLightPerspective built from the live
+//                            camera fovy and aspect as the material's texture matrix - a
+//                            screen-projected fake reflection drawn over the water.
 //
-// Deliberately excluded: MA00/MA01/MA04/MA16, which are the water-*in* fog overlay rather
+// Deliberately excluded entirely: MA00/MA01/MA04/MA16, the water-*in* fog overlay rather
 // than a water surface - they are what the camera looks through while submerged, and making
 // them refractive would put a second water surface in front of the eye.
-inline bool isWaterMaterialName(const char* name, int nameLength) {
+//
+// Why the roles are separate rather than one "is water" answer: a body of water arrives as
+// two or three coincident draws, and only one of them is the surface. Making all of them
+// refracting interfaces stacks sheets of glass where there should be one surface, which is
+// what the 2026-08-08 23:47 session looked like - 11 water materials reached Remix, 4 of
+// them the projected layer, and the water did not read as one continuous surface.
+inline u32 waterRoleForMaterialName(const char* name, int nameLength) {
     // The convention places the tag at offset 3, which is why dKy_bg_MAxx_proc reads
     // name[3] and name[4] before comparing. Anything shorter cannot carry one.
     if (name == nullptr || nameLength < 7) {
-        return false;
+        return GX_AURORA_DUSKLIGHT_WATER_NONE;
     }
 
     if (name[3] != 'M' || name[4] != 'A') {
-        return false;
+        return GX_AURORA_DUSKLIGHT_WATER_NONE;
     }
 
-    static const char* const kWaterTags[] = {
-        "MA02", "MA06", "MA09", "MA10", "MA17", "MA19",
+    // The camera-projected overlay. Kept as its own role rather than dropped here, so the
+    // decision of what to do with it lives in the renderer and stays switchable.
+    if (std::memcmp(&name[3], "MA02", 4) == 0 || std::memcmp(&name[3], "MA10", 4) == 0) {
+        return GX_AURORA_DUSKLIGHT_WATER_PROJECTED;
+    }
+
+    static const char* const kSurfaceTags[] = {
+        "MA06", "MA09", "MA17", "MA19",
     };
 
-    for (const char* tag : kWaterTags) {
+    for (const char* tag : kSurfaceTags) {
         if (std::memcmp(&name[3], tag, 4) == 0) {
-            return true;
+            return GX_AURORA_DUSKLIGHT_WATER_SURFACE;
         }
     }
 
@@ -64,21 +82,31 @@ inline bool isWaterMaterialName(const char* name, int nameLength) {
     // The water ones in that session named themselves: cd_MA03_Funsui_v (fountain),
     // ce_MA03_FunsuiKasan_v_x and ce_MA03_WaterKasan_v_x.
     //
-    // An MA03 rejected here still reports through dusk.matname with water=0, so a water
+    // An MA03 rejected here still reports through dusk.matname with role=none, so a water
     // surface named some third way shows up as a name to add rather than as absent water.
     if (std::memcmp(&name[3], "MA03", 4) == 0) {
-        return std::strstr(name, "Water") != nullptr || std::strstr(name, "Funsui") != nullptr;
+        const bool isWater =
+            std::strstr(name, "Water") != nullptr || std::strstr(name, "Funsui") != nullptr;
+        return isWater ? GX_AURORA_DUSKLIGHT_WATER_SURFACE : GX_AURORA_DUSKLIGHT_WATER_NONE;
     }
 
-    return false;
+    return GX_AURORA_DUSKLIGHT_WATER_NONE;
+}
+
+inline const char* waterRoleName(u32 role) {
+    switch (role) {
+    case GX_AURORA_DUSKLIGHT_WATER_SURFACE:   return "surface";
+    case GX_AURORA_DUSKLIGHT_WATER_PROJECTED: return "projected";
+    default:                                  return "none";
+    }
 }
 
 // One line per distinct material name, with the verdict.
 //
 // This exists because the first attempt at marking water produced no water at all, and the
 // two explanations - the hook never running, and the names not being what was expected -
-// are indistinguishable from the outside. Zero lines means the former; lines without a
-// water=1 among them means the latter, and says what the names actually are.
+// are indistinguishable from the outside. Zero lines means the former; lines with no
+// role=surface among them means the latter, and says what the names actually are.
 //
 // Deduplicated by name pointer. Names live in the model's archive data, so the same
 // material re-drawn every frame reports once, while the same name in a second room reports
@@ -91,7 +119,7 @@ inline bool isWaterMaterialName(const char* name, int nameLength) {
 // names, so this is sized for a session that visits several areas.
 inline constexpr std::size_t kMaxReportedNames = 512;
 
-inline void reportMaterialName(const char* name, bool isWater) {
+inline void reportMaterialName(const char* name, u32 role) {
     static std::unordered_set<const void*> s_seen;
     static bool s_truncated = false;
 
@@ -108,7 +136,7 @@ inline void reportMaterialName(const char* name, bool isWater) {
     }
 
     s_seen.insert(name);
-    DuskLog.info("dusk.matname name={} water={}", name, isWater ? 1 : 0);
+    DuskLog.info("dusk.matname name={} role={}", name, waterRoleName(role));
 }
 
 }  // namespace water

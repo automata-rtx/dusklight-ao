@@ -251,11 +251,12 @@ void J3DMaterial::makeSharedDisplayList() {
 // already on the material - there was never a reason to go looking for it.
 static void noteDusklightWaterMaterial(const J3DMaterial* material) {
     const char* name = material->mMaterialName;
-    const bool isWater =
-        name != NULL && dusk::water::isWaterMaterialName(name, (int)strlen(name));
+    const u32 role = name != NULL
+                         ? dusk::water::waterRoleForMaterialName(name, (int)strlen(name))
+                         : GX_AURORA_DUSKLIGHT_WATER_NONE;
 
-    dusk::water::reportMaterialName(name, isWater);
-    GXSetDusklightWater(isWater);
+    dusk::water::reportMaterialName(name, role);
+    GXSetDusklightWater(role);
 }
 #endif
 
