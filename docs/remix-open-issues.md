@@ -920,6 +920,35 @@ Added **2026-07-29**:
     the same shape of error rule 3 exists for, and it was written into these
     docs as a cause before being checked.
 
+    **The normal-slot binding is reverted (2026-08-09).** Putting the draw's own
+    colour texture in the water's normal slot was wrong twice over: a colour
+    texture decoded as a tangent normal is noise, and on a lake where a normal
+    map had been authored for one layer it added a *second* one — which per an
+    RTX Remix rendering engineer does not blend correctly. The game's textures
+    are left as they are, keeping their hashes and staying replaceable; surface
+    detail comes from an authored replacement and from nothing else.
+
+    That second point is the general one, and it is why a body of water should
+    present **one** surface. Three things landed for it, all **untested**:
+
+    - `uvTiling` and `scrollSpeed` drive the water surface's texcoords in place
+      of the transform the draw arrived with. The game's mapping was authored
+      for its own scale and a 640x480 rasterizer, and a ripple texture stretched
+      once across Lake Hylia reads as a smear. Same clock as the shader's
+      `timeSinceStartSeconds`, and the scroll offset is wrapped so a long
+      session does not decay into float noise.
+    - `hideSurfaceTag` drops the water surfaces carrying one MAxx tag, so a lake
+      is one moving surface rather than several stacked refracting interfaces.
+      **Default 0, hiding nothing** — which layer should survive is a look
+      decision nobody has made yet. From the names logged so far a lake is MA09
+      (`MeraWater`, shine) over MA06 (`NigoriWater`, murky body), so **6 is the
+      first thing to try**. **MA03 is fountains and waterfalls** — hiding that
+      tag would delete them.
+    - Aurora carries the MAxx tag per draw in `D3DMATERIAL9::Ambient.a`, the
+      last free channel of the side band, and both `dusk.matname` and
+      `dusklight.water` report it. That is what turns `hideSurfaceTag` from a
+      guess into a setting.
+
     `rtx.dusklight.water.applyToReplacements` (default on) survives as a guard
     for the case where an opaque material really does reach a water draw: it
     keeps the authored normal map and applies the water treatment, and leaves an
@@ -946,10 +975,10 @@ Added **2026-07-29**:
     **Regression signature, in order of severity:** materials that are not water
     turning translucent (the mark leaking again — the 20:35 failure); water
     geometry *vanishing* (the projected mark leaking, the mirror of that
-    failure); water reading as uniformly tilted or noisy rather than rippled
-    (the colour-texture normal decode showing through on a hash with no authored
-    normal map — lower `rtx.translucentMaterial.normalIntensity`, or turn
-    `surfaceDetailFromGameTexture` off); an authored water material losing
+    failure); the water texture at the wrong scale or not
+    moving (`uvTiling` / `scrollSpeed`, both live in the overlay); water geometry
+    disappearing where a fountain or waterfall used to be (`hideSurfaceTag` set
+    to a tag that is load-bearing elsewhere — MA03); an authored water material losing
     colour or detail it used to show (the replacement coercion dropping more
     than albedo — turn `applyToReplacements` off to compare); water invisible rather than transparent
     (`transmittanceMeasurementDistance`, 200 and **still an uncalibrated

@@ -91,9 +91,18 @@ camera-projected reflection layer made water read as **consistent** (2026-08-09
 featureless glass. **What this session checks is the fix for that:** the game's
 own ripple texture now drives the water's normal, scrolling at the game's rate.
 
-Until a real normal map is authored over it, that is a *colour* texture decoded
-as a tangent normal — an animated perturbation, not real ripples. Judge it as
-"is there visible, moving surface detail", not as "does this look like water".
+That binding is **reverted** as of 2026-08-09: a colour texture decoded as a
+tangent normal is noise, and on a lake with an authored normal map it added a
+second one, which Remix does not blend. Water is plain glass until a normal map
+is authored against a texture hash; the fork now owns the tiling and scroll
+instead, and can drop all but one of a lake's stacked surfaces.
+
+**What to set before judging anything.** In F1 → Dusklight → Water: try
+**Hide Surface Tag = 6** (the murky body, so a lake is one surface) and move
+**UV Tiling** until the ripple texture reads at a natural scale from where you
+are standing. Both are live; no rebuild. Report the values that worked — those
+are the result. Do not set Hide Surface Tag to 3: fountains and waterfalls are
+MA03.
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
@@ -103,10 +112,9 @@ raise or lower it once. Quit, send both logs. Nothing here needs the clock.
 disappeared. Those are the two failures the log cannot describe on its own, and
 the first has happened before. Everything else is in the log.
 
-If the ripples read as noise or as a uniform tilt rather than as movement, that
-is the colour-texture normal decode showing through — slide **Normal Intensity**
-in the Water panel down until it reads as surface rather than static, and report
-the value that worked. That number is a result, not a complaint.
+The `tag=MAxx` field on every `dusklight.water` line says what each body of
+water is made of. That is the field to read before deciding what Hide Surface
+Tag should default to.
 
 **What the logs will say.** Four lines trace the mark end to end, so the first
 one that is missing is where it died:
