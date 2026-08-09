@@ -899,6 +899,33 @@ Added **2026-07-29**:
     texture decoded as a tangent normal: an animated perturbation, not real
     ripples. `rtx.translucentMaterial.normalIntensity` scales it.
 
+    **Normal maps: a capture cannot express water (2026-08-09 15:56).** Replacing
+    a water texture with an authored normal map worked, and the same lake then
+    showed large chunks without it and hard cutoffs between them. Two causes,
+    only one of them a data problem:
+
+    1. **A body of water is drawn from several textures.** That session's log
+       has one replaced hash and three unreplaced ones still on the water path
+       with `normalTex=1` — the raw colour texture in the normal slot, which is
+       the noisy look. The `dusklight.water` lines name every hash that reached
+       Remix; authoring the rest is a mod-side fix needing no rebuild.
+    2. **`GameCapturer::captureMaterial` writes an albedo texture path and
+       nothing else** (`rtx_game_capturer.cpp:505` — read from source). There is
+       no translucent path in the capturer, so a water draw captures as an
+       *opaque* material and anything authored from that capture stays opaque
+       unless its type was changed by hand. A replaced water draw was therefore
+       an opaque surface beside translucent ones on the same lake — a different
+       kind of surface, not a shading difference.
+
+    Water now stays water under a replacement
+    (`rtx.dusklight.water.applyToReplacements`, default on): an opaque
+    replacement keeps its **authored normal map** and gets the water treatment
+    around it, and one that is already translucent is left completely alone.
+    **Untested.** `dusklight.water.replaced` reports `type=` and `coerced=`, so
+    which mechanism was in play is in the next log rather than inferred — the
+    capturer's behaviour is read from source, but that any *particular* authored
+    material is opaque is not.
+
     **A dead end, recorded so it is not re-derived.** The idea that an additive
     pass marks "light over a surface" and would separate the base water pass
     from the scrolling one is **wrong for this game.** Measured over that
@@ -913,9 +940,11 @@ Added **2026-07-29**:
     turning translucent (the mark leaking again — the 20:35 failure); water
     geometry *vanishing* (the projected mark leaking, the mirror of that
     failure); water reading as uniformly tilted or noisy rather than rippled
-    (the colour-texture normal decode showing through — lower
-    `rtx.translucentMaterial.normalIntensity`, or turn
-    `surfaceDetailFromGameTexture` off); water invisible rather than transparent
+    (the colour-texture normal decode showing through on a hash with no authored
+    normal map — lower `rtx.translucentMaterial.normalIntensity`, or turn
+    `surfaceDetailFromGameTexture` off); an authored water material losing
+    colour or detail it used to show (the replacement coercion dropping more
+    than albedo — turn `applyToReplacements` off to compare); water invisible rather than transparent
     (`transmittanceMeasurementDistance`, 200 and **still an uncalibrated
     guess**); a water body losing its reflection entirely rather than gaining a
     traced one (turn `hideProjectedLayer` off to confirm).
