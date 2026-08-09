@@ -3,6 +3,7 @@
 #if TARGET_PC
 
 #include <cstring>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -264,10 +265,12 @@ bool declare(J3DModelData* modelData, u64& modelKeyOut) {
 struct Palette {
     std::vector<f32> values;
     u16 jointNum = 0;
+    u32 lastSeenFrame = 0;
 };
 
 std::unordered_map<const J3DModel*, Palette> s_palettes;
 const J3DModel* s_paletteModel = nullptr;
+u32 s_frame = 0;
 
 const f32* build_joint_palette(J3DModel* model, J3DModelData* modelData, u16 jointNum) {
     J3DMtxBuffer* mtxBuffer = model->getMtxBuffer();
@@ -288,6 +291,7 @@ const f32* build_joint_palette(J3DModel* model, J3DModelData* modelData, u16 joi
     }
 
     Palette& palette = s_palettes[model];
+    palette.lastSeenFrame = s_frame;
     const size_t wanted = static_cast<size_t>(jointNum) * 12;
     const bool sameModelThisPacket = (s_paletteModel == model) && palette.jointNum == jointNum &&
                                      palette.values.size() == wanted;
@@ -405,20 +409,30 @@ void end_shape() {
 
 void begin_frame() {
     s_paletteModel = nullptr;
+    ++s_frame;
 
     // Both maps are keyed by pointers to objects the game frees - a model instance dies with its
-    // actor, model data with its archive - so entries accumulate over a session. Dropping them
-    // wholesale is only safe where no queued GX command can still name a palette address, which
-    // is exactly here: aurora drained the FIFO in the previous end_frame. Doing this from
-    // anywhere inside a frame would hand the command processor a freed pointer.
+    // actor, model data with its archive - so entries accumulate over a session. Releasing them
+    // is only safe where no queued GX command can still name a palette address, which is exactly
+    // here: aurora drained the FIFO in the previous end_frame. Doing it from anywhere inside a
+    // frame would hand the command processor a freed pointer.
     //
-    // The cost of a drop is one rebuilt palette and one re-declaration per live model, and the
-    // fork's declare is idempotent on the model key.
-    constexpr size_t kMaxTracked = 512;
-    if (s_palettes.size() > kMaxTracked) {
-        s_palettes.clear();
+    // Palettes are dropped by age rather than by a size cap. A cap sounds simpler and is wrong:
+    // a stage holds more live models than any cap worth setting, so it would clear the map every
+    // frame and every live model would reallocate its buffer every frame - a per-frame allocation
+    // storm in a runtime that is already draw-bound. Age is the actual question being asked.
+    constexpr u32 kStaleFrames = 300; // ~10s at 30fps; a model unseen that long is gone or offscreen
+    if ((s_frame % 60) == 0) {
+        for (auto it = s_palettes.begin(); it != s_palettes.end();) {
+            it = (s_frame - it->second.lastSeenFrame) > kStaleFrames ? s_palettes.erase(it)
+                                                                     : std::next(it);
+        }
     }
-    if (s_declared.size() > kMaxTracked) {
+
+    // Declarations are keyed by model *data*, one per loaded asset rather than per instance, and
+    // each holds only a key and two counts - so a plain cap is enough here. Re-declaring is
+    // idempotent on the model key.
+    if (s_declared.size() > 4096) {
         s_declared.clear();
     }
 }
