@@ -280,14 +280,15 @@ visible. Cause was read in the source afterwards — the game took each joint's
 bind pose from `J3DJointTree::getInvJointMtx`, which is a **null pointer** for
 any model without an EVP1 envelope block, so the first rigid model drawn read
 address `0x0`. Fixed 2026-08-09 by composing the bind pose from
-`J3DTransformInfo`, which every joint of every model carries. **The fix is
-untested.**
+`J3DTransformInfo`, which every joint of every model carries. **PASSED
+2026-08-09** — a full session with no crash, on the same build that reports
+`dx9.skeleton model identity export found`.
 
-So: start the game, get to a scene with a character in it, and stop there. If
-it exits to desktop, send the crash block — `Fault addr: 0x0` with the same
-shape means the diagnosis was wrong and the RVAs need symbolicating against the
-artifact rather than reasoned about. Everything below is unreachable until this
-passes, which is why it is first.
+Keep it as the regression recipe: start the game, get to a scene with a
+character in it, and stop there. If it exits to desktop, send the crash block —
+`Fault addr: 0x0` with the same shape means the fix regressed or the diagnosis
+was wrong and the RVAs need symbolicating against the artifact rather than
+reasoned about.
 
 Also worth one glance at the log before playing further:
 
@@ -320,21 +321,38 @@ skeleton.
 | In Blender: one mesh, named bones in a hierarchy | Working as intended. |
 | In Blender: the body is right **when posed** but the unposed rest pose has pieces piled near the origin | **Expected, and already diagnosed** — a merged character's vertices are in two spaces (rigid packets joint-local, envelope packets model-space). Deformation is correct; only the rest pose is wrong. The fix is worked out and deliberately not built until this confirms it is real: `remix-open-issues.md` issue 15. |
 
-**Regression signature elsewhere:** a character drawn twice, a new body showing
-through an old one, means the sibling suppression is not firing —
-`drawsSuppressed=` will be zero. Set `rtx.dusklight.skeleton.report = True` for
-one bounded frame of
+**The hash debug view cannot answer this, and that is not a bug.** The merge is
+**capture-side**. At runtime the only thing that changes is that *if* a body
+replacement exists for the group hash, one draw instantiates it and the siblings
+are dropped. With nothing authored yet, every sibling draw is submitted exactly
+as before and carries its own geometry hash — so the debug view shows the same
+many-pieces picture it always did, whether the feature is working perfectly or
+not running at all. Take a capture; that is the instrument.
+
+**What the log says without you setting anything.** One `skeleton.rmx` block is
+emitted automatically per session — on the first frame that binds a character,
+or at frame 600 if none ever does, which is the case that matters most:
 
 ```
 skeleton.rmx enable=1 merge=1 declared=N rejected=N boundDraws=N unboundDraws=N
-             replaceBodies=1 bodiesReplaced=N drawsSuppressed=N
-skeleton.rmx   model=0x… joints=N root=…
+             replaceBodies=1 bodiesReplaced=N drawsSuppressed=N trigger=…
+skeleton.rmx   model=0x… groupHash=0x… joints=N root=…
 ```
 
-which separates "the game is not publishing" (`boundDraws=0`) from "it published
-and the merge refused" (`rejected` climbing) from "it claimed and something
-downstream went wrong" (`bodiesReplaced` non-zero, body still wrong). The option
-is `NoSave` and clears itself after reporting.
+| Field | Reading |
+| :-- | :-- |
+| `trigger=firstBoundDraw` | The game published and a draw carried it. The feature is live. |
+| `trigger=deadline`, `boundDraws=0` | 600 frames with nothing bound. The game published nothing — check `dx9.skeleton model identity export` in the game log first. |
+| `declared=0` | The game never called the declare export, or every declaration was refused (`rejected`). |
+| `groupHash=0x…` | **The number to author a body replacement against**, and the name the merged mesh takes in a capture. It is a salted hash of the model key, so it cannot be derived outside the runtime — this line is the only place it appears outside a capture. |
+| `bodiesReplaced` non-zero but the body is still wrong | It claimed and something downstream went wrong, rather than never claiming. |
+
+`rtx.dusklight.skeleton.report = True` forces an extra block at any time; it is
+`NoSave` and clears itself after reporting.
+
+**Regression signature elsewhere:** a character drawn twice, a new body showing
+through an old one, means the sibling suppression is not firing —
+`drawsSuppressed=` will be zero.
 
 #### 0i. What a capture contains: sky, sun, HD textures (issue 14) — NEVER RUN
 
