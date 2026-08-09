@@ -1321,6 +1321,29 @@ Added **2026-08-08**:
     model's pose for a frame, or as a crash inside the command processor at
     `end_frame` rather than in the draw path.
 
+    **The debug view was the wrong instrument, and that was a design mistake
+    rather than a limitation (fixed 2026-08-09).** The owner ran the fixed build,
+    turned on the Geometry Hash debug view, and saw characters still made of many
+    parts — which was exactly what rev 1 produced, and told them nothing, because
+    the view looked identical whether the feature worked or was completely dead.
+
+    Rev 1 merged geometry **in the capture** and solved replacement binding
+    through the group hash, and never asked the separate question of what the
+    artist should *see* at runtime. The distinction it missed is **identity
+    versus geometry**. Merging geometry at runtime would be expensive and is not
+    what anyone wanted. Merging identity is free: `associatedGeometryHash` is
+    commented in `rtx_materials.h` as a debug-view field, is written in exactly
+    one place (`rtx_instance_manager.cpp`) and read only by the 16-bit fold the
+    debug view colours by. Nothing keys on it — `DrawCallCache` buckets on
+    `TopologicalHash` and matches on `FullGeometryHash`, material and bone hashes
+    taken from the actual buffers, and the replacement lookup computes its own.
+    So a draw carrying a binding now reports the group hash there and a body
+    paints one colour. **Untested.**
+
+    Unbound draws keep their own hash on purpose: a body that is one colour in
+    places and a patchwork elsewhere is showing you precisely which draws the
+    game published no identity for.
+
     **Still open, and it is the one that decides whether the Blender round trip
     is pleasant: a merged character's vertices are in two different spaces.**
     Found while fixing the crash, by reading `J3DMtxBuffer::calcDrawMtx`

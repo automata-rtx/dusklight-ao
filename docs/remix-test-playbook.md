@@ -321,13 +321,22 @@ skeleton.
 | In Blender: one mesh, named bones in a hierarchy | Working as intended. |
 | In Blender: the body is right **when posed** but the unposed rest pose has pieces piled near the origin | **Expected, and already diagnosed** — a merged character's vertices are in two spaces (rigid packets joint-local, envelope packets model-space). Deformation is correct; only the rest pose is wrong. The fix is worked out and deliberately not built until this confirms it is real: `remix-open-issues.md` issue 15. |
 
-**The hash debug view cannot answer this, and that is not a bug.** The merge is
-**capture-side**. At runtime the only thing that changes is that *if* a body
-replacement exists for the group hash, one draw instantiates it and the siblings
-are dropped. With nothing authored yet, every sibling draw is submitted exactly
-as before and carries its own geometry hash — so the debug view shows the same
-many-pieces picture it always did, whether the feature is working perfectly or
-not running at all. Take a capture; that is the instrument.
+**The Geometry Hash debug view is the fastest check, as of 2026-08-09.** Every
+draw carrying a published identity reports the **group hash** there, so a
+character paints as **one solid colour**. Turn the view on and look at a
+character:
+
+| What you see | Reading |
+| :-- | :-- |
+| The whole body is one flat colour | The game published an identity for every one of its draws and the runtime picked it up. |
+| The body is one colour in places and a patchwork elsewhere | The patchwork draws published **no** identity. That is deliberately not hidden — those are the draws that will not merge, and they are the ones to chase. |
+| Still a full patchwork, as before | Nothing is being published at all. Check `dx9.skeleton model identity export` in the game log, then the `skeleton.rmx` block below. |
+
+This was **not** true of the 2026-08-08 build, which merged only in the capture
+and left the debug view painting a per-draw patchwork whether the feature worked
+or was completely dead. What the view shows is *identity*, not geometry: the
+runtime still submits each draw separately and still path-traces exactly what it
+did before. Merging the actual geometry happens only in a capture.
 
 **What the log says without you setting anything.** One `skeleton.rmx` block is
 emitted automatically per session — on the first frame that binds a character,
