@@ -13,6 +13,7 @@
 #include "JSystem/J3DGraphAnimator/J3DJointTree.h"
 #include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "JSystem/J3DGraphAnimator/J3DModelData.h"
+#include "JSystem/J3DGraphAnimator/J3DMtxBuffer.h"
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "JSystem/J3DGraphBase/J3DShapeMtx.h"
@@ -185,6 +186,72 @@ bool declare(J3DModelData* modelData, u64& modelKeyOut) {
     return record.accepted;
 }
 
+// The model's whole joint palette, rebuilt whenever the model being drawn changes.
+//
+// Each entry is a straight copy of the draw matrix the game would have loaded into a GX
+// position-matrix slot for that joint - J3DShapeMtx::load reads exactly these - so handing them
+// over indexed by joint changes the addressing and nothing else. That equivalence is the reason
+// this is safe: WORLDMATRIX(joint) ends up holding precisely what WORLDMATRIX(compactedSlot) held.
+//
+// Only rigid draw matrices contribute. A weighted envelope is a blend of several joints and has no
+// single joint to sit at; those entries stay identity, the original geometry never indexes them
+// because it reaches them through its own slots, and a replacement that does index one gets a
+// bone that does not move rather than one that moves wrongly.
+//
+// Invalidated in end_shape, so it is rebuilt once per shape packet rather than once per matrix
+// group. It CANNOT be cached across frames: these are animated draw matrices and they change every
+// frame, so a cache keyed on the model alone would pin a character in whatever pose it held when
+// it was first seen.
+//
+// The pointer handed to aurora stays valid because the D3D9 backend consumes it synchronously -
+// it copies the matrices straight into D3D9 world matrix state inside the same call - so nothing
+// downstream holds it past the draw.
+const J3DModel* s_paletteModel = nullptr;
+std::vector<f32> s_jointPalette;
+
+const f32* build_joint_palette(J3DModel* model, J3DModelData* modelData, u16 jointNum) {
+    if (s_paletteModel == model && s_jointPalette.size() == static_cast<size_t>(jointNum) * 12) {
+        return s_jointPalette.data();
+    }
+
+    J3DMtxBuffer* mtxBuffer = model->getMtxBuffer();
+    if (mtxBuffer == NULL) {
+        return NULL;
+    }
+
+    s_jointPalette.assign(static_cast<size_t>(jointNum) * 12, 0.f);
+    for (u16 j = 0; j < jointNum; ++j) {
+        f32* out = s_jointPalette.data() + static_cast<size_t>(j) * 12;
+        out[0] = 1.f;
+        out[5] = 1.f;
+        out[10] = 1.f;
+    }
+
+    const u16 drawMtxNum = modelData->getDrawMtxNum();
+    for (u16 i = 0; i < drawMtxNum; ++i) {
+        if (modelData->getDrawMtxFlag(i) != 0) {
+            continue; // weighted envelope - no single joint to place it at
+        }
+        const u16 joint = modelData->getDrawMtxIndex(i);
+        if (joint >= jointNum) {
+            continue;
+        }
+        const Mtx* drawMtx = mtxBuffer->getDrawMtx(i);
+        if (drawMtx == NULL) {
+            continue;
+        }
+        f32* out = s_jointPalette.data() + static_cast<size_t>(joint) * 12;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                out[row * 4 + col] = (*drawMtx)[row][col];
+            }
+        }
+    }
+
+    s_paletteModel = model;
+    return s_jointPalette.data();
+}
+
 } // namespace
 
 void set_matrix_group(const J3DShapeMtx* shapeMtx) {
@@ -239,12 +306,27 @@ void set_matrix_group(const J3DShapeMtx* shapeMtx) {
         }
     }
 
-    GXSetModelIdentity(modelKey, reinterpret_cast<u64>(model), jointNum, slotCount, slotToJoint);
+    // The palette is what lets aurora address world matrices by joint instead of by this draw's
+    // compacted slots, so every draw of the character agrees on what bone 7 means - which is what
+    // a replacement body authored against the model's skeleton needs.
+    const f32* jointPalette = build_joint_palette(model, modelData, jointNum);
+
+    GXSetModelIdentity(modelKey, reinterpret_cast<u64>(model), jointNum, slotCount, slotToJoint,
+                       jointPalette);
 }
 
-void end_shape() { GXClearModelIdentity(); }
+void end_shape() {
+    GXClearModelIdentity();
+    // Force the next packet to rebuild. See build_joint_palette: these matrices animate, and a
+    // palette held across frames would freeze the character.
+    s_paletteModel = nullptr;
+}
 
-void reset() { s_declared.clear(); }
+void reset() {
+    s_declared.clear();
+    s_paletteModel = nullptr;
+    s_jointPalette.clear();
+}
 
 } // namespace dusk::remix_skeleton
 

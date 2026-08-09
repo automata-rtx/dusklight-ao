@@ -1237,16 +1237,29 @@ Added **2026-08-08**:
       (`rtx_types.cpp`, `minBoneIndex + 1 == numBones`), and an ungated floor
       would defeat that for every rigid packet of every character in the game.
 
-    **The one case not covered: rigid multi-matrix models.** Their palette *is*
-    compacted per draw, so their blend indices do not align with the joint tree.
-    Their captures are correct — the merge remaps through the published table —
-    but a replacement authored from one would skin wrongly at runtime. The fix
-    is aurora skipping the compaction for draws carrying a model identity and
-    emitting global joint indices: R5 already records that Remix ignores
-    `MaxVertexBlendMatrixIndex`, and the raw D3D9 image is not a design goal, so
-    the only cost is that those models scatter in an image nobody sees.
-    Envelope-skinned models — which is what animated characters are — are
-    unaffected and work today.
+    **Rigid multi-matrix models: closed the same day.** They were the one case
+    left out — their palette is compacted per draw, so their blend indices did
+    not align with the joint tree a replacement is authored against, and a body
+    swapped onto one would have skinned wrongly. Aurora now writes the model's
+    **global joint index** as the blend index for any draw carrying a model
+    identity, and loads the model's whole joint palette addressed by joint. The
+    palette comes from the game and each entry is a straight copy of the draw
+    matrix it would have loaded into a GX slot for that joint, so
+    `WORLDMATRIX(joint)` holds precisely what `WORLDMATRIX(compactedSlot)` held:
+    the addressing changes, the rendering does not. Both skinning paths now
+    present the same joint space to Remix.
+
+    This spends R5 on purpose — an index past `MaxVertexBlendMatrixIndex` reads
+    an undefined matrix on real hardware, so the raw D3D9 image scatters these
+    models, and §0 has said since 2026-08-04 that the raw image is a feed and
+    never shown. Two guards: a model with more than 255 joints keeps the
+    compacted form, because the blend index rides in a UBYTE4 lane; and the
+    overflow split is skipped for these draws, because it exists to rewrite
+    indices back into per-group slots and would undo the whole thing.
+
+    The joint palette is rebuilt per shape packet and **must not be cached
+    across frames** — these are animated draw matrices, and holding one would
+    freeze the character in the pose it was first seen in.
 
     **Measurement, so none of this needs to be judged by eye.**
     `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…]`
