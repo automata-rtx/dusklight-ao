@@ -838,6 +838,59 @@ Added **2026-07-29**:
     foliage, grates or grass going solid or vanishing. That would outrank every
     other result in the session.
 
+13. **Water renders as a milky white sheet.** Reported 2026-08-08. Confirmed
+    across Hyrule Field puddles and Lake Hylia; splash particles and the
+    player's ripples are fine, and the surface textures "always showed as
+    white", which with overlapping scrolling UV layers is what reads as milk.
+
+    **Four causes are identified. They are independent, and only some are
+    addressed.** Written out because "water is broken" was treated as one
+    defect for two sessions and it is not.
+
+    | # | Cause | Status |
+    | :-- | :-- | :-- |
+    | 1 | Every water layer fell through to `as<OpaqueMaterialData>()` — an opaque dielectric at roughness 0.7 | addressed: marked draws now become a translucent material |
+    | 2 | Projective texture transforms were discarded, so projected layers sampled with an undivided coordinate | **fixed, CI-green, untested in game** |
+    | 3 | Aurora drops indirect texturing, which is the ripple *warp* | untouched; 3 configs logged (`unsupported-effects.md`) |
+    | 4 | The TEV two-constants-per-stage ceiling — 48 hits in one session | untouched |
+
+    Cause 1's fix, `GXSetDusklightWater` + `rtx.dusklight.water.*`, has now
+    **shipped twice and marked the wrong draws both times.** Neither was a
+    water bug. GX calls serialize into a FIFO that aurora drains in
+    `end_frame`, so the game thread issues every draw in a frame before the
+    backend translates any of them, and a backend global set from game code is
+    read after the fact — describing whichever material was last, for every
+    draw in the frame. Left latched it marked everything (**every material in
+    the game turned translucent, observed 2026-08-08 20:35**); cleared per
+    material packet it marked nothing (**7 materials marked, zero
+    `dusklight.water` lines, observed 2026-08-08 22:38**). The mark is now a
+    FIFO command, which is what `GX_AURORA_SET_VIEW_MTX` already was and for
+    the same reason. **Untested in game.** Full account:
+    `extern/aurora/docs/dx9/remix-material-interface.md` §11.
+
+    **Regression signature to watch for, in order of severity:** materials that
+    are not water turning translucent (the mark leaking again — the 20:35
+    failure); water becoming invisible rather than transparent
+    (`transmittanceMeasurementDistance`, which defaults to 200 and is **an
+    uncalibrated guess**); a second refracting sheet over the water surface
+    (`MA02`/`MA10` are the projected reflection layer, currently marked with
+    everything else and possibly needing to be split out).
+
+    **What a test session should produce.** Four log lines trace the mark end to
+    end, so one session says where it died rather than only that it did:
+    `dusk.matname … water=1` (game recognised the material) →
+    `dx9.water: first water mark decoded from the FIFO` (survived the FIFO) →
+    `dx9.water: first water-marked draw translated` (a draw carried it to the
+    device) → `dusklight.water tex0hash=…` (Remix built a translucent
+    material). The first three are in the game log, the last in the Remix log.
+
+    **Note on what "some blue translucency" meant at 22:38:** the user's own
+    hash-based replacement material wins in `determineMaterialData` *before* the
+    water check and logs nothing, so translucency visible on some water is not
+    evidence the mark landed. That is by design — a replacement is how a real
+    normal map gets onto the surface — but it makes the log, not the image, the
+    thing to read.
+
 #### Built and CI-green but NEVER RUN
 
 *This list was five items long on 2026-07-28 and is two on 2026-07-29. It had

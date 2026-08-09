@@ -16,6 +16,7 @@
 // Consumed at draw time by J3DMaterial::load, which is the point where the material's GX
 // state is programmed and therefore the only place that brackets exactly its own draws.
 
+#include <cstddef>
 #include <cstring>
 #include <unordered_set>
 
@@ -83,6 +84,13 @@ inline bool isWaterMaterialName(const char* name, int nameLength) {
 // material re-drawn every frame reports once, while the same name in a second room reports
 // again - which is wanted, since that is how a room whose water is named differently shows
 // up. Capped, with a notice at the cap so a truncated list is never read as a short one.
+//
+// The cap was 192 and it bit: the 2026-08-08 22:38 session hit it in Hyrule Field, so Lake
+// Hylia - the one place the report was wanted - was entirely past the end of the list, and
+// "no water reported there" meant nothing. One Hyrule Field plus one warp is ~200 distinct
+// names, so this is sized for a session that visits several areas.
+inline constexpr std::size_t kMaxReportedNames = 512;
+
 inline void reportMaterialName(const char* name, bool isWater) {
     static std::unordered_set<const void*> s_seen;
     static bool s_truncated = false;
@@ -90,10 +98,11 @@ inline void reportMaterialName(const char* name, bool isWater) {
     if (name == nullptr || s_seen.count(name) != 0) {
         return;
     }
-    if (s_seen.size() >= 192) {
+    if (s_seen.size() >= kMaxReportedNames) {
         if (!s_truncated) {
             s_truncated = true;
-            DuskLog.info("dusk.matname.trunc cap=192 - further distinct material names not reported");
+            DuskLog.info("dusk.matname.trunc cap={} - further distinct material names not reported",
+                         kMaxReportedNames);
         }
         return;
     }

@@ -6,7 +6,7 @@
 
 #if TARGET_PC
 #include "dusk/water_materials.hpp"
-#include <aurora/gfx.hpp>
+#include <dolphin/gx/GXAurora.h>
 #include <cstring>
 #endif
 
@@ -238,6 +238,11 @@ void J3DMaterial::makeSharedDisplayList() {
 // that removed the material report's grp= field: in this engine, scheduling a draw and
 // issuing one are far apart.
 //
+// GXSetDusklightWater rather than a direct backend call, because the same lesson applies
+// one layer down. GX writes go into a FIFO that aurora drains in end_frame, so a backend
+// global set from here is read after every draw in the frame has already been translated.
+// The mark has to travel in the command stream, next to the state it describes.
+//
 // Reads mMaterialName, which J3DModelLoader::AssignMaterialNames fills for every material
 // at load time on this platform. An earlier revision looked the name up through
 // j3dSys.getModel() and the model data's name table instead, and marked nothing at all:
@@ -250,7 +255,7 @@ static void noteDusklightWaterMaterial(const J3DMaterial* material) {
         name != NULL && dusk::water::isWaterMaterialName(name, (int)strlen(name));
 
     dusk::water::reportMaterialName(name, isWater);
-    aurora::gfx::set_dusklight_water(isWater);
+    GXSetDusklightWater(isWater);
 }
 #endif
 

@@ -13,7 +13,7 @@
 
 #if TARGET_PC
 #include "dusk/gpu_skinning.h"
-#include <aurora/gfx.hpp>
+#include <dolphin/gx/GXAurora.h>
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -249,12 +249,17 @@ void J3DMatPacket::draw() {
 #if TARGET_PC
     // Close the water bracket opened by mpMaterial->load() above.
     //
-    // Without this the flag is not a property of a draw but a latch: it stayed set from the
-    // last water material until some later material happened to load, so everything drawn in
-    // between inherited it - particles and UI, which never load a J3D material at all, and
-    // the first draws of the next frame. The 2026-08-08 20:35 session marked 9 materials as
-    // water and Remix saw 64 distinct textures arrive as water, including terrain and UI.
-    aurora::gfx::set_dusklight_water(false);
+    // Without this the mark is not a property of a draw but a latch: it stays set from the
+    // last water material onward, so everything drawn after it inherits it - particles and
+    // UI, which never load a J3D material at all, and the whole of the next frame. The
+    // 2026-08-08 20:35 session marked 9 materials as water and Remix saw 64 distinct
+    // textures arrive as water, including terrain and UI.
+    //
+    // Both this and the open must be GX commands. Written into the FIFO they close the
+    // bracket at the point in the stream the draws are, which is what the 22:38 session was
+    // missing: set and cleared as backend globals from the game thread, open and close both
+    // happened before aurora drained a single draw, and no water reached Remix at all.
+    GXSetDusklightWater(false);
 #endif
 
 #if DEBUG && TARGET_PC
