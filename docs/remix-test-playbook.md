@@ -79,10 +79,18 @@ rtx.dusklight.rampMaterials = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
-### 00. Water — translucent, refracting (2026-08-09, UNTESTED IN GAME)
+### 00. Water — translucent, refracting, one layer (2026-08-09, UNTESTED IN GAME)
 
 **Run this first.** It is the only untested thing whose diagnosis is already
 fully in the log, so it costs one walk and no judgement calls.
+
+**Where this stands.** The 2026-08-08 23:47 session got water marked end to end
+for the first time — 11 distinct water materials reached Remix, all translucent
+— and it still did not read as one continuous surface. The log said why: 4 of
+the 11 were the game's camera-projected reflection overlay (MA02/MA10), turned
+into a second refracting sheet just above the surface. Those are now hidden.
+**What this session is checking is whether removing that layer is what water
+was missing.**
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
@@ -97,25 +105,30 @@ one that is missing is where it died:
 
 | Line | Which log | Means |
 | :-- | :-- | :-- |
-| `dusk.matname name=… water=1` | game | the game recognised the material |
-| `dx9.water: first water mark decoded from the FIFO` | game | it survived the FIFO |
-| `dx9.water: first water-marked draw translated` | game | a draw carried it to the device |
-| `dusklight.water tex0hash=… texXform=… proj=…` | Remix | Remix built a translucent material |
+| `dusk.matname name=… role=surface` | game | the game recognised the material |
+| `dx9.water: first SURFACE mark decoded from the FIFO` | game | it survived the FIFO |
+| `dx9.water: first SURFACE draw translated` | game | a draw carried it to the device |
+| `dusklight.water tex0hash=… texXform=… proj=… blend=…` | Remix | Remix built a translucent material |
+
+`PROJECTED` has the same three game-side lines and ends at
+`dusklight.water.projected … hidden=1` — that is the reflection overlay being
+dropped, and seeing those lines is the point of this run.
 
 A fifth, `dusklight.water.replaced`, means the mark arrived and a hand-authored
 replacement material claimed the draw first. That is intended — it is how a
 normal map gets onto the surface — but it is not the water path, so it is
 counted separately rather than being silent.
 
-`texXform=` and `proj=` on the `dusklight.water` line say which layer each draw
-is: a texture transform means a scrolling ripple overlay, `proj=1` means the
-projected reflection layer (MA02/MA10), neither means the still base surface.
-**The open question this answers** is how many marked layers a single body of
-water has. Three stacked refracting sheets is a stack of windows, not water; if
-the log shows that, the reflection layer gets split out of the water set.
+**The open question this session answers** is the one thing deliberately not
+guessed at: the *surface* still arrives as more than one draw (5 scrolling and
+2 still, last session), and only one of them should be the refracting
+interface. `blend=`, `blendSrcDst=` and `alphaTest=` are on the water line for
+exactly that — an **additive** pass is light over a surface, not a second
+surface. Nothing acts on them yet; the log decides it.
 
 **Controls, all under F1 → Dusklight → Water:** *Translucent Water* turns the
-whole thing off for an A/B. Index of refraction is 1.33 and should not need
+whole thing off for an A/B, and *Hide Projected Reflection Layer* puts the
+painted reflection back — the direct A/B for this session's change. Index of refraction is 1.33 and should not need
 touching. **Transmittance measurement distance defaults to 200 and is an
 uncalibrated guess** — if the water reads as invisible rather than transparent,
 or as too strongly tinted, this is the one number to move, and the value that
@@ -123,8 +136,10 @@ looked right is the result worth reporting.
 
 **Regression signature, worst first:** materials that are not water turning
 translucent (the mark leaking — this happened on 2026-08-08 and made every
-material in the game see-through); water invisible rather than transparent
-(measurement distance); a second refracting sheet over the surface (MA02/MA10).
+material in the game see-through); water *geometry vanishing* (the new mirror of
+that failure, the projected mark leaking onto things that should be drawn);
+water invisible rather than transparent (measurement distance); a water body
+losing its reflection entirely instead of gaining a traced one.
 
 **Still expected to be wrong, and separate from this:** the ripple *warp* comes
 from indirect texturing, which aurora drops, and the TEV two-constants-per-stage

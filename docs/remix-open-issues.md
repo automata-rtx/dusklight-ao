@@ -68,8 +68,10 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 6.** When you bump it, bump `kRequiredProtocol` in the fork's
-`showDusklightRemixTab` in the same commit.
+**Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
+`showDusklightRemixTab` in the same commit. (This line said 6 until 2026-08-09,
+which is exactly the skew the coupling warning exists to prevent — the fork's
+`CLAUDE.md` and the tab's readout are the authorities, not this file.)
 
 **The two live rendering defects:**
 
@@ -854,42 +856,66 @@ Added **2026-07-29**:
     | 3 | Aurora drops indirect texturing, which is the ripple *warp* | untouched; 3 configs logged (`unsupported-effects.md`) |
     | 4 | The TEV two-constants-per-stage ceiling — 48 hits in one session | untouched |
 
-    Cause 1's fix, `GXSetDusklightWater` + `rtx.dusklight.water.*`, has now
-    **shipped twice and marked the wrong draws both times.** Neither was a
-    water bug. GX calls serialize into a FIFO that aurora drains in
-    `end_frame`, so the game thread issues every draw in a frame before the
-    backend translates any of them, and a backend global set from game code is
-    read after the fact — describing whichever material was last, for every
-    draw in the frame. Left latched it marked everything (**every material in
-    the game turned translucent, observed 2026-08-08 20:35**); cleared per
-    material packet it marked nothing (**7 materials marked, zero
-    `dusklight.water` lines, observed 2026-08-08 22:38**). The mark is now a
-    FIFO command, which is what `GX_AURORA_SET_VIEW_MTX` already was and for
-    the same reason. **Untested in game.** Full account:
+    **Cause 1's mark works as of 2026-08-08 23:47 — measured, not inferred.**
+    All three game-side hops reported and 11 distinct water materials reached
+    Remix. Getting there cost two failed revisions, and neither was a water
+    bug: GX calls serialize into a FIFO that aurora drains in `end_frame`, so
+    the game thread issues every draw in a frame before the backend translates
+    any of them, and a backend global set from game code is read after the fact
+    — describing whichever material was last, for every draw in the frame. Left
+    latched it marked everything (**every material in the game turned
+    translucent, 20:35**); cleared per material packet it marked nothing (**7
+    marked, zero `dusklight.water` lines, 22:38**). The mark is a FIFO command
+    now, which is what `GX_AURORA_SET_VIEW_MTX` already was and for the same
+    reason.
+
+    **Water was translucent and still did not read as one continuous surface,
+    and the log says why: water is not one draw.** Of the 11 materials, 4
+    arrived as `texXform=3 proj=1` — a projective texgen fed by a camera-built
+    matrix. That is `MA02`/`MA10`, and the game says so itself:
+    `dKy_bg_MAxx_proc` (`d_kankyo.cpp:11479`) calls `dComIfGd_setListInvisisble`
+    for those two tags and installs a `C_MTXLightPerspective` built from the
+    live camera's fovy and aspect as their texture matrix. It is a painted
+    reflection *over* the water, which Remix traces for real anyway — and made
+    refractive it is a second interface just above the first, carrying a
+    screen-space image through it.
+
+    So the mark carries a **role** now — `NONE`/`SURFACE`/`PROJECTED`, on
+    separate `Ambient.g` and `Ambient.b` channels. `PROJECTED` is hidden
+    (`rtx.dusklight.water.hideProjectedLayer`, default on, live in the overlay
+    under Water). Same reasoning that retired the blob shadows: a painted effect
+    on top of a correctly traced one. **Untested in game.** Full account:
     `extern/aurora/docs/dx9/remix-material-interface.md` §11.
 
-    **Regression signature to watch for, in order of severity:** materials that
-    are not water turning translucent (the mark leaking again — the 20:35
-    failure); water becoming invisible rather than transparent
-    (`transmittanceMeasurementDistance`, which defaults to 200 and is **an
-    uncalibrated guess**); a second refracting sheet over the water surface
-    (`MA02`/`MA10` are the projected reflection layer, currently marked with
-    everything else and possibly needing to be split out).
+    **Still unanswered, and deliberately not guessed at:** the *surface* also
+    arrives as more than one draw — 5 scrolling passes (`texXform=2`) and 2
+    still ones (`texXform=0`) in that session — and only one of them should be
+    the refracting interface. Whether they separate by name or need the blend
+    state (an **additive** pass is light over a surface, not a second surface)
+    is unknown, so `dusklight.water` now reports `blend=`, `blendSrcDst=` and
+    `alphaTest=` and nothing is built on it yet.
 
-    **What a test session should produce.** Four log lines trace the mark end to
-    end, so one session says where it died rather than only that it did:
-    `dusk.matname … water=1` (game recognised the material) →
-    `dx9.water: first water mark decoded from the FIFO` (survived the FIFO) →
-    `dx9.water: first water-marked draw translated` (a draw carried it to the
-    device) → `dusklight.water tex0hash=…` (Remix built a translucent
-    material). The first three are in the game log, the last in the Remix log.
+    **Regression signature, in order of severity:** materials that are not water
+    turning translucent (the mark leaking again — the 20:35 failure); water
+    geometry *vanishing* (the projected mark leaking, the new mirror of that
+    failure); water invisible rather than transparent
+    (`transmittanceMeasurementDistance`, 200 and **an uncalibrated guess**); a
+    water body losing its reflection entirely rather than gaining a traced one
+    (turn `hideProjectedLayer` off to confirm).
 
-    **Note on what "some blue translucency" meant at 22:38:** the user's own
-    hash-based replacement material wins in `determineMaterialData` *before* the
-    water check and logs nothing, so translucency visible on some water is not
-    evidence the mark landed. That is by design — a replacement is how a real
-    normal map gets onto the surface — but it makes the log, not the image, the
-    thing to read.
+    **What a test session produces.** Four log lines trace the mark end to end,
+    so one session says where it died rather than only that it did:
+    `dusk.matname … role=surface` → `dx9.water: first SURFACE mark decoded from
+    the FIFO` → `dx9.water: first SURFACE draw translated` →
+    `dusklight.water tex0hash=…`. The first three are in the game log, the last
+    in the Remix log. `PROJECTED` has the same three and ends at
+    `dusklight.water.projected … hidden=1`.
+
+    **One trap when reading the image instead of the log:** a hand-authored
+    replacement material wins in `determineMaterialData` *before* the water
+    check. Translucency visible on some water is therefore not evidence the mark
+    landed — that is by design, since a replacement is how a real normal map
+    gets onto the surface, but it is why `dusklight.water.replaced` exists.
 
 #### Built and CI-green but NEVER RUN
 
