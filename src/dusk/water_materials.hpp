@@ -93,6 +93,23 @@ inline u32 waterRoleForMaterialName(const char* name, int nameLength) {
     return GX_AURORA_DUSKLIGHT_WATER_NONE;
 }
 
+// The MAxx tag as a number: 9 for MA09, 0 if the name carries none. Fed to the renderer
+// beside the role, because a body of water is drawn as several surfaces and telling them
+// apart is the only way to keep one of them - overlapping refracting interfaces are not
+// water, and Remix does not blend overlapping normal maps either.
+inline u32 waterTagForMaterialName(const char* name, int nameLength) {
+    if (name == nullptr || nameLength < 7) {
+        return 0;
+    }
+    if (name[3] != 'M' || name[4] != 'A') {
+        return 0;
+    }
+    if (name[5] < '0' || name[5] > '9' || name[6] < '0' || name[6] > '9') {
+        return 0;
+    }
+    return (u32)((name[5] - '0') * 10 + (name[6] - '0'));
+}
+
 inline const char* waterRoleName(u32 role) {
     switch (role) {
     case GX_AURORA_DUSKLIGHT_WATER_SURFACE:   return "surface";
@@ -119,7 +136,7 @@ inline const char* waterRoleName(u32 role) {
 // names, so this is sized for a session that visits several areas.
 inline constexpr std::size_t kMaxReportedNames = 512;
 
-inline void reportMaterialName(const char* name, u32 role) {
+inline void reportMaterialName(const char* name, u32 role, u32 tag) {
     static std::unordered_set<const void*> s_seen;
     static bool s_truncated = false;
 
@@ -136,7 +153,7 @@ inline void reportMaterialName(const char* name, u32 role) {
     }
 
     s_seen.insert(name);
-    DuskLog.info("dusk.matname name={} role={}", name, waterRoleName(role));
+    DuskLog.info("dusk.matname name={} role={} tag=MA{:02}", name, waterRoleName(role), tag);
 }
 
 }  // namespace water

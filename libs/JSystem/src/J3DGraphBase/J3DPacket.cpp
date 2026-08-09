@@ -259,7 +259,7 @@ void J3DMatPacket::draw() {
     // bracket at the point in the stream the draws are, which is what the 22:38 session was
     // missing: set and cleared as backend globals from the game thread, open and close both
     // happened before aurora drained a single draw, and no water reached Remix at all.
-    GXSetDusklightWater(GX_AURORA_DUSKLIGHT_WATER_NONE);
+    GXSetDusklightWater(GX_AURORA_DUSKLIGHT_WATER_NONE, 0);
 #endif
 
 #if DEBUG && TARGET_PC
