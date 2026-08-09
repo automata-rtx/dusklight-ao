@@ -211,6 +211,7 @@ struct UserSettings {
         ConfigVar<bool> effectLights;
         ConfigVar<float> effectLightIntensity;
         ConfigVar<float> effectLightDerivedIntensity;
+        ConfigVar<float> effectLightDerivedReach;
         ConfigVar<float> effectLightDerivedRadius;
         ConfigVar<float> effectLightUndeterminedIntensity;
         ConfigVar<float> effectLightUndeterminedReach;

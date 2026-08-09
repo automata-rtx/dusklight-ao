@@ -1364,6 +1364,9 @@ void updateEffectLights() {
     params.derivedIntensity = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightDerivedIntensity",
                         game.effectLightDerivedIntensity.getValue()), 0.0f);
+    params.derivedReach = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedReach",
+                        game.effectLightDerivedReach.getValue()), 0.0f);
     params.derivedRadius = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightDerivedRadius",
                         game.effectLightDerivedRadius.getValue()), 0.01f);
@@ -1605,7 +1608,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "8");
+    push("rtx.dusklight.env.protocol", "9");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));

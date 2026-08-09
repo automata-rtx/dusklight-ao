@@ -696,6 +696,7 @@ Remix. The overlay hosts them in the Dusklight tab.
 | `effectLights` | on | the system |
 | `effectLightIntensity` | 1.0 | **multiplies every light this system makes**, derived and undetermined alike — the master brightness |
 | `effectLightDerivedIntensity` | 19.0 | multiplier for sites that adopted a vanilla light (§5.1) |
+| `effectLightDerivedReach` | 1.0 | **multiplies** the reach the game authored, rather than replacing it — see the note below |
 | `effectLightDerivedRadius` | 10.0 | emitter radius for those, world units |
 | `effectLightUndeterminedIntensity` | 1.0 | multiplier for sites with no vanilla light |
 | `effectLightUndeterminedReach` | 400.0 | how far an undetermined light should reach, world units |
@@ -716,6 +717,31 @@ The same names exist in the game's own `config.json` under `game.*`, which is
 what a value falls back to when Remix's option is unreachable — except
 `effectLightReportCommit`, which the bridge reads directly and which has nothing
 to fall back to, being an action rather than a value.
+
+**Reach and radius are not two ways to say "bigger", and only one of them
+changes the shape of the light.** `reach` is a *design* number — the distance
+the light is solved to still carry to — and it never crosses the Remix API at
+all. `solveIntensity` turns it into a radiance and `p.priority` uses it to order
+the `maxLights` budget; those are its only two readers
+(`effect_lights.cpp:936`, `:1641`). What Remix actually receives is `radius` and
+`radiance`. So raising reach pushes light further **without growing the sphere**,
+which is what stops a light inside a wall sconce clipping through the geometry —
+that clipping is a radius problem, and the radius is bounded from above by it.
+
+Two consequences worth knowing before tuning, both read from the arithmetic
+rather than measured:
+
+- Radiance goes as `reach²`, so `derivedReach` at 2.0 is the same brightness as
+  `derivedIntensity` at 4×. They are **not** independent knobs on brightness.
+- They are not fully redundant either: reach also feeds the budget sort, so a
+  light with more reach outranks a dimmer one when `maxLights` binds. Intensity
+  does not enter that.
+
+`derivedReach` multiplies rather than replaces because the game's own `mPow` is
+the only thing distinguishing a bonfire from a candle — a fixed reach on the
+derived half would flatten every game-authored light onto one size. The
+undetermined half has the opposite problem (there is nothing to scale), which is
+why `effectLightUndeterminedReach` is an absolute in world units.
 
 **`orphanPolicy` is deliberately not in that table.** §4.6 describes it and §10
 lists it under what is not built; it exists only as a field on the internal

@@ -80,6 +80,7 @@ UserSettings g_userSettings = {
         .effectLights {"game.effectLights", true},
         .effectLightIntensity {"game.effectLightIntensity", 1.0f},
         .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
+        .effectLightDerivedReach {"game.effectLightDerivedReach", 1.0f},
         .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
         .effectLightUndeterminedIntensity {"game.effectLightUndeterminedIntensity", 1.0f},
         .effectLightUndeterminedReach {"game.effectLightUndeterminedReach", 400.0f},
@@ -325,6 +326,7 @@ void registerSettings() {
     Register(g_userSettings.game.effectLights);
     Register(g_userSettings.game.effectLightIntensity);
     Register(g_userSettings.game.effectLightDerivedIntensity);
+    Register(g_userSettings.game.effectLightDerivedReach);
     Register(g_userSettings.game.effectLightDerivedRadius);
     Register(g_userSettings.game.effectLightUndeterminedIntensity);
     Register(g_userSettings.game.effectLightUndeterminedReach);

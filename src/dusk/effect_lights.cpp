@@ -1619,7 +1619,12 @@ const std::vector<Site>& collect(const Params& params) {
 
         if (v >= 0 && vanilla[v].reachKnown) {
             p.derived = true;
-            p.reach = vanilla[v].reach;
+            // Scaled rather than replaced: the game's mPow is the only thing that distinguishes a
+            // bonfire from a candle, so a fixed reach here would flatten every derived light onto
+            // one size. Note the two places reach is read - solveIntensity, where radiance goes as
+            // its square, and p.priority below, which is why this is not simply derivedIntensity
+            // by another name: it also decides who survives maxLights.
+            p.reach = vanilla[v].reach * params.derivedReach;
             p.radius = params.derivedRadius;
             p.scale = params.derivedIntensity;
         } else {

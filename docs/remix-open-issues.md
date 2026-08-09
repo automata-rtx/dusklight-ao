@@ -82,7 +82,7 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 8.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 9.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
 
 **Effect lights landed 2026-08-06, were TESTED IN GAME 2026-08-07 — "it works" —
@@ -961,6 +961,68 @@ Added **2026-08-07**:
   orphan policy drops are all still unknown. Those are listed at the top of this
   file rather than here, because they are open questions and this list is for
   settled ones.
+
+13. **One texture hash is tagged into six mutually-contradictory Remix
+    categories, and two of them are actively breaking rendering.** Reported
+    2026-08-09: while targeting and fighting a Deku Baba, the drool draws as a
+    UI element - overlaid above other geometry, standing out from the scene -
+    and other particle effects nearby, notably distant fire, degenerate into
+    broken white quads.
+
+    **Read from the log, not inferred.** `rtx.conf` as dumped at launch
+    (`remixdxvk.log` 10:04:54) has hash `9EE4883FDEEB8478` in **six** lists at
+    once: it is the *only* entry in both `worldSpaceUiTextures` and
+    `worldSpaceUiBackgroundTextures`, and it also appears in `decalTextures`,
+    `particleTextures`, `ignoreTextures` and `uiTextures`. (The `-0x` prefix the
+    serializer writes is a signed-print quirk that fires whenever the top nibble
+    is >= 8; it is the same hash the runtime prints unprefixed.)
+
+    **Read from the fork's source.** Two of those tags do exactly what was
+    observed:
+
+    - `worldSpaceUiTextures` sets `InstanceCategories::WorldUI`
+      (`rtx_types.cpp:381`), and at `rtx_instance_manager.cpp:1107-1114` Remix
+      deep-copies the material and forces `setEnableEmission(true)`,
+      `setEmissiveIntensity(2.0f)` and `setEmissiveColorTexture(albedo)` - its
+      own comment says "we want to show the UI (unlit) in the world". That is
+      the "stands out from the screen, sits above the geometry" half.
+    - `particleTextures` sets `InstanceCategories::Particle`, which routes the
+      draw into billboard creation. That path requires the quad index pattern
+      `A,B,C,A,C,D` and, on any other layout, warns once and **aborts billboard
+      processing for the entire instance** (`rtx_instance_manager.cpp:2168-2173`).
+      The warning is present in this log at 10:05:00.689: `[RTX]
+      InstanceManager: detected unsupported quad index layout for billboard
+      creation`. That is the broken-quads half.
+
+    **Inference, not finding:** that `9EE4883FDEEB8478` is a texture *shared*
+    between the targeting arrow, the Baba drool and distant fire. Nobody has
+    resolved the hash to an asset. What makes it likely is issue 6 above, which
+    describes the targeting arrow and the fire billboards "appearing to share a
+    fate" - the tag was plausibly added to fix that, and it is the sole entry in
+    both world-space UI lists. Confirm by selecting the drool in Remix's texture
+    categorization screen and reading the hash off it.
+
+    **This is rule 1 in the project notes, playing out live.** A texture tag
+    gives one answer per texture; this game reuses textures across contexts, so
+    the tag is right for the targeting arrow and wrong for everything else that
+    shares the asset. The fix is not a better tag.
+
+    **Immediate remedy (config, not code):** remove `9EE4883FDEEB8478` from
+    `worldSpaceUiTextures`, `worldSpaceUiBackgroundTextures` and
+    `particleTextures` in `rtx.conf`. That un-breaks the drool and the fire and
+    re-opens issue 6, which is the honest trade - issue 6 is a real bug, but it
+    was being "fixed" by breaking two other things.
+
+    **The durable fix is a translation**, per rule 1: aurora already knows which
+    draw is the targeting arrow, so the unlit/world-UI intent belongs in the
+    material encoding rather than in a hash list. Not designed yet.
+
+    **Separately worth noting:** the billboard index-layout requirement is a
+    real incompatibility between aurora's GX->D3D9 output and Remix's particle
+    path. Any texture put in `particleTextures` will hit it, so that list is
+    currently unusable for this game regardless of this issue. Untested whether
+    aurora could emit `A,B,C,A,C,D` quads; nobody has looked.
+
 
 #### Built and CI-green but NEVER RUN
 

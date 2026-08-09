@@ -63,6 +63,7 @@ struct Params {
     float intensity = 1.0f;              // master multiplier over every light made here
 
     float derivedIntensity = 19.0f;      // sites that adopted a vanilla light
+    float derivedReach = 1.0f;           // multiplies the reach the game authored, not a replacement
     float derivedRadius = 10.0f;
 
     float undeterminedIntensity = 1.0f;  // sites with nothing to copy
