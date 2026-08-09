@@ -10,6 +10,7 @@
 #include "JSystem/JParticle/JPAEmitter.h"
 #include "JSystem/JParticle/JPAEmitterManager.h"
 #include "JSystem/JParticle/JPAKeyBlock.h"
+#include "JSystem/JParticle/JPADynamicsBlock.h"
 #include "JSystem/JParticle/JPAResource.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
@@ -155,6 +156,22 @@ struct ReportEntry {
     float baseSizeY;
     float globalScale;
     uint8_t keyIds;     // bitmask of JPAKeyBlock IDs present, 0 = no key blocks
+
+    // The effect's authored user-work word, printed raw and NOT interpreted.
+    //
+    // This is the only per-effect authored ground truth within reach, and the game itself cuts
+    // real decisions on it: dPa_group_id_change (d_particle.cpp:213-218) routes bit 0x80 to
+    // group 13 (drawFogScreen), 0x1000 to group 12 (drawDarkworld) and 0x2000 to group 14
+    // (draw2Dgame), per d_particle.h:406-424 - so an effect with 0x2000 is drawn in a 2D pass
+    // and would plausibly reach Remix looking like UI. Bits 0x400/0x800 attach the gen_b/gen_d
+    // Light8 callbacks and 0x20/0x40 select a kankyo tint source, but ONLY on the branch the
+    // Light8 test does not take (d_particle.cpp:1550-1620), so bit 0x20 means different things
+    // depending on which other bits are set.
+    //
+    // That gating is exactly why nothing here decodes it. Print the word, replay it against a
+    // log, decide afterwards. A legend shipped on an unverified reading is how this project has
+    // recorded inference as finding before.
+    uint32_t userWork;
 };
 
 // One line per light the game itself registered, and who took it. This is what settles whether
@@ -220,6 +237,7 @@ uint32_t s_nextSiteId = 1;
 
 Stats s_stats;
 
+StatsPeak s_peak;
 ReportEntry s_report[kMaxReportEntries];
 int s_reportCount = 0;
 bool s_reportOverflowed = false;
@@ -531,6 +549,12 @@ void noteForReport(uint16_t effectId, const JPABaseShape* shape, const float prm
     entry.baseSizeX = bsp != nullptr ? bsp->getBaseSizeX() : 0.0f;
     entry.baseSizeY = bsp != nullptr ? bsp->getBaseSizeY() : 0.0f;
 
+    // Guarded the way JPAResourceManager::getResUserWork does it (JPAResourceManager.cpp:66-73),
+    // plus a getDyn() null check it does not do - the manager can assume a resource it just
+    // looked up has a dynamics block; a resource reached through a live emitter may not.
+    const JPADynamicsBlock* dyn = (res != nullptr) ? res->getDyn() : nullptr;
+    entry.userWork = (dyn != nullptr) ? dyn->getResUserWork() : 0u;
+
     entry.maxFrame = emitter != nullptr ? emitter->mMaxFrame : 0;
     entry.lifeTime = emitter != nullptr ? emitter->mLifeTime : 0;
     entry.age = emitter != nullptr ? emitter->getAge() : 0;
@@ -760,25 +784,70 @@ const char* verdictOf(const ReportEntry& e) {
     return "LIT";
 }
 
+// Folds the frame just measured into the since-last-report high-water record. Called once per
+// collect, after the counters are final and before any report is emitted, so a report always
+// includes the frame it was requested on.
+void accumulatePeak() {
+    s_peak.frames++;
+    auto hi = [](int& dst, int v) { if (v > dst) { dst = v; } };
+    hi(s_peak.emitters, s_stats.emitters);
+    hi(s_peak.considered, s_stats.considered);
+    hi(s_peak.candidates, s_stats.candidates);
+    hi(s_peak.sites, s_stats.sites);
+    hi(s_peak.culled, s_stats.culled);
+    hi(s_peak.excluded, s_stats.excluded);
+    hi(s_peak.orphans, s_stats.orphans);
+    hi(s_peak.vanillaPoint, s_stats.vanillaPoint);
+    hi(s_peak.vanillaSpot, s_stats.vanillaSpot);
+    hi(s_peak.droppedCandidates, s_stats.droppedCandidates);
+    hi(s_peak.droppedSites, s_stats.droppedSites);
+}
+
 void emitReport(const Params& params) {
     char buf[64];
 
     Log.info("=== dusklight effect lights: full report ===");
+    // Build stamp, so two logs from two builds can be told apart. The first real report had no
+    // identifier at all: the only thing distinguishing it from the next build's was the echoed
+    // settings line, which happens to carry values this round changed - luck, not design.
+    // The protocol number is deliberately NOT duplicated here; the Dusklight tab reports it,
+    // and a second copy is a second thing to drift.
+    Log.info("build {} {}", __DATE__, __TIME__);
     Log.info("One press answers every open question. Five sections: counters, effects, sites, "
              "game lights, trace. Sections are capped and say so when they truncate.");
 
     // ---- 1. counters -------------------------------------------------------------------
-    Log.info("[counters] the chain, in the order a light can be lost:");
-    Log.info("  emitters {} -> considered {} -> candidates {} -> sites {} -> drawn {}",
+    Log.info("[counters] the chain, in the order a light can be lost.");
+    Log.info("  THREE TIME BASES, and mixing them up has already cost a reading. Each line says "
+             "which it is.");
+
+    Log.info("  THIS FRAME - the single frame the button was pressed on, nothing more:");
+    Log.info("    emitters {} -> considered {} -> candidates {} -> sites {} -> drawn {}",
              s_stats.emitters, s_stats.considered, s_stats.candidates, s_stats.sites,
              s_bridgeDrawn);
-    Log.info("  derived {}  colourFromGame {}  orphans {}  culled {}  excluded {}",
+    Log.info("    derived {}  colourFromGame {}  orphans {}  culled {}  excluded {}",
              s_stats.derived, s_stats.colorFromGame, s_stats.orphans, s_stats.culled,
              s_stats.excluded);
-    Log.info("  game lights available (point/spot) {}/{}", s_stats.vanillaPoint,
+    Log.info("    game lights available (point/spot) {}/{}", s_stats.vanillaPoint,
              s_stats.vanillaSpot);
-    Log.info("  bridge: creates {}  destroys {}   (creates is per light UPDATE, not per light - "
-             "an animating light re-creates every frame it changes by more than 2%)",
+    Log.info("    drawn is the PREVIOUS frame's count. This report is emitted before the bridge "
+             "draws, so this frame's is still zero at this point - it used to print 0 always.");
+
+    Log.info("  PEAK SINCE THE LAST PRESS - the highest each reached over {} frames. Press at a "
+             "calm moment and the line above reads zero while these do not:", s_peak.frames);
+    Log.info("    emitters {}  considered {}  candidates {}  sites {}  culled {}  excluded {}  "
+             "orphans {}",
+             s_peak.emitters, s_peak.considered, s_peak.candidates, s_peak.sites, s_peak.culled,
+             s_peak.excluded, s_peak.orphans);
+    Log.info("    game lights available (point/spot) {}/{}", s_peak.vanillaPoint,
+             s_peak.vanillaSpot);
+    Log.info("    dropped: candidates {}  sites {}   (hard array limits, not the budget - a "
+             "non-zero here means lights went missing with every other counter healthy)",
+             s_peak.droppedCandidates, s_peak.droppedSites);
+
+    Log.info("  SINCE LAUNCH - never reset, so compare two presses by subtracting:");
+    Log.info("    bridge: creates {}  destroys {}   (creates is per light UPDATE, not per light "
+             "- an animating light re-creates every frame it changes by more than 2%)",
              s_bridgeCreates, s_bridgeDestroys);
     Log.info("  settings: maxLights {}  maxDistance {:.0f}  mergeRadius {:.0f}  adoptRadius "
              "{:.0f}  bursts {}  minChroma {:.2f}  minLuma {:.2f}",
@@ -795,27 +864,36 @@ void emitReport(const Params& params) {
              s_reportOverflowed ? "  (CAPPED)" : "");
     Log.info("  id name | blend mode/src/dst | prm rgb | env rgb | chroma luma | class(keyword) "
              "| verdict | anim: glbl/prm/env type maxfrm | maxFrame life age ptcls | size gscale "
-             "| keys");
+             "| uw | keys");
     Log.info("  verdict: LIT drawn. no(opaque) failed the additive test. no(colour) was additive "
              "but chroma < {:.2f} AND luma < {:.2f}. no(name) refused as a substance. "
              "LIT-if-bursts is one-shot, off by default.",
              params.minChroma, params.minLuma);
     Log.info("  anim: colour animates ONLY when glbl=1 AND prm=1 AND type is normal/repeat/"
              "reverse. A starred type is pinned to frame 0 at emitter level and never moves.");
+    Log.info("  uw is the effect's authored resUserWork word, RAW AND UNINTERPRETED. Bits the "
+             "game itself acts on: 0x80 -> draw group 13 (drawFogScreen), 0x1000 -> group 12 "
+             "(drawDarkworld), 0x2000 -> group 14 (draw2Dgame); 0x400/0x800 attach the gen_b/"
+             "gen_d Light8 draw callbacks; 0x20/0x40 pick a kankyo tint source but ONLY when "
+             "neither 0x400 nor 0x800 is set. Nothing here decodes it - read the bits, do not "
+             "trust a summary of them.");
+    Log.info("  NOTE an effect in group 13 or 14 is never censused here at all (this walk skips "
+             "groups >= 13), so a 0x80 or 0x2000 word can only ever appear on an effect that "
+             "reached us some other way.");
 
     for (int i = 0; i < s_reportCount; i++) {
         const ReportEntry& e = s_report[i];
         formatKeyIds(e.keyIds, buf, sizeof(buf));
         Log.info("  {:#06x} {:<32} | {}/{}/{} | {:3},{:3},{:3} | {:3},{:3},{:3} | {:.2f} {:.2f} | "
                  "{:<5}({:<8}) | {:<13} | {}/{}/{} {:<7} {:<4} | {:<5} {:<5} {:<5} {:<4} | "
-                 "{:.0f}x{:.0f} {:.2f} | {}{}",
+                 "{:.0f}x{:.0f} {:.2f} | uw={:#010x} | {}{}",
                  e.effectId, effectName(e.effectId), blendModeName(e.blendMode),
                  blendFactorName(e.blendSrc), blendFactorName(e.blendDst), e.prm[0], e.prm[1],
                  e.prm[2], e.env[0], e.env[1], e.env[2], e.chroma, e.luma, className(e.cls),
                  e.keyword, verdictOf(e), e.glblClrAnm ? 1 : 0, e.prmAnm ? 1 : 0,
                  e.envAnm ? 1 : 0, e.hasRes ? anmTypeName(e.anmType) : "?", e.anmMaxFrm,
                  e.maxFrame, e.lifeTime, e.age, e.particles, e.baseSizeX, e.baseSizeY,
-                 e.globalScale, buf, e.simple ? " (simple)" : "");
+                 e.globalScale, e.userWork, buf, e.simple ? " (simple)" : "");
     }
 
     if (s_reportOverflowed) {
@@ -900,6 +978,9 @@ void emitReport(const Params& params) {
     // The TRACE is deliberately NOT cleared: it is a rolling window, and clearing it would make
     // two presses in a row lose the very thing the second press was asking about.
     s_reportCount = 0;
+    // The peak record covers "since the last press", so it resets with the effects table. The
+    // frame counter goes with it, since it is that window's denominator.
+    s_peak = StatsPeak();
     s_reportOverflowed = false;
 }
 
@@ -940,11 +1021,17 @@ float solveIntensity(float reach, float radius, float scale) {
     return (reach * reach) * kNewLightEndValue / (kPi * radius * radius) * scale;
 }
 
-void addCandidate(Candidate* candidates, int& count, const Candidate& c) {
+// Returns false when the fixed array is full, so the caller can stop counting a candidate that
+// never reached clustering. It used to return void and the counter was incremented by the caller
+// regardless, which made `candidates` an overcount in exactly the crowded scenes where the drop
+// mattered.
+bool addCandidate(Candidate* candidates, int& count, const Candidate& c) {
     if (count >= kMaxCandidates) {
-        return;
+        s_stats.droppedCandidates++;
+        return false;
     }
     candidates[count++] = c;
+    return true;
 }
 
 // True when this emitter is the one shared instance the game reuses for a "simple" effect.
@@ -1119,8 +1206,9 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
                 continue;
             }
 
-            s_stats.candidates++;
-            addCandidate(candidates, count, c);
+            if (addCandidate(candidates, count, c)) {
+                s_stats.candidates++;
+            }
         }
     }
 }
@@ -1208,8 +1296,9 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
             continue;
         }
 
-        s_stats.candidates++;
-        addCandidate(candidates, count, c);
+        if (addCandidate(candidates, count, c)) {
+            s_stats.candidates++;
+        }
     }
 }
 
@@ -1685,6 +1774,11 @@ const std::vector<Site>& collect(const Params& params) {
 
         if (match == nullptr) {
             if (s_tracked.size() >= static_cast<size_t>(kMaxSites)) {
+                // Counted rather than silently skipped. This can only fire in a crowded scene,
+                // and grace-held sites accumulate here too, so it is reachable well before 128
+                // real lights exist - a light that never appears with every other counter
+                // healthy used to have no explanation at all.
+                s_stats.droppedSites++;
                 continue;
             }
             s_tracked.push_back(TrackedSite {});
@@ -1775,6 +1869,10 @@ const std::vector<Site>& collect(const Params& params) {
     // what makes one button press enough: the log describes the frame it was pressed on, and
     // the trace ring already holds the seconds before it.
     snapshotSites(s_tracked);
+
+    // Fold this frame into the high-water record before any report is emitted, so a report
+    // always includes the frame it was requested on.
+    accumulatePeak();
 
     // AFTER the snapshot, so the report describes the frame it was pressed on rather than the
     // one before it - including the effects classified during this very call.

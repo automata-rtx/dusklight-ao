@@ -54,6 +54,11 @@ bool s_celestialLock = false;
 LocalLightsDebug s_localDebug = {};
 EffectLightsDebug s_effectDebug = {};
 
+// The draw count from the frame just completed. The report is emitted from inside collect(),
+// which runs before this frame's draw loop, so this frame's counter is still zero at that
+// point - the counters chain used to end "-> drawn 0" no matter what had been drawn.
+uint64_t s_effectDrawnLastFrame = 0;
+
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
 
@@ -1321,6 +1326,8 @@ void updateLocalLights() {
 
 void updateEffectLights() {
     s_effectDebug.enabled = false;
+    // Carries the completed frame's draw count across to the next frame's report. See the
+    // note at setBridgeCounters below for why the report cannot use this frame's.
     s_effectDebug.drawn = 0;
 
     if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
@@ -1435,8 +1442,15 @@ void updateEffectLights() {
     // These have been counted since the system landed and printed nowhere - `creates` in
     // particular is the number that says whether an animating light is expensive, because the
     // bridge re-creates a light every time its radiance moves more than 2%.
+    //
+    // `drawn` is handed over from the PREVIOUS frame, deliberately. This frame's value is
+    // zeroed at the top of this function and not incremented until the draw loop below, which
+    // runs after collect() has already emitted any report - so passing this frame's counter
+    // made the last link of the counters chain read 0 unconditionally, whatever had been
+    // drawn. A one-frame-old true number beats a fresh number that is always zero; the report
+    // labels it as such.
     dusk::effect_lights::setBridgeCounters(s_effectDebug.creates, s_effectDebug.destroys,
-                                           s_effectDebug.drawn);
+                                           s_effectDrawnLastFrame);
 
     const std::vector<dusk::effect_lights::Site>& sites = dusk::effect_lights::collect(params);
     s_effectDebug.stats = dusk::effect_lights::stats();
@@ -1557,6 +1571,7 @@ void updateEffectLights() {
     }
 
     s_effectDebug.tracked = static_cast<int>(s_effectLights.size());
+    s_effectDrawnLastFrame = s_effectDebug.drawn;
 }
 
 // The bridge's diff cache assumed nothing else ever touched rtx.dusklight.env.*.

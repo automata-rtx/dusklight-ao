@@ -122,7 +122,37 @@ struct Stats {
     int vanillaPoint = 0;  // pointlight[] + efplight[]
     int vanillaSpot = 0;   // the BOSS_LIGHT spot list, flagged live this frame
 
+    // Candidates addCandidate refused because its fixed array was full, and sites the tracker
+    // refused because kMaxSites was reached. Both were silent, and both fire only in a crowded
+    // scene - which is exactly what a combat test produces. A light going missing while every
+    // printed counter looked healthy was reachable before these existed.
+    int droppedCandidates = 0;
+    int droppedSites = 0;
+
     bool ran = false;
+};
+
+// The high-water mark of each counter since the last report, kept alongside the per-frame
+// values.
+//
+// The counters are a single-frame snapshot, and the first real report proved why that is not
+// enough: the owner pressed at a calm moment and five of the nine numbers read zero, including
+// culled - while the trace showed 22 concurrent sites against a 32-light budget in the same
+// session. Relabelling honest zeros leaves them zero. This is what makes one press describe the
+// session rather than the instant.
+struct StatsPeak {
+    int emitters = 0;
+    int considered = 0;
+    int candidates = 0;
+    int sites = 0;
+    int culled = 0;
+    int excluded = 0;
+    int orphans = 0;
+    int vanillaPoint = 0;
+    int vanillaSpot = 0;
+    int droppedCandidates = 0;
+    int droppedSites = 0;
+    uint32_t frames = 0;   // frames the system ran since the last report - the denominator
 };
 
 // Walks the emitter table and produces this frame's sites. Must be called from the thread that
