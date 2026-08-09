@@ -899,32 +899,39 @@ Added **2026-07-29**:
     texture decoded as a tangent normal: an animated perturbation, not real
     ripples. `rtx.translucentMaterial.normalIntensity` scales it.
 
-    **Normal maps: a capture cannot express water (2026-08-09 15:56).** Replacing
-    a water texture with an authored normal map worked, and the same lake then
-    showed large chunks without it and hard cutoffs between them. Two causes,
-    only one of them a data problem:
+    **Normal maps: a lake is drawn from several textures (2026-08-09 15:56).**
+    Replacing a water texture with an authored normal map worked, and the same
+    lake then showed large chunks without it and hard cutoffs between them.
+    **One cause, and it is a mod-side one.** That session's log has one replaced
+    hash and three unreplaced ones still on the water path with `normalTex=1` —
+    the raw colour texture in the normal slot, which is the noisy look.
+    Replacing one hash fixes the draws that use it and nothing else. The
+    `dusklight.water` lines name every hash that reached Remix; authoring the
+    rest needs no rebuild.
 
-    1. **A body of water is drawn from several textures.** That session's log
-       has one replaced hash and three unreplaced ones still on the water path
-       with `normalTex=1` — the raw colour texture in the normal slot, which is
-       the noisy look. The `dusklight.water` lines name every hash that reached
-       Remix; authoring the rest is a mod-side fix needing no rebuild.
-    2. **`GameCapturer::captureMaterial` writes an albedo texture path and
-       nothing else** (`rtx_game_capturer.cpp:505` — read from source). There is
-       no translucent path in the capturer, so a water draw captures as an
-       *opaque* material and anything authored from that capture stays opaque
-       unless its type was changed by hand. A replaced water draw was therefore
-       an opaque surface beside translucent ones on the same lake — a different
-       kind of surface, not a shading difference.
+    **A second mechanism was proposed here and it was wrong** — that the
+    replacement was itself opaque, because `GameCapturer::captureMaterial`
+    (`rtx_game_capturer.cpp:505`) writes an albedo texture path and nothing else
+    and so captures water as opaque. The capturer fact is real and read from
+    source, but the Remix Toolkit lets a material's type be overridden to
+    translucent, that is what had been done, and an opaque water ripple would
+    have been visible at a glance. **The inference required the person testing
+    not to notice something obvious, which is never a sound reading** — it is
+    the same shape of error rule 3 exists for, and it was written into these
+    docs as a cause before being checked.
 
-    Water now stays water under a replacement
-    (`rtx.dusklight.water.applyToReplacements`, default on): an opaque
-    replacement keeps its **authored normal map** and gets the water treatment
-    around it, and one that is already translucent is left completely alone.
-    **Untested.** `dusklight.water.replaced` reports `type=` and `coerced=`, so
-    which mechanism was in play is in the next log rather than inferred — the
-    capturer's behaviour is read from source, but that any *particular* authored
-    material is opaque is not.
+    `rtx.dusklight.water.applyToReplacements` (default on) survives as a guard
+    for the case where an opaque material really does reach a water draw: it
+    keeps the authored normal map and applies the water treatment, and leaves an
+    already-translucent replacement completely alone. **It has never been
+    observed to fire**, and `coerced=` in the log is what would say it had.
+
+    **The real cost to weigh is that per-hash replacement is tagging.** One
+    authored normal map has to be re-keyed to every water texture in the game,
+    and water in an unvisited area shows raw-colour noise until someone finds it
+    and adds another. One normal map applied to every water surface regardless of
+    which game texture the draw carries would be the translation-shaped answer;
+    not built, because it means loading a texture outside the replacement system.
 
     **A dead end, recorded so it is not re-derived.** The idea that an additive
     pass marks "light over a surface" and would separate the base water pass
