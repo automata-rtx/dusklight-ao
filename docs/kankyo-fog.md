@@ -175,7 +175,7 @@ Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
 All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
-protocol **2**; the wire has since advanced to **9** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
+protocol **2**; the wire has since advanced to **10** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
 6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout) and gained more keys. The authoritative list is
 `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 

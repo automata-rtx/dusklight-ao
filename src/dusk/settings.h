@@ -235,6 +235,9 @@ struct UserSettings {
         // real ones from the geometry, so the painted disc lands on top of a correct
         // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
         ConfigVar<bool> remixBlobShadows;
+        // Keep Link's lantern permanently fuelled. Driven from Remix's overlay via
+        // rtx.dusklight.game.lanternInfiniteOil; a gameplay change, off by default.
+        ConfigVar<bool> remixLanternInfiniteOil;
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;

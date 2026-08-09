@@ -1623,7 +1623,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "9");
+    push("rtx.dusklight.env.protocol", "10");
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
     push("rtx.dusklight.env.bloomBlurSize", formatFloat(bloom->getBlureSize()));
@@ -1851,6 +1851,16 @@ void tick() {
                                                 game.remixBlobShadows.getValue());
         if (blobShadows != game.remixBlobShadows.getValue()) {
             game.remixBlobShadows.setValue(blobShadows);
+        }
+
+        // Keep Link's lantern fuelled. A gameplay change rather than a rendering one, and it
+        // lives here for the same reason the rest do: the game's own menus are never drawn in
+        // this mode, so the overlay is the only place a setting can be reached while running.
+        // Consumed in daAlink_c::setLight.
+        const bool lanternOil = readOptionBool("rtx.dusklight.game.lanternInfiniteOil",
+                                               game.remixLanternInfiniteOil.getValue());
+        if (lanternOil != game.remixLanternInfiniteOil.getValue()) {
+            game.remixLanternInfiniteOil.setValue(lanternOil);
         }
 
         // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys

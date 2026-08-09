@@ -14844,11 +14844,27 @@ void daAlink_c::setLight() {
     if (checkWolf()) {
         offNoResetFlg1(FLG1_UNK_80);
     } else {
+        // Infinite lantern oil, driven from Remix's overlay
+        // (rtx.dusklight.game.lanternInfiniteOil). Enclosed rooms currently have very little
+        // light of their own and the lantern is the only source that can be carried into one,
+        // so without this, testing interior lighting means managing fuel rather than looking
+        // at the room. A gameplay change, off by default.
+        //
+        // Refilled here rather than at the burn below because the gate on the next line is
+        // what puts the lantern out: topping up before it is tested means an empty lantern
+        // relights instead of staying dark. Refilling covers every other drain too - the
+        // shake loss in d_a_alink_kandelaar.inc and the NPC drains in d_a_npc_ks.cpp - since
+        // all of them land in the same oil value.
+        const bool infiniteOil = dusk::getSettings().game.remixLanternInfiniteOil.getValue();
+        if (infiniteOil && dComIfGs_getOil() < dComIfGs_getMaxOil()) {
+            dComIfGs_setOil(dComIfGs_getMaxOil());
+        }
+
         if (checkNoResetFlg2(FLG2_UNK_1) || checkEndResetFlg1(ERFLG1_UNK_4)) {
             if (dComIfGs_getOil() != 0 && !checkNoResetFlg2(FLG2_KANDELAAR_LIGHT_OFF) && ((checkNoResetFlg2(FLG2_UNK_1) && !checkFreezeDamage()) || checkEndResetFlg1(ERFLG1_UNK_10))) {
                 onNoResetFlg1(FLG1_UNK_80);
 
-                if (!checkEventRun() && !checkEndResetFlg1(ERFLG1_UNK_4)) {
+                if (!infiniteOil && !checkEventRun() && !checkEndResetFlg1(ERFLG1_UNK_4)) {
                     dComIfGp_setItemOilCount(-mpHIO->mItem.mLantern.m.mNormalOilLoss);
                 }
 
