@@ -480,17 +480,23 @@ They are not the same size at all:
 
 `EF_EVIL_EFF mEffect[2000]` (`d_kankyo_wether.h:355`), still emitting
 `GXBegin(GX_QUADS, GX_VTXFMT0, 4)` per quad at `d_kankyo_rain.cpp:6432`, with
-`dKyr_evil_draw2` doing up to another thousand at `:6719`. That is **roughly three times
-the rain case that was reported as unusable** — in an area the player spends a long
-stretch of the game in.
+`dKyr_evil_draw2` doing up to another thousand at `:6719`.
 
 `mud`, left for the identical stated reason, is 100 quads in one boss room and genuinely
 does not matter. The two decisions were made together, and knowing what the words mean
 inverts them.
 
-**Honest limit:** the counts are read from source. Nobody has played the Palace of
-Twilight under Remix and reported a frame rate, so the symptom is predicted, not observed.
-`dx9.draws peak` in that area settles it before any code changes.
+**Narrowed on verification, and I had overstated it.** An earlier draft of this entry —
+and my first report of it — said "roughly three times the rain case that was reported as
+unusable". **That figure is withdrawn.** 2000 and 1000 are array bounds and loop trip
+counts, not per-frame draws: a particle must also pass `mStatus != 0`,
+`field_0x38 <= 9000`, the screen-space reject at `:6588-6597` (which runs whenever
+`fovy > 40`, i.e. normally) and `sp54 > 0.000001f`; and `draw2` skips even indices and has
+a room-1 `i < 1600` cull. The honest statement is that **the loop is bounded by nothing
+Remix cares about and the pre-cull bound is 2000 + 1000** — the actual cost is
+**unmeasured**. Nobody has played the Palace of Twilight under Remix. `dx9.draws peak`
+there settles it before any code changes, which is why P12 makes that measurement
+mandatory rather than optional.
 
 ### 4.13 The same kasumi mistake, one file away — **RECORD WRONG** [P13]
 

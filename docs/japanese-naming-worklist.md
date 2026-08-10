@@ -95,9 +95,17 @@ IN SCOPE:
    Fixed-Function-dev, and who claims it on each unmerged branch.
  - Update aurora-ao/docs/dx9/remix-material-interface.md §2 to record that the remaining
    channels are spoken for by in-flight branches, since that table is what the next
-   feature will read. Aurora's check_invariants.py already validates §2 against
-   set_remix_material once merged - it cannot see an unmerged branch, which is why this
-   needs a human.
+   feature will read.
+
+ *** DO NOT ASSUME THE INVARIANTS SCRIPT COVERS THIS. It does not. ***
+ aurora's scripts/check_invariants.py:109-155 walks the fields set_remix_material WRITES
+ and requires a §2 row for each - it does not check the reverse. The water branch drops
+ the texrep rows from BOTH the code and §2, so a merge that takes the water side wholesale
+ is SELF-CONSISTENT and the script passes green with HD texture packs silently broken. It
+ also only inspects Ambient/Diffuse/Specular/Emissive (:126), so mat.Power escapes the
+ check entirely. Nothing automated catches this. If you can cheaply make the check
+ bidirectional and cover Power, do - and say so - but the human review is the actual
+ safeguard here.
  - A recommended resolution for the water branch: rebase it onto Fixed-Function-dev and
    re-derive its channel assignment against the current set_remix_material signature,
    rather than resolving the conflict by hand.
@@ -218,6 +226,21 @@ to dKy_fog_startendz_set at :94 - so the tag marks a CLEAR CENTRE and the fog is
 strongest away from it. The view-angle term runs the same way: fog is weakest when you
 face the tag. Confirm both yourself before writing them down.
 
+TWO NARROWINGS TO CARRY, so you do not overstate it:
+ - `var_f31 *= i_this->field_0x594` at d_a_kytag01.cpp:72, and field_0x594 is the
+   switch-gated fade from :124-144. With the gating switches off the fog is zero
+   everywhere regardless of distance, so "whiteout away from the tag" is CONDITIONAL on
+   the tag being switched on. Say so.
+ - kankyo-fog.md:129's "strengthens as you look into the fog bank" is NOT a sign error.
+   If "the fog bank" means the away-from-tag region, it is correct. The defect is
+   ambiguity about what the bank is. Fix the ambiguity, do not flip the sentence.
+
+WHERE THE MIX-UP PROBABLY CAME FROM, and it is worth recording: d_kankyo.cpp:7458 is an
+HIO combo item 「２：ハイリア湖専用」 - "2: Lake Hylia only" - in the wolf-SENSE pattern panel.
+That is a different index space from colpat, and it is the same confusion behind the
+kPalaceOfTwilightColpat finding in P5. One Japanese label in the wrong panel appears to
+have produced two separate wrong attributions.
+
 WHY THIS MATTERS BEYOND TIDINESS: kankyo-fog.md:226 is what the owner follows during a
 test session, and DusklightAtmosphere.md ledger row C0 records that zHalfMin and
 froxelRangeScale are still uncalibrated because the dense-fog regime was never visited.
@@ -285,6 +308,17 @@ STEP 1 (required, no behaviour change):
    section 10, so the next reader does not conclude the correction is complete.
  - Add the HIO 前かすみ/奥かすみ labels as a fourth confirmation in japanese-naming.md
    section 6, which currently cites three.
+ - Also correct japanese-naming.md:332-338, which implies the correction is finished.
+
+ *** ONE TRAP IN THE EVIDENCE. Directly above genLabel("● 奥かすみ") the decomp carries an
+ English comment reading "● Inner kasumi". That is a later translator's gloss and it
+ REPRODUCES THE VERY MISREADING at issue. Cite the Japanese 奥 / 前, never the English
+ above it. ***
+
+ Also note, when writing the impact: "the sky light and the fog tint inherit the rotation"
+ rests on the shader's own header comment (dusklight_sky.comp.slang:39-42) saying this one
+ image is the visible sky, the light it casts and the fade colour. Cite it as that, not as
+ a separately traced path.
 
 STEP 2 (the behaviour question - DO NOT silently change the look):
  The lerp places the FAR band at the sun and rotates the horizon with the sun's compass
@@ -514,9 +548,17 @@ IN SCOPE:
    Separate options - do NOT widen the existing Vector3s, which would disturb every
    existing consumer for no reason.
  - Push them from the bridge.
- - Consume ONLY the two kasumi alphas, and only in place of the luminance proxy at
-   dusklight_sky.comp.slang:79-80.
- - Push kumoAlpha and display it; consume nothing. Clouds are a later phase.
+ - Push all three and DISPLAY them in the Dusklight tab. CONSUME NOTHING in this session.
+
+ *** NARROWED ON REVIEW, and this is the important part. What is READ in source is only
+ that these three alphas are authored per palette entry, blended every frame, and handed
+ to J3D TEV colour registers. That they are opacity - still less that they are "the haze
+ and cloud amounts" the shader's luminance proxy stands in for - is INFERENCE. What a
+ TevColor/TevKColor alpha does depends on the TEV alpha stages inside vrbox_sora.bmd /
+ vrbox_kasumiM.bmd / vrbox_kumo.bmd, and no .bmd exists in any of the three checkouts.
+ So: push them, watch them across palettes and weather for one session, and only then
+ decide whether either kasumi alpha belongs in hazeLevel. Wiring them on this session's
+ evidence would be writing inference as finding. ***
 
 OUT OF SCOPE: the kasumi near/far blend (P2), the cloud layer, Phase D, retuning the
 physical sky constants.
@@ -614,12 +656,16 @@ Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before any Japanese gr
 
 CLAIM TO VERIFY FIRST.
 
-Three documents record that `grp=` in the material report does not work, and that a
-correct implementation "labels at draw-buffer execution, carrying the label from
-registration. Nobody has built it."
+The documents record that `grp=` in the material report does not work and that a correct
+implementation has not been built:
   aurora-ao/docs/dx9/remix-material-interface.md  section 9 "Identification"
   aurora-ao/docs/dx9/progress.md
   aurora-ao/CLAUDE.md
+Read them precisely, because they are not all making the same claim.
+remix-material-interface.md:576-580 asks for a label "carrying the label from
+registration" - i.e. ACTOR identity - and that genuinely is not built. A MATERIAL-name
+label is a different thing, and it exists. Correct the documents to distinguish the two
+rather than declaring the whole paragraph wrong.
 
 IT IS ALREADY BUILT. Verified location and text:
 
@@ -665,10 +711,19 @@ IF IT DOES NOT REPRODUCE - no such push, or it pushes something else - STOP and 
 Do not build a replacement in this session.
 
 IN SCOPE:
- - Decouple the push from `#if DEBUG`. Prefer a RUNTIME toggle over a compile-time one,
-   following the settings pattern already used in src/d/d_drawlist.cpp
-   (dusk::getSettings().game.*), because the owner tests from a release CI artifact and
-   cannot rebuild. TARGET_PC stays in the condition.
+ - Decouple the push from `#if DEBUG`.
+
+ THE WORK IS SMALLER THAN IT LOOKS. DUSK_GFX_DEBUG_GROUPS is ALREADY a CMake option
+ (CMakeLists.txt:91, default ON only in Debug at :78-82) and ALREADY drives
+ execution-time labelling elsewhere: GXScopedDebugGroup / GX_DEBUG_GROUP in
+ include/helpers/gx_helper.h:16-25,73-83, the per-dDlst_base_c type label in
+ src/d/d_drawlist.cpp:2013-2043, and three IF_DUSK(GXPushDebugGroup(...)) calls in
+ src/d/d_kankyo_rain.cpp:4285,6241,6488. So the J3DMatPacket hook is simply the ONE push
+ that uses `#if DEBUG` instead of the project's own DUSK_GFX_DEBUG_GROUPS. Nothing new
+ needs inventing. A dusk::getSettings() runtime toggle is a WANT (the owner tests from a
+ release artifact and cannot rebuild), not a requirement - do the cheap correct thing
+ first and say whether the runtime toggle is worth the extra step. TARGET_PC stays in the
+ condition either way.
  - Correct the three documents and the stale comment in aurora's gx.hpp in the SAME
    commit, so the record stops describing this as unbuilt work.
 
@@ -836,8 +891,16 @@ Verify: include/d/d_kankyo_wether.h - EF_EVIL_EFF mEffect[2000] - and
 src/d/d_kankyo_rain.cpp:6432 and :6719, which still emit GXBegin(GX_QUADS, GX_VTXFMT0, 4)
 per quad while rain at :3264 uses GX_AUTO hoisted above its loop.
 
-dKyr_evil_draw2 adds up to another ~1000 on top. That is roughly THREE TIMES the rain
-case the owner reported as unusable, in an area the player spends a long stretch in.
+dKyr_evil_draw2 adds up to another ~1000 on top.
+
+*** DO NOT REPEAT "three times the rain case" - that figure was withdrawn on review.
+2000 and 1000 are ARRAY BOUNDS and loop trip counts, not per-frame draws: each particle
+must also pass mStatus != 0, field_0x38 <= 9000, the screen-space reject at :6588-6597
+(which runs whenever fovy > 40, i.e. normally) and sp54 > 0.000001f before it draws, and
+draw2 skips even indices and has a D_MN08-room-1 i < 1600 cull at :6318. The honest
+statement is: the loop is bounded by nothing Remix cares about, and the pre-cull bound is
+2000 + 1000. The actual cost is UNMEASURED - which is why the measurement below is not
+optional. ***
 
 IF IT DOES NOT REPRODUCE: stop and report.
 
