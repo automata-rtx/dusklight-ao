@@ -102,11 +102,17 @@ instead, and can drop all but one of a lake's stacked surfaces.
 are standing, and adjust **Scroll Speed** to taste. Both are live; no rebuild.
 Report the values that worked — those are the result.
 
-**Leave Hide Surface Tag at 0.** It is too coarse to be useful: MA06 is the
-shoreline *and* the waves *and* the murky body, so hiding that tag deletes three
-different things. MA03 is fountains and waterfalls. If a lake needs a layer
-dropped, use Remix's `rtx.hideInstanceTextures` on the specific hash from a
-`dusklight.water` line instead.
+**The layer switches are the other thing to play with.** Under the same panel
+there is one per pass, named the way the game names them: Shimmer (mera), Waves
+(nami), Shoreline (mizugiwa), Murk (nigori), Additive (kasan). All start off. A
+lake is drawn as several of these stacked, and stacking refracting interfaces is
+not what water is — so try turning them off one at a time and see which one the
+lake is better without. **That choice is the result worth reporting**, and it is
+a look call rather than a correct answer.
+
+The `layer=` field on each `dusklight.water` line says what each body of water is
+actually made of, so a lake made of passes not in that list will say so rather
+than quietly ignoring the switches.
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,

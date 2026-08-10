@@ -937,32 +937,26 @@ Added **2026-07-29**:
       once across Lake Hylia reads as a smear. Same clock as the shader's
       `timeSinceStartSeconds`, and the scroll offset is wrapped so a long
       session does not decay into float noise.
-    - `hideSurfaceTag` drops the water surfaces carrying one MAxx tag, so a lake
-      is one moving surface rather than several stacked refracting interfaces.
-      **Default 0, hiding nothing — and the tag is the WRONG GRANULARITY,
-      measured 2026-08-09 15:56.** A tag is not a layer. MA06 alone is three
-      different surfaces:
+    - **Layers are hidden by the game's own word for the pass**, one switch each,
+      all default off: `hideShimmerLayer` (mera), `hideWavesLayer` (nami),
+      `hideShorelineLayer` (mizugiwa), `hideMurkLayer` (nigori),
+      `hideAdditiveLayer` (kasan). An unrecognised layer is **never** hidden —
+      it arrives as `layer=unknown`, stays visible, and shows up in the log as a
+      word to add.
+    - Aurora carries the MAxx tag in `D3DMATERIAL9::Ambient.a` and the layer in
+      `Power` — the side band is now completely full. Both `dusk.matname` and
+      `dusklight.water` report them, so what a body of water is made of is in
+      the log rather than guessed at.
 
-      | Name | Japanese | What it is |
-      | :-- | :-- | :-- |
-      | `cc_MA06_mizugiwa_v_x` | mizugiwa | the water's edge / shoreline |
-      | `cc_MA06_nami_v_x` | nami | **waves** |
-      | `cc_MA06_NigoriWater_v_x` | nigori | the murky body |
-      | `cc_MA09_mera_v`, `cd_MA09_MeraWater_v` | mera | the shimmer layer |
-
-      So `hideSurfaceTag = 6` would delete the shoreline and the waves along
-      with the murk. **An earlier revision of this file recommended exactly
-      that; it was wrong and the recommendation is withdrawn.** What separates
-      these layers is the name suffix, not the tag.
-
-      Until that is carried, the precise tool is Remix's own
-      `rtx.hideInstanceTextures` keyed on the hashes `dusklight.water` logs —
-      tagging, but exact. **MA03 is fountains and waterfalls**; hiding that tag
-      would delete them.
-    - Aurora carries the MAxx tag per draw in `D3DMATERIAL9::Ambient.a`, the
-      last free channel of the side band, and both `dusk.matname` and
-      `dusklight.water` report it. That is what turns `hideSurfaceTag` from a
-      guess into a setting.
+    **The tag-based control that preceded this was wrong and is removed.** MA06
+    is the waves *and* the shoreline *and* the murky body, so `hideSurfaceTag = 6`
+    — which this file recommended — would have deleted two surfaces to be rid of
+    a third. What separates the passes is the material name, and this
+    decompilation preserves the original Japanese team's naming, so the name says
+    what the pass is. `kasan` is the example worth carrying elsewhere: it is 加算,
+    *addition*, and every material bearing it had measured `SRC_ALPHA,ONE` a
+    session before anyone read the word. The convention is documented in
+    `CLAUDE.md`.
 
     `rtx.dusklight.water.applyToReplacements` (default on) survives as a guard
     for the case where an opaque material really does reach a water draw: it
