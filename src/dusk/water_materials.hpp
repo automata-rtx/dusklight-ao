@@ -110,6 +110,74 @@ inline u32 waterTagForMaterialName(const char* name, int nameLength) {
     return (u32)((name[5] - '0') * 10 + (name[6] - '0'));
 }
 
+// Which layer of a body of water this material is, read from the game's own vocabulary.
+//
+// Twilight Princess is a Japanese production and this decompilation preserves its naming,
+// so these words are the developers' own labels for the passes rather than anything
+// invented here. A lake is drawn as several of them stacked:
+//
+//   mera      shimmer / heat-haze      cc_MA09_mera_v, cd_MA09_MeraWater_v
+//   nami      waves                    cc_MA06_nami_v_x
+//   mizugiwa  the water's edge         cc_MA06_mizugiwa_v_x
+//   nigori    the murky body           cc_MA06_NigoriWater_v_x
+//   funsui    a fountain               cd_MA03_Funsui_v
+//   kasan     an ADDITIVE pass         ce_MA03_WaterKasan_v_x, ce_MA03_FunsuiKasan_v_x
+//   indirect  the warp used to fake refraction   cc_MA02_IndirectWater_v
+//
+// The MAxx tag cannot do this job: three of those - nami, mizugiwa and nigori - are all
+// MA06, so hiding that tag would delete a lake's waves and shoreline to be rid of its murk.
+// That was tried and recommended before the names were read properly.
+//
+// "kasan" is worth knowing on its own: it is the Japanese for *addition*, and every
+// material carrying it measured SRC_ALPHA,ONE in the 2026-08-09 blend report. The name said
+// what the blend state said, a session earlier.
+//
+// UNKNOWN is the safe answer and the default: a name nobody has classified stays visible.
+inline u32 waterLayerForMaterialName(const char* name) {
+    if (name == nullptr) {
+        return GX_AURORA_DUSKLIGHT_WATER_LAYER_UNKNOWN;
+    }
+
+    // Both spellings, because the convention capitalises a word when it follows another
+    // ("MeraWater", "FunsuiKasan") and lowercases it when it follows the tag ("_mera").
+    // Matching "_mera" rather than bare "mera" keeps a longer word that merely contains it
+    // from being caught - "minami" would otherwise read as "nami".
+    struct LayerWord { const char* lower; const char* upper; u32 layer; };
+    static const LayerWord kWords[] = {
+        // Pass words first: they describe how a surface is drawn, which is what decides
+        // whether it should be kept, and they win over the object word in a compound like
+        // "FunsuiKasan" (a fountain's additive pass).
+        {"_indirect", "Indirect", GX_AURORA_DUSKLIGHT_WATER_LAYER_INDIRECT},
+        {"_kasan",    "Kasan",    GX_AURORA_DUSKLIGHT_WATER_LAYER_ADDITIVE},
+        {"_nigori",   "Nigori",   GX_AURORA_DUSKLIGHT_WATER_LAYER_MURK},
+        {"_mizugiwa", "Mizugiwa", GX_AURORA_DUSKLIGHT_WATER_LAYER_SHORELINE},
+        {"_nami",     "Nami",     GX_AURORA_DUSKLIGHT_WATER_LAYER_WAVES},
+        {"_mera",     "Mera",     GX_AURORA_DUSKLIGHT_WATER_LAYER_SHIMMER},
+        {"_funsui",   "Funsui",   GX_AURORA_DUSKLIGHT_WATER_LAYER_FOUNTAIN},
+    };
+
+    for (const LayerWord& w : kWords) {
+        if (std::strstr(name, w.lower) != nullptr || std::strstr(name, w.upper) != nullptr) {
+            return w.layer;
+        }
+    }
+
+    return GX_AURORA_DUSKLIGHT_WATER_LAYER_UNKNOWN;
+}
+
+inline const char* waterLayerName(u32 layer) {
+    switch (layer) {
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_SHIMMER:   return "shimmer";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_WAVES:     return "waves";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_SHORELINE: return "shoreline";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_MURK:      return "murk";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_FOUNTAIN:  return "fountain";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_ADDITIVE:  return "additive";
+    case GX_AURORA_DUSKLIGHT_WATER_LAYER_INDIRECT:  return "indirect";
+    default:                                        return "unknown";
+    }
+}
+
 inline const char* waterRoleName(u32 role) {
     switch (role) {
     case GX_AURORA_DUSKLIGHT_WATER_SURFACE:   return "surface";
@@ -136,7 +204,7 @@ inline const char* waterRoleName(u32 role) {
 // names, so this is sized for a session that visits several areas.
 inline constexpr std::size_t kMaxReportedNames = 512;
 
-inline void reportMaterialName(const char* name, u32 role, u32 tag) {
+inline void reportMaterialName(const char* name, u32 role, u32 tag, u32 layer) {
     static std::unordered_set<const void*> s_seen;
     static bool s_truncated = false;
 
@@ -153,7 +221,8 @@ inline void reportMaterialName(const char* name, u32 role, u32 tag) {
     }
 
     s_seen.insert(name);
-    DuskLog.info("dusk.matname name={} role={} tag=MA{:02}", name, waterRoleName(role), tag);
+    DuskLog.info("dusk.matname name={} role={} tag=MA{:02} layer={}", name, waterRoleName(role),
+                 tag, waterLayerName(layer));
 }
 
 }  // namespace water

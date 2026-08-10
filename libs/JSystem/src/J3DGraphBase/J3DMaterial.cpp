@@ -255,9 +255,10 @@ static void noteDusklightWaterMaterial(const J3DMaterial* material) {
     const u32 role = name != NULL ? dusk::water::waterRoleForMaterialName(name, nameLength)
                                   : GX_AURORA_DUSKLIGHT_WATER_NONE;
     const u32 tag = name != NULL ? dusk::water::waterTagForMaterialName(name, nameLength) : 0;
+    const u32 layer = dusk::water::waterLayerForMaterialName(name);
 
-    dusk::water::reportMaterialName(name, role, tag);
-    GXSetDusklightWater(role, tag);
+    dusk::water::reportMaterialName(name, role, tag, layer);
+    GXSetDusklightWater(role, tag, layer);
 }
 #endif
 
