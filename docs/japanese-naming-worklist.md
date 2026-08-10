@@ -46,6 +46,51 @@ merge conflict resolves *cleanly* into a wrong answer.
 
 ---
 
+## ⚠ Read this before scheduling anything: the triage
+
+A completeness critic reviewed all twelve audits and returned a verdict worth quoting:
+
+> *"About six things are worth doing, and about thirty-five are sentences that are wrong
+> in documents. Treating the whole set as a backlog would turn a working system into a
+> project."*
+
+That is the right call, and this file is organised by tier rather than by priority, so use
+the table below instead of working top to bottom.
+
+### DO — schedule these
+
+| | Why it earns a session |
+| :-- | :-- |
+| **P17** | Prevents a clean merge silently breaking a tested feature. Nothing automated catches it. Has a deadline. |
+| **P0** | Merging effect-lights is what actually gets light creation into Remix. |
+| **P19** | The largest piece of game data we drop — and cheaper than it looked (see below). Instrument first. |
+| **P12** | The densest particle field in the game is unbatched. **Measure before changing anything.** |
+| **P16** | One hardcoded line stands between a pack author and knowing which texture a file is. |
+| **P8** | Turns on per-draw material identity, which is the door to name-keyed art assets. |
+
+### FIX IN PASSING — do not schedule
+
+Everything else: **P1, P2 (step 1), P3, P5, P6, P7, P9, P10, P13, P14, P15, P18.**
+
+These are wrong sentences in documents. A wrong sentence only bites when someone reads it,
+and they read it when they are already in that file. Correct them opportunistically, when
+a session is in the area anyway. Scheduling them costs real time and buys almost nothing.
+
+### DROPPED — with reasons
+
+- **P4, item 1** (the dead-keyword guard). The live words already cover every effect the
+  dead ones would have, and at default settings the class cannot move a pixel. Items 2 and
+  3 of P4 — the single-romanization trap in the `Excluded` guidance, and the corrected
+  description of what `Class` does — are worth keeping as *fix in passing*.
+- **`dKy_get_schbit`, the seasons index, the calendar.** All three are inert or
+  actionless. They are recorded in the audit's §6 so nobody re-investigates them; there is
+  nothing to build.
+
+**Nothing in twelve audits justifies changing a shipping behaviour that is currently
+tested good.** If a session ever concludes otherwise, that is the signal to stop and ask.
+
+---
+
 # Tier 0 — the two time-critical items, neither of which is a naming finding
 
 ## P17 · ⚠ Two branches want the same two material channels — [RESEARCH FIRST, urgent]
@@ -1221,6 +1266,16 @@ emitters and the fallback light supply.
 IF IT DOES NOT REPRODUCE: stop and report.
 
 IN SCOPE:
+ *** THE WORK IS SMALLER THAN IT LOOKS, and this was confirmed on review. DUNGEON_LIGHT
+ embeds an mInfluence - a LIGHT_INFLUENCE, the EXACT struct the bridge's forwarding loop
+ already speaks. It is populated ONLY inside dungeonlight_init() (d_kankyo.cpp:1157-1162),
+ from a table of y = -99999 and colour {0,0,0}, and never re-derived - while the raw
+ fields beside it (mPosition, mColor, mCutoffAngle, ...) ARE refreshed every frame at
+ :8664-8671. So the task is "re-derive mInfluence from the live fields and let the existing
+ loop carry it", not "design a second light path and a side channel".
+ It also means ANYONE WHO READS dungeonlight[i].mInfluence TODAY SEES DEAD DATA and will
+ conclude, wrongly, that the room lights are not there. Do not let that stop you. ***
+
  - Forward dungeonlight[0..5] as Remix sphere lights, guarded EXACTLY as the game guards
    them: skip unless dComIfGp_roomControl_getStatusRoomDt(stayRoom)->getLightVecInfo() is
    non-NULL; skip i >= getLightVecInfoNum() (capped at 6); skip slots 0-1 when
@@ -1234,8 +1289,14 @@ IN SCOPE:
  - OFF BY DEFAULT. The double-counting question against effect lights must be settled
    from one log, not from an argument.
 
+INSTRUMENT BEFORE ANY TRANSPORT WORK. Log, once per room change, how many of the eight
+entries have a non-degenerate mPosition, what their mAngleAttenuation is, and their
+blended mColor. One session through two dungeons answers whether this is six lights per
+room or two, and whether they duplicate the emitter lights the bridge already sends.
+
 OUT OF SCOPE: touching localLights (being retired); changing effect-lights; the
-fallback light; anything about outdoor lighting.
+fallback light; anything about outdoor lighting. DO NOT do this at the same time as
+retiring local lights - two light changes at once cannot be judged from one test.
 
 PROTOCOL: wire change - bump both sides in one commit, and check the other live branches
 first. The sphere-lights branch is at 11.

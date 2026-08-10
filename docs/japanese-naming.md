@@ -305,6 +305,35 @@ point of keeping the list, and the invariants check will hold the symbol honest.
 
 ---
 
+## 8b. A header name is not an authored name
+
+The single most useful rule to come out of applying this document to our own work, and it
+is not about Japanese at all.
+
+> **Function and global-data symbols are the original team's. Struct member names are
+> not.** The decompilation *reconstructs* member names, so a member name is a **hypothesis
+> until an authored string agrees with it** — an HIO slider label (§6), a `dDbVw_Report`
+> format, a CSV column header, an `OS_REPORT`.
+
+The worked example is the one that started the audit. `vrbox_kasumi_inner_col` /
+`_outer_col` were described backwards for months, and **that was never a misread Japanese
+word** — it was a header name trusted like a function symbol, when the header name is the
+one artifact in the chain no Japanese developer wrote. The game's own labels
+(前 / 奥, `kasumiF` / `kasumiB`) settled it in minutes once anyone looked.
+
+Names still carrying an unchecked semantic claim: `mFogDensity` (the label says 雲影の濃さ,
+cloud-shadow density), `mOrigDensity`, `kumo_top_col` / `kumo_bottom_col`, and
+`dungeonlight_col` — whose palette source is spelled `plight_col`.
+
+**Apply this opportunistically**, when you are already in a field. Not as a sweep.
+
+Corollary, from the same review: a `field_0x…` member is **unaudited data, not absent
+data**. 51 of the 233 declared members of `dScnKy_env_light_c` have no name, and a search
+driven by names is structurally blind to every one of them — including two live light
+systems. Enumerate by offset when completeness matters.
+
+---
+
 ## 9. Rules
 
 1. **Never rename a game symbol** to make it read as English. §4.

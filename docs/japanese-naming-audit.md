@@ -74,14 +74,24 @@ The audit was set up to look for four failure modes. It found a fifth.
    `sizuku` 26 times.)*
 3. **Unused game data** — state the game maintains that we never extract.
 4. **Opaque name, never investigated** — nobody looked, because the name meant nothing.
-5. **Decomp-assigned English that contradicts the original label** — *new.* Not every
-   misleading name is Nintendo's. The decompilation *invents* English names for fields
-   whose originals were not recovered, and those inventions are a later reader's guess.
+5. **A name in a header is a decompilation reconstruction, not an authored name** — *new,
+   and sharpened by the completeness critic into something more useful than the version
+   this document first carried.*
 
-Class 5 has a clean rule attached, and it is worth internalising:
+The sharpening matters, so here it is in full. The defect this whole audit opened with —
+`kasumiInner`/`kasumiOuter` described backwards — **was not a misread Japanese word at
+all.** It was a *header field name* trusted at the same level as a function symbol, when
+the header name is the one artifact in the chain that **no Japanese developer wrote**.
 
-> **An `m`-prefixed field name in game code is a hypothesis. A `genSlider` label is
-> evidence. When they disagree, the label wins.**
+> **Function and global-data symbols are the original team's. Struct member names are
+> not.** A member name is a hypothesis until an authored string agrees with it — an HIO
+> slider label, a `dDbVw_Report` format, a CSV column header, an `OS_REPORT`.
+
+Still armed under that rule, because the kasumi fix corrected the *meaning* and kept the
+coined names: `mFogDensity` (actually 雲影の濃さ, cloud-shadow density), `mOrigDensity`,
+`kumo_top_col` / `kumo_bottom_col`, and `dungeonlight_col` — whose palette source is
+spelled `plight_col`. Apply the rule **opportunistically**, when someone is already in a
+field. Not as a sweep.
 
 Verified instance:
 
@@ -588,6 +598,39 @@ One genuine trap sits in the document that guides the one decision a name can ma
 romanization. Droplet is spelled **both** ways in that same table — `shizuku` 29 names,
 `sizuku` 26, neither a substring of the other. Following that guidance literally would
 exclude 29 droplet effects and leave 26 still lighting the room.
+
+---
+
+## 4b. What the completeness critic added
+
+A final pass reviewed all twelve audits and asked what they collectively missed.
+
+**Seven merged feature areas got no audit at all** — the largest being tone mapping /
+auto exposure / AgX / GT7 (12 fork commits and its own 357-line document). The critic
+checked them: **tone mapping is genuinely romanji-free**, as are input/binds, the
+frustum-culling switch and the warp table. This is recorded as **explicitly out of
+scope** so the coverage question is closed rather than left open. Do not commission
+further audits for them.
+
+**The real gap is a method, not an area.** Every one of the twelve audits walked *named*
+symbols — and **51 of the 233 declared members of the environment struct have no name at
+all.** A name-driven sweep is structurally blind to them. Two live light systems sit in
+that blind spot and reach Remix in no form: the twilight wolf-form light attached to the
+camera, and the boss-light array. Two more unnamed `GXColorS10` members sit *inside the
+vrbox palette block* the atmosphere work reads (the critic checked those two: nothing
+writes them, so probably genuinely dead — but that needed a check nobody had run).
+
+**The rule that follows:** a `field_0x…` member is **unaudited data, not absent data**.
+The next sweep of this kind should enumerate by offset, not by name.
+
+**On the room lights (§4.9c): confirmed, and understated in the way that matters.**
+`DUNGEON_LIGHT` embeds an `mInfluence` — a `LIGHT_INFLUENCE`, the exact struct the
+bridge's forwarding loop already speaks. It is populated **only** in `dungeonlight_init()`
+(`d_kankyo.cpp:1157-1162`), from a table of `y = -99999` and black, and never re-derived —
+while the raw fields beside it refresh every frame. So the work is *"re-derive six fields
+and let the existing loop carry it"*, not *"design a second light path"*. It also means
+**anyone who reads `dungeonlight[i].mInfluence` today sees dead data** and will conclude,
+wrongly, that the lights are not there.
 
 ---
 
