@@ -39,6 +39,47 @@ what it needs:
 | `docs/kankyo-fog.md` | fog, game side | rarely |
 | `docs/dx9-fixed-function.md` | how to set the game up under Remix, and the `rtx.conf` | settings change |
 | `docs/sun-elevation.md` | the sun/moon orbit | rarely |
+| `docs/japanese-naming.md` | **how to read the game's symbol names**, which are romanized Japanese | a session works a name out |
+| `docs/japanese-naming-audit.md` | what applying that lens to the existing work found — defects, unused game data, and what is deliberately *not* worth acting on | an audit finding is settled |
+| `docs/japanese-naming-worklist.md` | ready-to-paste prompts for the work that audit produced | an item is done or dropped |
+
+## The game's code is named in Japanese
+
+**Every identifier in `src/d/`, `src/f_op/`, `src/f_pc/`, `src/m_Do/` and
+`libs/JSystem/` is the original Japanese team's name, preserved 1:1 by the
+decompilation.** They are romaji — Japanese words in Latin letters — mixed with
+abbreviated Japanese and English spelled by ear. Read as English they produce
+confident, wrong answers, and this has cost real time.
+
+`kankyo` (環境) is *environment*. `dKyr_drawSibuki` draws 飛沫 *shibuki*, spray.
+`dKyw_wether_move` is the **weather** system and `wether` is not a typo to fix.
+`d_a_ep` does not stand for anything anybody here has established.
+
+Three things to internalise now; `docs/japanese-naming.md` is the full
+reference, including a glossary whose every symbol is checked by
+`scripts/check_invariants.py`:
+
+- **Search in both romanizations.** The tree mixes kunrei-shiki (`si`, `tu`,
+  `ti`, `sya`) with Hepburn (`shi`, `tsu`, `chi`, `sha`) **for the same word** —
+  spray is `Sibuki` in the C functions and `shibuki` in 69 of the effect IDs.
+  Either spelling alone finds half the feature. An empty grep is not evidence of
+  absence until you have tried the other spelling.
+- **Never rename a game symbol**, and never "correct" one of the misspellings
+  (`wether`, `Schejule`, `Sord`, `Blure`, `parcent`, `vectle`, `resorce`,
+  `tresure`). They are load-bearing across the tree and across `zeldaret/tp`,
+  which `docs/code-conventions.md` asks us to upstream fixes to.
+- **Gloss a name the first time a document uses it**, then use it bare. A reader
+  who does not know the word cannot look it up, because it is not English.
+- **`export LC_ALL=C.UTF-8` before grepping for Japanese.** 496 files under
+  `src/` and `include/` contain literal kana/kanji — the original team's own
+  debug-panel labels, which are the most authoritative documentation in this
+  tree. Under the container's default `POSIX` locale, `grep -P` on a kana/kanji
+  class silently matches **nothing**. That one missing variable is the most
+  likely reason those labels went unread for this project's whole history.
+
+Our own code — `src/dusk/`, aurora's `lib/dx9/`, the fork's `rtx_dusklight_*` —
+is ordinary English `camelCase`. The convention applies to the code we *read*,
+not the code we *write*; do not romanize anything new.
 
 ## Branches — ALL THREE repos use the same structure
 

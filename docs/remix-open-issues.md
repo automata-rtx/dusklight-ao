@@ -6,6 +6,11 @@ is how to run a test session. [`remix-history.md`](remix-history.md) is an
 unmaintained archive of old session notes — a last resort for checking whether
 something was already investigated, never a source of fact.
 
+**The game symbols named below are romanized Japanese** — `dKyr_drawSibuki`
+draws 飛沫 *shibuki*, spray. Entries gloss a term on first use;
+[`japanese-naming.md`](japanese-naming.md) is the reference, and explains why a
+grep for one of these can come back empty for a symbol that exists.
+
 **Rule for this file: an entry states its evidence and its confidence.** Three
 separate sessions have written a plausible story here as though it were a
 finding, and one of those shipped a fix that did nothing. If a cause is
@@ -932,8 +937,9 @@ Added **2026-08-08**:
     they were never the bottleneck.
 
     **Fixed 2026-08-07 by hoisting `GXBegin`/`GXEnd` out of the per-quad loops**
-    in `dKyr_drawRain`, `dKyr_drawSnow`, `dKyr_drawSibuki` and
-    `dKyr_odour_draw`, using `GX_AUTO` because inactive particles are skipped
+    in `dKyr_drawRain`, `dKyr_drawSnow`, `dKyr_drawSibuki` (**sibuki** = 飛沫,
+    spray — the splashes rain throws off surfaces) and `dKyr_odour_draw`
+    (the wolf-senses scent trail), using `GX_AUTO` because inactive particles are skipped
     and the vertex count is not known up front. Rain additionally needed its
     per-drop alpha moved out of `GX_TEVREG0` into vertex `CLR0`
     (`GX_CC_RASC`/`GX_CA_RASA`, `dKr_cullVtx_Set(true)`) — a state change inside
@@ -946,8 +952,9 @@ Added **2026-08-08**:
     `CLR0`, with a comment saying "enable draw call merging" — but the
     `GXBegin`/`GXEnd` hoist that would have collected the win never landed, so
     they had paid the cost of the rework and got none of the benefit.
-    `dKyr_drawHousi` and `dKyr_drawStar` are the two that were finished, and
-    they are the pattern the rest now follow.
+    `dKyr_drawHousi` (**housi** = 胞子, spore — the drifting motes) and
+    `dKyr_drawStar` are the two that were finished, and they are the pattern the
+    rest now follow.
 
     **Instrumentation, so this is measurable rather than judged by eye.** Aurora
     now logs `dx9.draws frames=600 mean=N peak=M` once every 600 frames

@@ -274,9 +274,10 @@ Still unmeasured: the churn cost in a busy room. Still ignored: `mFluctuation`,
 the per-light flicker, because applying it would mean re-creating every
 flickering light every frame.
 
-**Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox by
-*texture* hash in the dev menu does not work: it is painted from a handful of
-vertex colours with no texture bound, so there is no texture content to hash.
+**Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox —
+the game's word for its skybox dome, `d_a_vrbox.cpp` — by *texture* hash in the
+dev menu does not work: it is painted from a handful of vertex colours with no
+texture bound, so there is no texture content to hash.
 
 *(An earlier revision went further and said it therefore could not be
 categorised at all. That does not follow, and it was corrected on 2026-07-29:

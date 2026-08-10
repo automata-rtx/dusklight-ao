@@ -65,7 +65,7 @@ shadow map:
 | :-- | :-- |
 | **Day shadow light** | `dKy_setLight()` copies `sun_pos` → `sun_light_pos` every frame; `SetBaseLight` uses it as `base_light.mPosition` while `67.5 < daytime < 292.5` |
 | **Night shadow light** | `SetBaseLight` uses `eye + moon_pos` outside that window |
-| Weather light dir | `d_kankyo_rain.cpp:214,452` — `dKyr_get_vectle_calc(eye, sun_light_pos, …)` |
+| Weather light dir | `d_kankyo_rain.cpp:214,452` — `dKyr_get_vectle_calc(eye, sun_light_pos, …)`; "vectle" is the game's spelling of *vector*, and `dKy` is `kankyo` (環境, environment) — [`japanese-naming.md`](japanese-naming.md) |
 | Sun billboard, lens flare | `mpSunPacket` / `mpSunLenzPacket` |
 | Moon billboard | `dKyr_drawStar` — `eye + moon_pos` |
 

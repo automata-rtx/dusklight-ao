@@ -38,6 +38,8 @@ If you'd like to build Dusklight from source, please read the [build instruction
 
 Pull requests are welcomed! Note that we do not accept contributions that are primarily AI-generated and will close your PR if we suspect as much. Please also see the [code conventions](docs/code-conventions.md).
 
+Reading the original game code for the first time? Its identifiers are the Japanese team's own names, preserved by the decompilation — romaji like `kankyo` (環境, *environment*), plus English spelled by ear like `wether`. [`docs/japanese-naming.md`](docs/japanese-naming.md) explains how to read them, and why a search can come back empty for a symbol that exists.
+
 # Credits
 
 Special thanks to the [TP decompilation](https://github.com/zeldaret/tp) team, the GC/Wii decompilation community, the [Aurora](https://github.com/encounter/aurora) developers, the [TP speedrunning community](https://zsrtp.link), and all [contributors](https://github.com/TwilitRealm/dusklight/graphs/contributors).
