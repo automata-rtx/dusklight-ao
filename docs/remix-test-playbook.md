@@ -404,8 +404,10 @@ Warp tab. No config.
 rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working torch is unmistakable
 ```
 
-Warp to **Forest Temple → Forest Temple** (`D_MN05`). `d_a_ep` registers its
-light on actor init regardless of whether the flame is lit
+Warp to **Forest Temple → Forest Temple** (`D_MN05`). `d_a_ep` — the torch
+actor; what `ep` abbreviates is not established, like many of the game's
+two-letter actor codes ([`japanese-naming.md`](japanese-naming.md) §5) —
+registers its light on actor init regardless of whether the flame is lit
 (`d_a_ep.cpp:935`), so `found` should be non-zero if the array is read at all.
 Ordon Village at night and the Kakariko bonfire are backups.
 

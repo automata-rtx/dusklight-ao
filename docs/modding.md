@@ -476,6 +476,22 @@ first in-game frame. Projection matrices match the renderer's WebGPU clip conven
 
 **Requires `add_mod(... FEATURES game)`**
 
+> **Finding the function you want: the game's names are Japanese.** Twilight
+> Princess was written by a Japanese team, and the decompilation keeps its
+> symbol names, so the thing you are looking for is often spelled in romaji
+> rather than English — `dKyw_wether_move` is the weather system, `dKyr_drawSibuki`
+> draws 飛沫 *shibuki* (spray), and `kankyo` (環境) means *environment*.
+> Two consequences when you are hunting for a hook target:
+>
+> - **Search in both romanizations.** The tree mixes `si`/`shi`, `tu`/`tsu`,
+>   `ti`/`chi`, `sya`/`sha` — sometimes for the same word — so an empty search is
+>   not proof the function does not exist.
+> - **Some names are English spelled by ear** (`wether`, `Schejule`, `Sord`,
+>   `Blure`, `parcent`). Spell them the game's way or the symbol will not resolve.
+>
+> [`japanese-naming.md`](japanese-naming.md) has the prefix map, a glossary, and
+> how to decode a name you have not seen.
+
 Mods may hook the vast majority of game functions, including file-local static, private and virtual functions.
 `mods/hook.hpp` provides typed helpers over the hook service:
 

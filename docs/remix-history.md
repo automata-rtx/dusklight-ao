@@ -28,6 +28,7 @@
 > | How does the design work? | [`kankyo-remix.md`](kankyo-remix.md) |
 > | How do I test it? | [`remix-test-playbook.md`](remix-test-playbook.md) |
 > | Why is this surface the wrong colour? | `extern/aurora/docs/dx9/remix-material-interface.md` |
+> | What does this game symbol's name *mean*? | [`japanese-naming.md`](japanese-naming.md) — the names are romanized Japanese, and this archive glosses none of them |
 >
 > **The only good reasons to open this file:** you are about to re-investigate
 > something and want to know whether it was already investigated; or a live

@@ -1,9 +1,16 @@
 # Kankyo → RTX Remix: environment colour driving
 
-How Twilight Princess's environment system (d_kankyo, "kankyo" = environment)
-feeds our dxvk-remix fork, so time of day, weather, twilight, wolf senses and
-per-area palettes shape the path-traced image the way they shaped the original
-TEV pipeline.
+How Twilight Princess's environment system (`d_kankyo`; **kankyo** = 環境,
+*environment*) feeds our dxvk-remix fork, so time of day, weather, twilight,
+wolf senses and per-area palettes shape the path-traced image the way they
+shaped the original TEV pipeline.
+
+> **The game's identifiers are romanized Japanese.** `kankyo`, `kumo` (雲,
+> cloud), `kasumi` (霞, horizon haze), `moya` (靄, mist), `housi` (胞子, spore),
+> `sibuki` (飛沫, spray) — and `wether` is the game's own spelling of *weather*,
+> not a typo. This file glosses each term on first use and then uses it bare.
+> [`japanese-naming.md`](japanese-naming.md) is the reference, and explains why
+> a grep for one of these can come back empty for a symbol that exists.
 
 **This file is the stable design reference.** It changes when the design
 changes, not when a test session happens. Everything volatile lives elsewhere.
@@ -21,6 +28,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |
+| Work out what a game symbol's name *means* | [`japanese-naming.md`](japanese-naming.md) — the names are romanized Japanese |
 | Work out why something is **slow** | Read `dx9.draws` in the log first (`extern/aurora/docs/dx9/material-report.md`). Remix charges per draw, not per pixel, so a problem that does not respond to texture categorisation is usually draw count — [`remix-open-issues.md`](remix-open-issues.md) issue 13 is the worked example |
 | Change the overlay / the option wire | `dxvk-remix/documentation/DusklightOverlay.md` |
 
@@ -79,12 +87,14 @@ four tables per stage (`include/d/d_stage.h`):
   variants, 8/9 = underwater, 10 = special. EnvR entries are selected **per
   room** (the envr index is the room number the player/camera is in).
 - **VrboxCol — `stage_vrboxcol_info_class`**: skybox colour set: `sky_col`,
-  `kumo_top/bottom/shadow_col` (clouds), `kasumi_outer/inner_col` (horizon
-  haze).
+  `kumo_top/bottom/shadow_col` (**kumo** = 雲, clouds), `kasumi_outer/inner_col`
+  (**kasumi** = 霞, horizon haze). "vrbox" is the game's word for the skybox
+  dome — `d_a_vrbox.cpp`.
 
 Global tables in `src/d/d_kankyo_data.cpp`:
 
-- **`l_time_attribute[11]`** (`dKyd_lightSchejule`): maps time of day
+- **`l_time_attribute[11]`** (`dKyd_lightSchejule` — the game's spelling of
+  *schedule*, §4 of [`japanese-naming.md`](japanese-naming.md)): maps time of day
   (0–360, 15°/hour) to a pair of the 6 canonical time lights and a blend
   window. The six slots are: 0 morning-0, 1 morning-1, 2 afternoon,
   3 evening-0, 4 evening-1, 5 night. Boss stages use a rotated variant.
@@ -108,7 +118,7 @@ Per frame (`drawKankyo`, `src/d/d_kankyo.cpp:8132` → `setSunpos`,
 ```
 prev_envr = stage_envr_info[PrevCol]         (PrevCol = previous room/envr id)
 next_envr = stage_envr_info[UseCol]          (UseCol  = current room/envr id)
-psel_prev = prev_envr.pselect_id[wether_pat0]   (previous colpat)
+psel_prev = prev_envr.pselect_id[wether_pat0]   (previous colpat; "wether" = weather)
 psel_next = next_envr.pselect_id[wether_pat1]   (current colpat)
 schedule slot for daytime → (start_slot, end_slot, color_ratio)
 → palettes: prev[start], prev[end], next[start], next[end]

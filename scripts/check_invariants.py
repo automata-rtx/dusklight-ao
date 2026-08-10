@@ -13,6 +13,10 @@ whose resolution looked obvious, left two places disagreeing:
   * The protocol number lives in remix_bridge.cpp and in several documents.
     Two branches bumped it to 7 independently; git conflicted, and both sides
     said 7, so the obvious resolution shipped two features on one version.
+  * docs/japanese-naming.md glosses the game's romanized-Japanese symbols, and
+    says up front that every symbol it names was checked to exist. A glossary
+    is exactly the kind of document nobody re-reads, so that promise is only
+    worth anything if something enforces it.
 
 Run with no arguments. Exit 0 = consistent. CI runs it on every push with no
 path filter, because doc-only changes are exactly when these drift.
@@ -232,11 +236,88 @@ def check_aurora_pin_is_real() -> None:
         )
 
 
+# Backticked tokens in japanese-naming.md that are prose, not game symbols.
+# Kept short and explicit: a token silently exempted is a glossary entry that
+# stops being checked.
+NAMING_NON_SYMBOLS = {"camelCase"}
+
+# Suffixes worth checking as whole filenames; anything else backticked with a
+# dot in it (docs, options, field accesses like g_env_light.mMoyaCount) is prose
+# as far as this check is concerned.
+NAMING_FILE_SUFFIXES = (".cpp", ".h", ".inc")
+
+
+def check_japanese_naming_symbols() -> None:
+    """Every game symbol docs/japanese-naming.md names must exist in the tree.
+
+    The document's value is that a session can trust it instead of guessing at a
+    romanized name, so an entry naming a symbol the port has since renamed or
+    dropped is worse than no entry at all - it is a wrong answer delivered with
+    the authority of a glossary. The readings are ours and cannot be checked;
+    the symbols can be, so they are.
+
+    Substring search, deliberately: the file also cites bare prefixes (dKyw_,
+    fopAcM_) whose whole point is that they are not complete identifiers.
+    """
+    global checks_run
+    checks_run += 1
+
+    rel = "docs/japanese-naming.md"
+    text = read(rel)
+    if text is None:
+        fail("japanese-naming", f"{rel} missing - it is the canonical naming reference")
+        return
+
+    # Search the game code and the libraries it was decompiled with. Not
+    # src/dusk or extern: those are ours, and this glossary is about the code we
+    # read rather than the code we write.
+    haystacks = ["src", "include", "libs"]
+
+    tokens: list[str] = []
+    for token in dict.fromkeys(re.findall(r"`([^`\n]+)`", text)):
+        if token in NAMING_NON_SYMBOLS:
+            continue
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
+            tokens.append(token)
+        elif token.endswith(NAMING_FILE_SUFFIXES) and re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*\.[a-z]+", token
+        ):
+            tokens.append(token)
+
+    if not tokens:
+        fail("japanese-naming", f"{rel} names no checkable symbols - has the format changed?")
+        return
+
+    # A filename may exist without any file's *text* mentioning it - d_resorce.cpp
+    # is included as "d/d_resorce.h" and nowhere names itself - so check the file
+    # list as well as the contents. Caught exactly that on the first run.
+    tracked = tracked_files()
+    basenames = {Path(f).name for f in tracked}
+
+    for token in tokens:
+        if token in basenames:
+            continue
+        found = subprocess.run(
+            ["git", "-C", str(REPO), "grep", "--quiet", "--fixed-strings", token, "--", *haystacks],
+            capture_output=True,
+            check=False,
+        )
+        if found.returncode != 0:
+            fail(
+                "japanese-naming",
+                f"{rel} cites `{token}`, which no longer appears anywhere in "
+                f"{'/, '.join(haystacks)}/. Either the port renamed it - in which case fix the "
+                f"glossary row rather than deleting it, the reading is still useful - or the "
+                f"entry was written from memory",
+            )
+
+
 def main() -> int:
     check_conflict_markers()
     check_settings_consistency()
     check_protocol()
     check_aurora_pin_is_real()
+    check_japanese_naming_symbols()
 
     for s_ in skipped:
         print(f"SKIPPED {s_}")
