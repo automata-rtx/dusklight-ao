@@ -70,6 +70,12 @@ constexpr int kMaxVanillaReport = 64;
 constexpr int kMaxSiteReport = 64;
 constexpr int kMaxTraceEntries = 512;
 
+// A single-frame position move past this is worth counting. A light that walks with Link moves
+// a few units a frame; a light that swaps which emitter it is standing on jumps by up to
+// mergeRadius at once. 12 units sits well above the first and well below the second, so the
+// counter separates "the light is following something" from "the light teleported".
+constexpr float kJumpNotable = 12.0f;
+
 // A site's radiance must move by more than this fraction to earn a trace line. Deliberately
 // the bridge's own update threshold (remix_bridge.cpp, kRadianceRelative): a change too small
 // to make the bridge re-create the light is too small to be worth a line.
@@ -103,6 +109,15 @@ struct SimpleRecord {
 };
 
 struct TrackedSite {
+    // Last frame's position, and the largest single-frame jump this site has ever made.
+    // A light that teleports is invisible in every other section: the sites list is one frame,
+    // and the trace only writes a line when radiance moves, so a pure position jump at constant
+    // brightness wrote nothing at all. That is the exact signature of a stuttering shadow.
+    float prevPos[3];
+    bool hasPrevPos;
+    float maxJump;
+    uint32_t jumps;      // frames this site moved more than kJumpNotable
+
     Site site;
     int missingFrames;
     bool seen;
@@ -202,6 +217,12 @@ struct SiteReportEntry {
     float radius;
     float radiance;
     float vanillaDistance;  // to the adopted light, or -1 if none
+    // How violently this site has moved. maxJump is the largest single-frame displacement it
+    // has ever made; jumps counts the frames it exceeded kJumpNotable. A site that follows an
+    // actor shows a small maxJump and zero jumps; a site swapping which emitter it stands on
+    // shows a maxJump near mergeRadius and a jumps count that climbs every second.
+    float maxJump;
+    uint32_t jumps;
 };
 
 // A retrospective ring of site state over time. Retrospective is the point: you throw the bomb
@@ -701,6 +722,8 @@ void snapshotSites(const std::vector<TrackedSite>& tracked) {
             s.radius = t.site.radius;
             s.radiance = rad;
             s.vanillaDistance = t.vanillaDistance;
+            s.maxJump = t.maxJump;
+            s.jumps = t.jumps;
         }
     }
 
@@ -906,16 +929,21 @@ void emitReport(const Params& params) {
     Log.info("[sites] {} live this frame{}", s_siteReportCount,
              s_siteReportCount >= kMaxSiteReport ? "  (CAPPED)" : "");
     Log.info("  id class effect | position | members | derived colourFromGame | reach radius "
-             "radiance | distance to the game light it adopted");
+             "radiance | adoptDist | maxJump jumps");
     Log.info("  members > 1 means several emitters merged into one light. adoptDist -1 means it "
              "adopted nothing and is on the configured fallback.");
+    Log.info("  maxJump is the largest single-frame move this site has made, in world units, and "
+             "jumps counts the frames it moved more than {:.0f}. A light that follows an actor "
+             "shows a small maxJump and jumps 0; a light snapping between emitters shows a "
+             "maxJump near mergeRadius and a jumps count that keeps climbing. That is what a "
+             "stuttering shadow looks like from here.", kJumpNotable);
     for (int i = 0; i < s_siteReportCount; i++) {
         const SiteReportEntry& s = s_siteReport[i];
         Log.info("  {:<4} {:<5} {:#06x} | {:8.0f} {:8.0f} {:8.0f} | {:2} | {} {} | {:7.1f} "
-                 "{:5.1f} {:9.2f} | {:.1f}",
+                 "{:5.1f} {:9.2f} | {:8.1f} | {:7.1f} {:<6}",
                  s.id, className(s.cls), s.effectId, s.pos[0], s.pos[1], s.pos[2], s.members,
                  s.derived ? "derived  " : "undetermd", s.colorFromGame ? "gameColour" : "effColour",
-                 s.reach, s.radius, s.radiance, s.vanillaDistance);
+                 s.reach, s.radius, s.radiance, s.vanillaDistance, s.maxJump, s.jumps);
     }
 
     // ---- 4. the game's own lights ------------------------------------------------------
@@ -1565,12 +1593,27 @@ const std::vector<Site>& collect(const Params& params) {
         Cluster& t = clusters[target];
         t.members++;
         t.totalWeight += c.weight;
-
-        // The heaviest member donates the position and colour rather than a centroid: a
-        // centroid drifts as members come and go, and a light that drifts has visible shadow
-        // swim.
         if (c.weight > t.bestWeight) {
             t.bestWeight = c.weight;
+        }
+
+        // The leading member donates the position and colour rather than a centroid: a centroid
+        // drifts as members come and go, and a light that drifts has visible shadow swim.
+        //
+        // The lead is decided WITHOUT any animating quantity, which is the whole point. It used
+        // to be `weight`, and weight is classWeight * the emitter's global alpha - so two
+        // same-class emitters in one cluster swapped the lead every time their alphas crossed,
+        // and the site position SNAPPED between them, by up to mergeRadius. A flame's alpha
+        // animates constantly, so that crossing is not rare; it is the steady state. Fixing
+        // centroid drift by picking the heaviest member replaced a slow swim with a per-frame
+        // jump, which is worse - a jump is what reads as a stuttering shadow.
+        //
+        // classWeight is a constant per class and effectId is fixed, so this is stable frame to
+        // frame for as long as the membership is. Strictly greater, so a tie keeps the incumbent
+        // rather than flapping on iteration order.
+        const bool leads = c.cls != t.cls ? classWeight(c.cls) > classWeight(t.cls)
+                                          : c.effectId < t.effectId;
+        if (leads) {
             t.pos[0] = c.pos[0];
             t.pos[1] = c.pos[1];
             t.pos[2] = c.pos[2];
@@ -1788,6 +1831,25 @@ const std::vector<Site>& collect(const Params& params) {
 
         match->seen = true;
         match->missingFrames = 0;
+
+        // Measure how far this site moved since last frame, before the new position lands.
+        // A pure position jump at constant brightness wrote nothing to any section before this:
+        // the sites list is a single frame and the trace only records radiance movement, so the
+        // one signature of a stuttering shadow was the one thing the report could not show.
+        if (match->hasPrevPos) {
+            const float jump = std::sqrt(std::max(0.0f, dist2(p.pos, match->prevPos)));
+            if (jump > match->maxJump) {
+                match->maxJump = jump;
+            }
+            if (jump > kJumpNotable) {
+                match->jumps++;
+            }
+        }
+        match->prevPos[0] = p.pos[0];
+        match->prevPos[1] = p.pos[1];
+        match->prevPos[2] = p.pos[2];
+        match->hasPrevPos = true;
+
         match->site.position[0] = p.pos[0];
         match->site.position[1] = p.pos[1];
         match->site.position[2] = p.pos[2];
