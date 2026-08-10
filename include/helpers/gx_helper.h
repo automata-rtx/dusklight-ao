@@ -70,6 +70,28 @@ typedef GXTexObj TGXTexObj;
 typedef GXTlutObj TGXTlutObj;
 #endif
 
+// Declares what the draws inside this scope represent, for backends that have to resolve
+// transparency differently depending on what it is (today: the D3D9/Remix path).
+//
+// Remix decides "is this alpha-blended draw a particle" from a texture tag, and answers it
+// once per texture. This game reuses textures across contexts constantly, so that answer is
+// wrong somewhere almost by construction - and it picks very different renderers: a tagged
+// particle is accumulated layer by layer in the unordered TLAS, an untagged one gets a
+// stochastic single-layer pick lit from a neighbouring opaque pixel, which is what makes
+// dense smoke noisy. The game knows which is which, so it says so per draw.
+//
+// Unlike GXScopedDebugGroup this is NOT compiled out in release: it carries behaviour, not
+// diagnostics. GXSetDrawClass itself is a cheap FIFO write that every backend but D3D9
+// ignores, so an unclassified build and a classified one render identically off D3D9.
+// extern/aurora/docs/dx9/remix-material-interface.md §11.
+struct GXScopedDrawClass {
+    explicit GXScopedDrawClass(u32 drawClass) { GXSetDrawClass(drawClass); }
+    ~GXScopedDrawClass() { GXSetDrawClass(GX_AURORA_DRAW_CLASS_NONE); }
+
+    GXScopedDrawClass(const GXScopedDrawClass&) = delete;
+    GXScopedDrawClass& operator=(const GXScopedDrawClass&) = delete;
+};
+
 struct GXScopedDebugGroup {
     explicit GXScopedDebugGroup(const char* text) {
 #if DUSK_GFX_DEBUG_GROUPS

@@ -106,6 +106,42 @@ reboot separates them** — it clears the OS page cache and keeps `.dxvk-cache`.
 Candidate fixes, to be taken only if that test implicates I/O, are in §9 of
 `extern/aurora/docs/dx9/texture-replacements.md`.
 
+**Transparency: two complaints, one mechanism — landed 2026-08-10, UNTESTED.**
+Enemy death smoke is noisy with wrong-looking transparency, and the layered fog
+wall in front of Death Mountain in Hyrule Field is noisy and wrong in the far
+distance. Both are Remix resolving an alpha-blended draw through its *stochastic*
+path: one randomly chosen layer survives per pixel per frame, and its lighting is
+borrowed from a neighbouring **opaque** pixel. Read in the fork, not inferred —
+`resolve.slangh` (`handleStochasticAlphaBlend`, `rtx.enableStochasticAlphaBlend`
+defaults true) and `composite_alpha_blend.comp.slang` (the neighbour search).
+
+The other path — the unordered TLAS, where every layer accumulates and the light
+comes from the volumetric cache — is selected by `out.isParticle`, which stock
+Remix sets **only from texture categorisation**. That is rule 1's failure case
+exactly, and worse here: these draws often land past the RTX injection boundary
+where the categorization UI never sees them (issue 6).
+
+Two changes, both untested in game:
+
+- **The game now says it per draw.** `GXSetDrawClass` around the six perspective
+  JPA particle blocks in `m_Do_graphic.cpp` → `D3DMATERIAL9::Ambient.a` → the
+  fork ORs it into `isParticle`. The 2D particle groups are left alone. A build
+  without the calls reads 0 and renders as it does today, so **no protocol bump**.
+- **The far fog ramp now reaches the transparent layer.** It never had: `applyFog`
+  only touched the opaque radiance, so any transparency past the 120 m froxel cap
+  never faded while everything around it did. Unconditional — it needs no
+  classification and helps every transparency.
+
+**The fog wall is still unidentified in the game source.** The `haze` class is
+plumbed end to end and nothing calls it, deliberately: naming an actor here would
+be inference written as finding. `matrep.sum class=` and the fork's
+`dusklight.xparency` line (behind `rtx.dusklight.transparency.reportClasses`) are
+what identify it from a play session; the call is then one line.
+
+Design, the 120 m argument for why `haze` is **not** promoted by default, and the
+regression signatures: `extern/aurora/docs/dx9/remix-material-interface.md` §11
+and `dxvk-remix/documentation/DusklightAtmosphere.md` §5.2.1.
+
 **The two live rendering defects:**
 
 1. **Materials are coloured, and two-colour ramps are now reproduced exactly**

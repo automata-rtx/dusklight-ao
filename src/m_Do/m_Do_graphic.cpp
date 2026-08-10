@@ -2383,10 +2383,12 @@ int mDoGph_Painter() {
             GX_DEBUG_GROUP(dComIfGd_drawOpaListMiddle);
 
             if (fapGmHIO_getParticle()) {
+                GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                 GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_B, &draw_info);
             }
 
             if (fapGmHIO_getParticle()) {
+                GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                 GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_B, &draw_info);
             }
 
@@ -2447,6 +2449,7 @@ int mDoGph_Painter() {
             GX_DEBUG_GROUP(dComIfGd_drawXluListDarkBG);
 
             if (fapGmHIO_getParticle()) {
+                GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                 GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri0_A, &draw_info);
                 GX_DEBUG_GROUP(dComIfGp_particle_drawNormalPri0_A, &draw_info);
             }
@@ -2527,6 +2530,7 @@ int mDoGph_Painter() {
                 #endif
 
                 if (fapGmHIO_getParticle()) {
+                    GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri4, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawProjection, &draw_info);
                 }
@@ -2567,6 +2571,7 @@ int mDoGph_Painter() {
                 GXSetClipMode(GX_CLIP_ENABLE);
 
                 if (fapGmHIO_getParticle()) {
+                    GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri1, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_draw, &draw_info);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawFogPri2, &draw_info);
@@ -2603,6 +2608,7 @@ int mDoGph_Painter() {
                 }
 
                 if (fapGmHIO_getParticle()) {
+                    GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
                     GX_DEBUG_GROUP(dComIfGp_particle_drawScreen, &draw_info);
                 }
 
