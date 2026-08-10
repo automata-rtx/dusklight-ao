@@ -316,7 +316,101 @@ Bloom presets 32–35 are marked "vacant" by the panel that describes the table 
 and, for 33, the same base dimming twilight uses. They read as empty slots only because
 the label naming them is in Japanese, in a different menu.
 
-### 4.9 The effect-lights word lists rot silently — **RECORD WRONG, mostly harmless** [P4]
+### 4.9 The performance sweep skipped the worst case in the game because of a name — **BEHAVIOUR WRONG** [P12]
+
+This is the clearest single vindication of the whole exercise.
+
+On 2026-08-07 the dense weather particles were batched, because rain at ~1000 draws a
+frame was unusable. Two systems were deliberately left, recorded as *"bounded and
+situational rather than weather"*: `dKyr_mud_draw` and `dKyr_evil_draw`. Both names read
+as incidental in English.
+
+They are not the same size at all:
+
+| System | What it actually is | Array | Batched? |
+| :-- | :-- | --: | :-- |
+| `dKyr_drawRain` | rain | `mRainEff[250]` | yes, 2026-08-07 |
+| `dKyr_drawSnow` | snow | `mSnowEff[500]` | yes, 2026-08-07 |
+| `dKyr_mud_draw` | 泥 mud in a 沼 *numa* (bog) — **Diababa's boss room** | `mEffect[100]` | no |
+| `dKyr_evil_draw` | 闇 *yami* — **the Palace of Twilight fog that forces wolf form** | **`mEffect[2000]`** | **no** |
+
+`EF_EVIL_EFF mEffect[2000]` (`d_kankyo_wether.h:355`), still emitting
+`GXBegin(GX_QUADS, GX_VTXFMT0, 4)` per quad at `d_kankyo_rain.cpp:6432`, with
+`dKyr_evil_draw2` doing up to another thousand at `:6719`. That is **roughly three times
+the rain case that was reported as unusable** — in an area the player spends a long
+stretch of the game in.
+
+`mud`, left for the identical stated reason, is 100 quads in one boss room and genuinely
+does not matter. The two decisions were made together, and knowing what the words mean
+inverts them.
+
+**Honest limit:** the counts are read from source. Nobody has played the Palace of
+Twilight under Remix and reported a frame rate, so the symptom is predicted, not observed.
+`dx9.draws peak` in that area settles it before any code changes.
+
+### 4.10 The same kasumi mistake, one file away — **RECORD WRONG** [P13]
+
+`kumoTop` and `kumoBottom` are described in the fork as *"lit cloud colour"* and
+*"shaded cloud underside"*. The game's own labels say 上雲 / 下雲 — **upper** and
+**lower cloud band** — and the one site that consumes both lerps them by *horizontal
+distance from the camera* (`d_kankyo_rain.cpp:5025-5039`): a zenith-to-horizon gradient,
+not a lighting term.
+
+Nothing renders wrong today because none of the three is consumed. The damage is
+scheduled: these descriptions are the specification a future clouds phase will build
+from, and "lit vs shaded underside" leads to a physically-lit cloud model where the game
+means a distance gradient it already ships a closed-form recipe for.
+
+Also missed by the batching sweep: **`drawVrkumo`**, the skybox cloud billboards — the
+*only* clouds in the image, since the fork consumes none of the cloud colours — costs up
+to a few hundred unbatched draws every outdoor frame.
+
+### 4.11 `grp=` is not universally dead, and it leaks — **RECORD WRONG + a latent bug** [P8]
+
+Three documents state flatly that `grp=` never works. In fact **three kankyo draws label
+themselves at the real GX draw site and do so in release builds**. So the per-draw
+semantic channel this project wants — and believes impossible — already demonstrably
+works when the push is in the right place.
+
+There is a real bug next to it: two of those pushes **do not pop on an early return**.
+After eight unpopped pushes `currentDebugGroup()` reads out of bounds, and from the first
+one every subsequent draw reports a stale `grp=`. Whether the early return ever fires is
+**not established** — but the array index should be clamped regardless.
+
+### 4.12 `hideSkyBillboards` deletes the star field, including a hand-placed constellation — **DATA ON THE FLOOR** [P14]
+
+The recommended `rtx.conf` leaves the night sky empty. The switch was aimed at the moon,
+whose quad is in `dKyr_drawSun` — a *different* gate — while the star half has never been
+shown to be load-bearing. The loss includes a 13-star 北斗 (Big Dipper) constellation the
+original team placed by hand.
+
+### 4.13 Six time-slot comments in the game tree are wrong, and one has propagated — **RECORD WRONG** [P15]
+
+The six canonical time lights are named by the game in Japanese in three independent debug
+surfaces (朝0 / 朝1 / 昼 / 夕0 / 夕1 / 夜) and pinned to exact `daytime` values
+(90/105/165/255/285/345). Six **English comments in `d_kankyo.cpp`** mistranslate them by
+five to six hours — telling a reader slot 0 is midnight and slot 3 is noon when they are
+06:00 and 17:00 — and one of those errors is already sitting in `kankyo-remix.md:99`
+("2 afternoon"; it is 昼 *hiru*, midday).
+
+Consequence for the overlay: its four time presets reach only **four of the game's six
+palette slots**, and the game ships the two missing numbers. Every per-slot colour, fog
+and sky comparison made through that overlay has been made against four of six.
+
+### 4.14 A pack author cannot tell which texture a file is — **DATA ON THE FLOOR** [P16]
+
+The HD-pack feature is content-keyed end to end and the naming lens finds **nothing wrong
+with it**. But the stated end state is that most remastering work becomes *creating art
+assets*, and today that means matching hex filenames by eye: nothing tells an author that
+`tex1_128x128_<hex>_9.dds` is the cliff texture from a given stage. Both halves of that
+join already exist in our own code.
+
+Relatedly, for name-keyed *replacements* the machinery is already there and exercised:
+`LegacyMaterialData::setHashOverride` is called on the API draw path, and USD replacement
+lookup goes through `getHash()`. `rtx.conf` *category* lists are a separate matter — they
+read the image hash directly.
+
+### 4.15 The effect-lights word lists rot silently — **RECORD WRONG, mostly harmless** [P4]
 
 Ten of thirty classifier keywords match zero of the 3,205 effect names; the source
 comment and the document say three. **The live words cover everything the dead ones
@@ -426,6 +520,42 @@ kytag16 (`Pikari`, a spot light) carries data the bridge receives in no form at 
 drool or body fluid. **`Class::Lava` is genuinely reachable** via `yogan`/`yougan`, and
 every candle/torch/lantern actor's effects classify correctly.
 
+**The HD texture pack feature is clean.** Content-keyed end to end — GX texture hash,
+dimensions, format. No game symbol name enters it anywhere, and the lens finds nothing
+wrong with it.
+
+**`dKyr_odour_draw` is correctly identified and correctly batched.** `odour` is
+においもや *nioi-moya*, "smell mist" — the wolf-senses scent trail, and the game says so
+in its own HIO panel. Already one draw call. It carries five authored per-scent colours
+and only draws in the senses view. Nothing to do.
+
+**`dKyr_mud_draw` is correctly low priority**, and knowing what it is *confirms* that
+rather than changing it: 100 quads, in Diababa's bog, one boss room. Batch it
+opportunistically alongside `evil`, never on its own.
+
+**`drawCloudShadow` looks unbatched and never runs under Remix** — `dKankyo_cloud_Packet::draw`
+early-returns on the D3D9 backend. Do not "fix" it. **`dKyr_shstar_*` is inert in the
+retail game** (empty functions, packet never assigned). **`dKyr_evil_move` is an empty
+loop** — the Twilight-fog simulation actually lives in `d_a_kytag12.cpp`, so look there.
+
+**Rain, sibuki, snow, housi and star are genuinely batched** on the PC path — verified
+site by site. The issue-13 claim holds for those five.
+
+**Thunder already hands Remix a real light** and needs no new plumbing; both the current
+sweep and the effect-lights branch read `efplight`. Worth knowing before anyone "adds
+lightning": the colour is written as (0,0,0) at registration and filled in later, so a
+snapshot taken at set time reads black.
+
+**`dKy_get_schbit()` always returns 0.** There is no schedule-bit system in this tree, so
+there is nothing to expose. What `sch` stands for is **not established** — recorded as
+unknown rather than guessed.
+
+**The seasons are real but small** — one area's dressing (the Fishing Hole), not palette
+data — and the calendar/day-of-week drives nothing visual. Both are honestly *leave
+alone* answers.
+
+**The sun/moon elevation-cap work rests on no misread name** and checks out end to end.
+
 **The dead classifier keywords are not romanization misses.** `taimatsu`/`taimatu`,
 `kagaribi`/`kagari`, `honoo`/`honou`/`homura` match zero in **both** spellings — the game
 used English (`fire`, `torch`) or different Japanese entirely (`maki` 薪, `kantera`
@@ -438,18 +568,15 @@ in the code comment so nobody "helpfully" adds spellings that match nothing.
 
 Stated plainly, because the instruction was not to assume completeness.
 
-Twelve feature areas were queued. **Five completed**: the sky/vrbox/atmosphere, fog &
-colpat & the kytags, effect-lights, material translation, and bloom/mono/twilight. Those
-five are the highest-stakes systems and the ones the earlier confirmed defects pointed at.
+Twelve feature areas were queued. **Eight completed**: the sky/vrbox/atmosphere, fog &
+colpat & the kytags, effect-lights, material translation, bloom/mono/twilight, the clock &
+light schedule, the kankyo weather/particle systems, and texture replacement & tagging.
 
-**Seven were still running when this was written** and are not represented above:
+**Four were still running when this was written** and are not represented above:
 
 | Area | Why it still matters |
 | :-- | :-- |
-| Particles & weather | Named explicitly as critical game data; `housi`/`sibuki`/`vrkumo`/`odour`/`mud`/`evil` are romaji and only some are batched |
-| Texture replacement, tagging & hashing | The name-vs-hash question, which bears directly on art assets being keyed to meaningful names |
 | The overlay, option wire & protocol | Coverage of our 54 pushed fields against the original team's 291-slider panel |
-| Time, the light schedule & celestial | The `あき/なつ/ふゆ` (autumn/summer/winter) palette entries are an unexplained lead |
 | Shadows, grass & geometry identity | `kage`; whether the game knows more about which shadows are which |
 | The other six in-flight branches | Water, hair, transparency, thin g-buffer — romanji risk only |
 | The open "unused game data" sweep | 257 of 621 environment fields are still literally unnamed |

@@ -744,6 +744,248 @@ documented as unreachable; dalkmist is listed; invariants pass.
 
 ---
 
+## P12 · Batch the Twilight fog — the densest particle field in the game — [SAFE]
+
+The 2026-08-07 batching sweep left two systems, recorded as "bounded and situational
+rather than weather". One of them is 2,000 particles.
+
+```
+Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
+
+CLAIM TO VERIFY FIRST.
+
+On 2026-08-07 the dense kankyo weather particles were batched because rain at ~1000 draws
+a frame was unusable under Remix. Two were deliberately left, described as "bounded and
+situational": dKyr_mud_draw and dKyr_evil_draw. Both names read as incidental in English.
+They are not the same size:
+
+  dKyr_drawRain   rain                                mRainEff[250]    batched
+  dKyr_drawSnow   snow                                mSnowEff[500]    batched
+  dKyr_mud_draw   泥 mud in a 沼 numa (bog)           mEffect[100]     NOT batched
+  dKyr_evil_draw  闇 yami - the Palace of Twilight    mEffect[2000]    NOT batched
+                  fog that forces wolf form
+
+Verify: include/d/d_kankyo_wether.h - EF_EVIL_EFF mEffect[2000] - and
+src/d/d_kankyo_rain.cpp:6432 and :6719, which still emit GXBegin(GX_QUADS, GX_VTXFMT0, 4)
+per quad while rain at :3264 uses GX_AUTO hoisted above its loop.
+
+dKyr_evil_draw2 adds up to another ~1000 on top. That is roughly THREE TIMES the rain
+case the owner reported as unusable, in an area the player spends a long stretch in.
+
+IF IT DOES NOT REPRODUCE: stop and report.
+
+MEASURE BEFORE YOU CHANGE ANYTHING. Nobody has played the Palace of Twilight under Remix
+and reported a frame rate - the count is read from source, the symptom is predicted, not
+observed. Aurora already logs `dx9.draws frames=600 mean=... peak=...` every 600 frames.
+Ask for one log standing in D_MN08 first. If peak is not in the thousands there, the
+diagnosis is wrong and you should say so rather than batching anyway.
+
+IN SCOPE (after the measurement supports it):
+ - Batch dKyr_evil_draw and dKyr_evil_draw2 exactly the way rain was: hoist one
+   GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO) above the loop, with the per-quad GXBegin
+   demoted to IF_NOT_DUSK.
+ - color_reg0 is already in GX_VA_CLR0. color_reg1 needs the second GX colour channel
+   (GX_VA_CLR1 / GX_COLOR1A1), or folding into CLR0 if the TEV expression permits.
+   Whichever you choose, say why in the commit.
+ - Do dKyr_mud_draw in the SAME change - it is trivial there (the only per-particle state
+   is color_reg0.a plus a redundant GXLoadTexObj) - but do NOT prioritise it on its own.
+   It is 100 quads in Diababa's boss room.
+
+OUT OF SCOPE: the particle simulation, spawning, pathing; drawVrkumo (that is P13);
+anything about how the fog looks.
+
+REGRESSION SIGNATURE: the Twilight fog vanishing, drawing in one flat colour, losing its
+per-particle fade, or a `GX_AURORA_DRAW_SIZED` / vertex-count-mismatch assertion in the
+log. All three mean the vertex colour is not reaching the TEV stage.
+
+DONE MEANS: both evil draws and mud are batched; a before/after dx9.draws peak from
+D_MN08 is recorded; CI green; the entry in docs/remix-open-issues.md issue 13 is updated
+to say these are no longer outstanding and why the priority was inverted.
+
+Acceptable outcome: the measurement shows the area is fine and you recommend leaving it.
+
+Push only your session branch.
+```
+
+## P13 · The same kasumi mistake, one file away — [DOC ONLY, + one measurement]
+
+```
+Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
+
+CLAIM TO VERIFY FIRST.
+
+The fork describes kumoTop as "the game's lit cloud colour" and kumoBottom as "the game's
+shaded cloud underside colour" (rtx_dusklight_env.h:131-136). The game's own labels say
+otherwise, in three places:
+  d_kankyo.cpp:6302  genLabel("● 上雲カラー")   upper cloud   -> kumo_top sliders
+  d_kankyo.cpp:6324  genLabel("● 下雲カラー")   lower cloud   -> kumo_bottom sliders
+  d_kankyo.cpp:6582  CSV header 上雲色,下雲色,下雲影色
+  d_kankyo_debug.cpp:288,293   "CloudU R" / "CloudD R"
+and the ONE site that consumes both lerps them by horizontal distance from the camera
+(d_kankyo_rain.cpp:5025-5039) - a zenith-to-horizon gradient across the cloud field, not
+a lighting term.
+
+This is the same shape of error as the kasumi pair, in the adjacent fields. Nothing
+renders wrong today because none of the three is consumed - the damage is that these
+descriptions are the spec a future clouds phase will build from, and "lit vs shaded
+underside" leads to a physically-lit cloud model where the game means a distance gradient
+it already ships a closed-form recipe for.
+
+IF IT DOES NOT REPRODUCE: stop and report.
+
+IN SCOPE (documentation):
+ - Correct the three descriptions to the game's terms: kumoTop = upper/overhead cloud
+   band, kumoBottom = lower/horizon cloud band, kumoShadow = the LOWER cloud's shadow
+   (下雲影, not a generic cloud shadow).
+ - Record that kumo_top_col.a is the whole cloud LAYER's alpha, not the top band's - the
+   CSV column is 下雲α and the debug view prints it as "Cloud A".
+ - Write down the recipe the clouds phase will want: lerp top->bottom by
+   (1 - mDistFalloff), with per-layer factors 0.8 and 0.92 for cloud textures 2 and 3
+   (d_kankyo_rain.cpp:5031-5039).
+ - Update ledger entry C3 in DusklightAtmosphere.md so Phase D starts from this.
+ - DO NOT restate any claim about how they LOOK. That was the trap the first time.
+
+SEPARATE, AND MEASURE FIRST: drawVrkumo - the skybox cloud billboards - was missed by the
+batching sweep and costs up to a few hundred unbatched draws every outdoor frame. These
+are the ONLY clouds in the image, since the fork consumes none of the cloud colours. Ask
+for one dx9.draws peak from an outdoor cloudy scene before deciding whether to batch it.
+Do NOT add a hideVrkumo switch - today, removing these billboards removes the clouds.
+
+DONE MEANS: the three descriptions match the game's labels; the recipe and the alpha note
+are written down; C3 is updated; the vrkumo measurement is either taken or explicitly
+requested. Invariants pass.
+```
+
+## P14 · `hideSkyBillboards` deletes the star field — [RESEARCH FIRST]
+
+```
+Read docs/japanese-naming.md first.
+
+CLAIM TO VERIFY.
+
+rtx.dusklight.game.hideSkyBillboards is tested in exactly two places
+(d_kankyo_wether.cpp:106 the star packet, :176 the sun packet). The recommended rtx.conf
+enables it, so under the recommended setup there are no stars at night at all - and the
+loss reportedly includes a 13-star 北斗 (Big Dipper) constellation the original team
+placed by hand. Verify that the constellation exists before repeating the claim.
+
+The switch was aimed at the MOON. The moon quad is drawn in dKyr_drawSun, not
+dKyr_drawStar - a different gate - so the star half has never been shown to be
+load-bearing. The tested 2026-07-29 observation was about shadow coverage wandering with
+the camera; no test isolated the star packet from the sun packet.
+
+IN SCOPE: split the one setting into two so the star packet can be enabled independently
+of the sun/moon packet, and correct the comment at d_kankyo_wether.cpp:88-98 either way -
+right now it attributes the moon to the wrong function, so the next person re-derives it.
+
+THEN ONE TEST, which the owner runs: night, outdoors, stars ON and moon OFF. Does shadow
+coverage still follow the camera? If it does, say so explicitly in that comment.
+
+OUT OF SCOPE: the generated sky, painting the moon into the dome, anything about the sun.
+
+PROTOCOL: adding a game-side setting - check whether it needs a bump and whether another
+live branch has taken the next number.
+
+DONE MEANS: two settings exist, defaults preserve today's behaviour, the comment is
+correct, and the test is written into docs/remix-test-playbook.md.
+
+Acceptable outcome: you find the stars do occlude and the single switch was right. Record
+it so nobody re-opens it.
+```
+
+## P15 · Six time-slot comments in the game tree are wrong — [DOC ONLY + SAFE]
+
+```
+Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
+
+CLAIM TO VERIFY FIRST.
+
+The game names its six canonical time lights in Japanese in three independent debug
+surfaces - 朝0 / 朝1 / 昼 / 夕0 / 夕1 / 夜 - and pins each to an exact daytime value:
+90, 105, 165, 255, 285, 345.
+
+Six ENGLISH comments in src/d/d_kankyo.cpp:6779-6790 mistranslate them by five to six
+hours, telling a reader slot 0 is midnight and slot 3 is noon when they are 06:00 and
+17:00. The same file already carries correct glosses at :6830-6851. One of the six errors
+has already propagated into docs/kankyo-remix.md:99, which says "2 afternoon" - it is
+昼 hiru, MIDDAY.
+
+These are comments and prose, not symbols, so the never-rename rule does not apply.
+
+IN SCOPE:
+ - Correct the six comments to match the correct glosses the same file already has.
+ - Correct d_s_menu.cpp:649 「ひる固定」 from "Fixed Afternoon" to "Fixed Midday".
+ - Correct docs/kankyo-remix.md:99 to "2 midday (昼 hiru - holds 09:00-16:00)".
+ - Add the six slot names and their pinned daytime values to the japanese-naming
+   glossary, since the game supplies both.
+ - Since the wrong comments came in with the import, offer the same correction upstream
+   to zeldaret/tp, per docs/code-conventions.md.
+
+SECOND, SEPARATE ITEM (fork-side, no protocol bump): the overlay's time presets in
+showDusklightTimeOfDay (dxvk_imgui.cpp:2811-2814) reach only FOUR of the game's six
+palette slots, and the game ships the two missing numbers. Extend kPresets with the
+game's own six values and its own names - Morning 0 (90), Morning 1 (105), Midday (165),
+Evening 0 (255), Evening 1 (285), Night (345) - and correct the "four the light actually
+differs at" comment.
+WHY IT MATTERS: every per-slot colour, fog and sky comparison made through that overlay
+has been made against four of the six slots the palette data contains. Whether that has
+actually skewed the tuning is INFERENCE, not established - say so.
+
+OUT OF SCOPE: pushing startTimeLight/endTimeLight/color_ratio as readouts. That is a
+protocol bump and a separate, later item; note it as a follow-up rather than doing it.
+
+DONE MEANS: the six comments and the two docs are correct; the overlay reaches all six
+slots; invariants and CI green.
+```
+
+## P16 · Let a pack author see which texture a file is — [SAFE]
+
+Directly serves the stated end state: *most remastering work is creating art assets*.
+
+```
+Read docs/japanese-naming.md first.
+
+THE PROBLEM. The HD texture pack feature works and is content-keyed end to end (tested
+2026-08-06) - nothing is wrong with it. But an artist making a pack today matches hex
+filenames by eye: nothing in the shipping build tells them that
+tex1_128x128_<hex>_9.dds is the cliff texture from a particular stage.
+
+Both halves of the join already exist in our own code.
+
+IN SCOPE - one bounded addition that changes NO key and NO hash, so texture tagging and
+hash stability are untouched by construction:
+  A game-side pass over loaded J3DModelData that emits, once per distinct texture:
+      <dolphin filename>   <->   <bti name>   (<archive/model>)
+  gated behind an existing game.* setting, and bounded/capped with a truncation notice
+  like the other reports (CLAUDE.md's logging rule).
+
+It needs two small pieces:
+ (a) a public wrapper mirroring the shape of the existing
+     aurora::texture::has_replacement(const GXTexObj*, const GXTlutObj*)
+     (include/aurora/texture.hpp:122) that forwards to build_texture_replacement_name;
+ (b) a TARGET_PC accessor for J3DTexture::mpTexObj[i], which is private today
+     (J3DTexture.h:22-26). That block is our port's own addition, so adding an accessor
+     is in-house rather than an upstream change.
+
+VERIFY BOTH EXIST AND HAVE THOSE SHAPES before writing anything. If the key derivation
+differs from what you expect, stop - a tool that emits the wrong filename is worse than
+no tool.
+
+OUT OF SCOPE: changing how textures are hashed or keyed; changing the pack format;
+rtx.conf categories; anything about material names (that is P8).
+
+REGRESSION SIGNATURE: none in the image. If the emitted filename does not match what a
+real pack directory contains, the key derivation differs and the TOOL is wrong.
+
+DONE MEANS: the report exists behind a setting, is capped, and one run's output is pasted
+into aurora-ao/docs/dx9/texture-replacements.md as a worked example.
+
+Acceptable outcome: you find the join cannot be made without changing the key. Say so -
+that is a real answer and it closes the question.
+```
+
+---
+
 # Tier 4 — only with the owner watching
 
 ## P11 · The kasumi blend itself
@@ -758,14 +1000,18 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 
 | When | Run | Needs a play-test? |
 | :-- | :-- | :-- |
-| First | P1, P3, P5 (pure documentation) | no |
-| Then | P4, P2 step 1 | no |
-| Then | P8 (material identity), P9 (tuning panel), P10 | no |
-| Then, together in one window | P6, P7 | yes, one window |
+| First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15 | no |
+| Then — small guarded changes | P4, P2 step 1, P14 | no |
+| Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10, P16 | no |
+| Measure, then act | P12 (Twilight fog draw count) | one log, then a change |
+| Together in one window | P6, P7 | yes, one window |
 | When ready for lights | P0 (the merge) | yes |
 | Last | P11 | yes, A/B |
 
-**P0 can be run at any time and does not depend on any of the others.** It is listed
-last in the table only because it is the one with a merge conflict to resolve, not
-because it is least important — for the goal of getting light creation into Remix, it is
-the most important item in this file.
+**P0 can be run at any time and depends on none of the others.** It is placed late in the
+table only because it is the one with a merge to resolve — for the goal of getting light
+creation into Remix it is the most important item in this file.
+
+**P12 is the one item where a single log settles whether there is anything to do at all.**
+Ask for a `dx9.draws` sample standing in the Palace of Twilight before spending a session
+on it.
