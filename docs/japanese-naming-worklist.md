@@ -106,8 +106,6 @@ Push only your session branch.
 
 ## P0 · Merge the effect-lights branch — [PROTOCOL]
 
-## P0 · Merge the effect-lights branch — [PROTOCOL]
-
 The system that turns the game's own fire and glow into Remix sphere lights is finished,
 reviewed, tested in game, and sitting unmerged behind three merge traps. Light creation
 was named as critical game data that must reach Remix; this is the thing that does it.
