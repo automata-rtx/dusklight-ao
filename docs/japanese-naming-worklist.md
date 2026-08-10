@@ -1005,53 +1005,63 @@ DONE MEANS: the six comments and the two docs are correct; the overlay reaches a
 slots; invariants and CI green.
 ```
 
-## P16 · Let a pack author see which texture a file is — [SAFE]
+## P16 · Turn on the texture dump that already exists — [SAFE, one line]
 
-Directly serves the stated end state: *most remastering work is creating art assets*.
+**Rewritten after verification.** An earlier draft of this item asked for a tool to join
+pack filenames to game texture names. That was refused on review, correctly: **aurora
+already writes exactly that**, and it is off because of one hardcoded line.
 
 ```
-Read docs/japanese-naming.md first.
+THE SITUATION, verified.
 
-THE PROBLEM. The HD texture pack feature works and is content-keyed end to end (tested
-2026-08-06) - nothing is wrong with it. But an artist making a pack today matches hex
-filenames by eye: nothing in the shipping build tells them that
-tex1_128x128_<hex>_9.dds is the cliff texture from a particular stage.
+An artist making an HD pack matches hex filenames by eye. But aurora already contains the
+answer:
 
-Both halves of the join already exist in our own code.
+  aurora-ao/lib/gfx/texture_replacement.cpp:999-1001
+      if (aurora::g_config.allowTextureDumps) { dump_editable_texture_dds(key, obj); }
+  aurora-ao/lib/gfx/texture_replacement.cpp:949-952
+      dumpRoot = <cachePath>/"texture_dumps";
+      path     = dumpRoot / format_replacement_filename(key);
+      write_rgba8_dds(path, texWidth, texHeight, pixels.data);
 
-IN SCOPE - one bounded addition that changes NO key and NO hash, so texture tagging and
-hash stability are untouched by construction:
-  A game-side pass over loaded J3DModelData that emits, once per distinct texture:
-      <dolphin filename>   <->   <bti name>   (<archive/model>)
-  gated behind an existing game.* setting, and bounded/capped with a truncation notice
-  like the other reports (CLAUDE.md's logging rule).
+That writes the texture's own decoded image to THE EXACT FILENAME a pack file must carry.
+A picture named with the key is a better answer to "which texture is this" than a BTI name
+would be - BTI names collide (`dummy`, `Zbuffer`).
 
-It needs two small pieces:
- (a) a public wrapper mirroring the shape of the existing
-     aurora::texture::has_replacement(const GXTexObj*, const GXTlutObj*)
-     (include/aurora/texture.hpp:122) that forwards to build_texture_replacement_name;
- (b) a TARGET_PC accessor for J3DTexture::mpTexObj[i], which is private today
-     (J3DTexture.h:22-26). That block is our port's own addition, so adding an accessor
-     is in-house rather than an upstream change.
+The empty-registry early-outs are explicitly bypassed when dumps are on
+(texture_replacement.cpp:1314, :1325, :1337, :1348), so it works with no pack installed.
 
-VERIFY BOTH EXIST AND HAVE THOSE SHAPES before writing anything. If the key derivation
-differs from what you expect, stop - a tool that emits the wrong filename is worse than
-no tool.
+It is disabled by ONE HARDCODED LINE:
 
-OUT OF SCOPE: changing how textures are hashed or keyed; changing the pack format;
-rtx.conf categories; anything about material names (that is P8).
+  dusklight-ao/src/m_Do/m_Do_main.cpp:646
+      config.allowTextureDumps = false;
 
-REGRESSION SIGNATURE: none in the image. If the emitted filename does not match what a
-real pack directory contains, the key derivation differs and the TOOL is wrong.
+Verify all of the above before changing anything.
 
-DONE MEANS: the report exists behind a setting, is capped, and one run's output is pasted
-into aurora-ao/docs/dx9/texture-replacements.md as a worked example.
+IN SCOPE - and keep it this small:
+ - Replace the hardcoded false with an existing-style setting
+   (dusk::getSettings().game.*), defaulting OFF, so the owner can turn it on from a
+   release CI artifact without a rebuild. Follow the pattern of the neighbouring lines,
+   which already read from getSettings().
+ - Document it in aurora-ao/docs/dx9/texture-replacements.md: what it writes, where, and
+   that it works with no pack installed. Paste one run's directory listing as a worked
+   example.
 
-Acceptable outcome: you find the join cannot be made without changing the key. Say so -
-that is a real answer and it closes the question.
+OUT OF SCOPE - explicitly, because the earlier draft of this item proposed all of it and
+it is not needed: do NOT build a name-join pass over J3DModelData; do NOT add an aurora
+wrapper mirroring has_replacement; do NOT add a TARGET_PC accessor for
+J3DTexture::mpTexObj; do NOT change how textures are keyed or hashed.
+
+REGRESSION SIGNATURE: with the setting on, a texture_dumps directory fills with .dds
+files whose names match pack filenames. Disk use grows while it is on - that is why it
+defaults off and why the doc should say so. Nothing in the image changes either way.
+
+DONE MEANS: the setting exists and defaults off; one run's output is documented; nothing
+else changed.
+
+Acceptable outcome: you find the dumped filename does NOT match what a pack directory
+needs. Then say so - that is the one thing that would justify revisiting the join idea.
 ```
-
----
 
 ## P18 · Grass is also flowers, and blobShadows drops far more than we say — [DOC ONLY]
 

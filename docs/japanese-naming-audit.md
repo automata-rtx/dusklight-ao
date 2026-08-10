@@ -268,7 +268,12 @@ Why that name is worth having — verified, not speculation. The game's own envi
 system dispatches on material names every frame (`dKy_bg_MAxx_proc`,
 `d_kankyo.cpp:11399`, matching `MA00`…`MA17` at `:11508`), and those names carry
 semantics: `MA00_Gake` (崖 cliff), `MA00_Kusa` (草 grass), `MA00_Enkei_Tree_Color`
-(遠景 distant scenery). Remix currently cannot tell a cliff from grass from water — all
+(遠景 distant scenery).
+
+**Narrowed on verification:** the `MAnn` code is dispatched on everywhere, but the
+*descriptive romaji suffix* is acted on in exactly one stage pair — `d_a_bg.cpp:377-383`
+gates Gake/Kusa/Enkei on the start stage name. So the suffix is a weaker signal than the
+code is, and the measurement in P8 is what should decide whether either is worth carrying. Remix currently cannot tell a cliff from grass from water — all
 are opaque legacy materials with a TEV-derived albedo — and the only alternative route is
 hash-tagging textures, which is what rule 1 exists to avoid and which cannot distinguish
 two uses of one texture.
@@ -431,11 +436,13 @@ Because the option is named for the English word "grass" and the open issue is t
 spawns is untouched — so if flowers show the same symptom, toggling the switch will not
 move it, and that reads as the diagnosis being wrong.
 
-Separately: the game classifies **every blade into four stage-authored types**, and
-neither the batch buckets, the per-blade display lists, nor any texture tag can tell them
-apart. That is the answer to "is there a better identity handle than per-blade display
-lists" — yes, the type byte, and it is a *class* handle, so it complements
-`perBladeGrass` rather than replacing it.
+A second claim in this area — that the game's four stage-authored blade types are a
+better identity handle than per-blade display lists — **was refuted on verification and
+is withdrawn.** A texture tag *does* separate two of the four classes
+(`d_grass.inc:742` vs `:749` load different textures), the type byte is read at draw,
+simulate and SFX time so it is not unused, and every remaining difference between the
+classes is a per-instance transform that **already reaches Remix** under `perBladeGrass`
+via `GXLoadPosMtxImm` per blade (`d_grass.inc:809`). Nothing is being lost.
 
 ### 4.11 `blobShadows` drops far more than the docs say — **RECORD WRONG** [P18]
 
@@ -534,13 +541,28 @@ Consequence for the overlay: its four time presets reach only **four of the game
 palette slots**, and the game ships the two missing numbers. Every per-slot colour, fog
 and sky comparison made through that overlay has been made against four of six.
 
-### 4.17 A pack author cannot tell which texture a file is — **DATA ON THE FLOOR** [P16]
+### 4.17 A pack author cannot identify a texture — **and the fix is one hardcoded line** [P16]
 
 The HD-pack feature is content-keyed end to end and the naming lens finds **nothing wrong
 with it**. But the stated end state is that most remastering work becomes *creating art
-assets*, and today that means matching hex filenames by eye: nothing tells an author that
-`tex1_128x128_<hex>_9.dds` is the cliff texture from a given stage. Both halves of that
-join already exist in our own code.
+assets*, and today that means matching hex filenames by eye.
+
+**Corrected on verification, and the correction makes this much cheaper.** The first draft
+of this finding proposed building a tool to join pack filenames to game texture names.
+That was refused, correctly: **aurora already writes exactly that.**
+`report_missing_key` calls `dump_editable_texture_dds`
+(`texture_replacement.cpp:999-1001`), which writes the texture's own decoded image to
+`<cachePath>/texture_dumps/` under **the exact filename a pack file must carry**
+(`:949-952`). The empty-registry early-outs are explicitly bypassed when dumps are on, so
+it works with no pack installed.
+
+It is disabled by one hardcoded line — `m_Do_main.cpp:646`,
+`config.allowTextureDumps = false;` — sitting among neighbours that all read from
+`getSettings()`.
+
+A picture named with the key is also a *better* answer than the BTI name the first draft
+chased, because BTI names collide (`dummy`, `Zbuffer`). **This is the clearest case in the
+audit of the verification pass turning a session of work into a one-line change.**
 
 Relatedly, for name-keyed *replacements* the machinery is already there and exercised:
 `LegacyMaterialData::setHashOverride` is called on the API draw path, and USD replacement
@@ -656,6 +678,13 @@ kytag16 (`Pikari`, a spot light) carries data the bridge receives in no form at 
 **The effect-lights `Excluded` list is clean** — all 48 matched names are genuinely
 drool or body fluid. **`Class::Lava` is genuinely reachable** via `yogan`/`yougan`, and
 every candle/torch/lantern actor's effects classify correctly.
+
+**Kankyo particle systems sharing one texture is not a finding.** Five of them share one
+resource, and rain/stars/lens-flare/blob-shadows share another — all verified. But it is a
+worked instance of a rule all three `CLAUDE.md` files already state ("this game reuses
+textures across contexts constantly"), it changes no decision (the project already does
+not tag, ships an `rtx.conf` with no category lists, and routes HD packs per draw), and a
+finding that cannot be acted on is noise. Recorded here so it is not rediscovered.
 
 **The HD texture pack feature is clean.** Content-keyed end to end — GX texture hash,
 dimensions, format. No game symbol name enters it anywhere, and the lens finds nothing
