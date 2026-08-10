@@ -948,6 +948,35 @@ Added **2026-07-29**:
       `dusklight.water` report them, so what a body of water is made of is in
       the log rather than guessed at.
 
+    **The seam between water and the ground around it (2026-08-10).** Reported on
+    the Hyrule Field puddles and Remix-exclusive. **Cause read from the shader:
+    a translucent material has no partial coverage.** Its only opacity term is
+    `diffuseOpacity`, which comes from the transmittance texture's alpha and
+    feeds only the diffuse layer water disables
+    (`translucent_surface_material_interaction.slangh:123-171`). So converting a
+    draw to translucent discards its alpha blend — fine for the surface, fatal
+    for the pass whose job is feathering the boundary into the shore.
+
+    `mizugiwa`, the water's edge, therefore keeps its alpha and falls through to
+    the legacy path (`rtx.dusklight.water.shorelineAsBlend`, default on).
+    **Untested.** Regression signature: a milky ring at the water's edge, which
+    would be that pass hitting the white-albedo problem translucency was
+    introduced to avoid.
+
+    **Not yet known:** whether the puddle's *own* surface material is that pass
+    or another one. The puddles are `d_a_obj_groundwater`, whose `Draw()` enters
+    two models — one on the XLU list (the game stating its alpha matters) and one
+    given a `C_MTXLightPerspective` from the live camera (the projected layer,
+    already hidden) — both animating UVs through BTK tracks. The `layer=` field
+    now on every `dusklight.water` line will name it.
+
+    **Texture resolution is not a pipeline loss.** Remix hashes `XXH3` over
+    subresource 0, and aurora uploads GX textures at native size with the full
+    mip chain, so a wave texture that looks low resolution *is* the game's art.
+    What is not representative is reading that texture as the rendered result:
+    vanilla's detail came from the stacked passes and the indirect-texture warp,
+    which aurora drops. `dusklight.water` now reports `tex=WxH`.
+
     **The tag-based control that preceded this was wrong and is removed.** MA06
     is the waves *and* the shoreline *and* the murky body, so `hideSurfaceTag = 6`
     — which this file recommended — would have deleted two surfaces to be rid of

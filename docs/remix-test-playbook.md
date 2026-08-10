@@ -112,7 +112,14 @@ a look call rather than a correct answer.
 
 The `layer=` field on each `dusklight.water` line says what each body of water is
 actually made of, so a lake made of passes not in that list will say so rather
-than quietly ignoring the switches.
+than quietly ignoring the switches. `tex=WxH` says the size Remix received, which
+answers "is that texture really that low resolution" without opening anything.
+
+**Also worth a look this run:** the Hyrule Field puddles, for a seam between the
+water and the ground around it. The water's edge pass now keeps its alpha blend
+rather than becoming refracting glass, which is what a hard boundary there was.
+*Shoreline Keeps Its Blend* in the Water panel turns it off for an A/B. A milky
+ring at the edge instead of a hard one is the regression to report.
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
