@@ -718,13 +718,35 @@ sweep and the effect-lights branch read `efplight`. Worth knowing before anyone 
 lightning": the colour is written as (0,0,0) at registration and filled in later, so a
 snapshot taken at set time reads black.
 
-**`dKy_get_schbit()` always returns 0.** There is no schedule-bit system in this tree, so
-there is nothing to expose. What `sch` stands for is **not established** — recorded as
-unknown rather than guessed.
+**`dKy_get_schbit()` always returns 0**, so there is nothing to expose — the fields are
+written to 0 once at light init and never again.
 
-**The seasons are real but small** — one area's dressing (the Fishing Hole), not palette
-data — and the calendar/day-of-week drives nothing visual. Both are honestly *leave
-alone* answers.
+> **This entry previously said "what `sch` stands for is not established", and that was
+> wrong — in the most instructive possible way.** The game names it, in a literal-kana
+> debug label, at exactly the kind of site §6 of `japanese-naming.md` exists to point
+> people at:
+>
+> ```
+> src/d/d_kankyo.cpp:8151
+>   mctx->genCheckBox("スケジュールビット表示", &display_schedule_bit, 0x1);
+>                       ^ sukejuuru bitto hyouji = "schedule bit display"
+> ```
+>
+> The field it toggles is `display_schedule_bit` (`d_kankyo.h:946`), guarding the very
+> report the original finding cited. `sch` **is** schedule, established twice over — in
+> Japanese and in English — and an auditor reading only the abbreviated token recorded it
+> as unknown. **The audit's own method caught the audit's own document.** Keep it: it is
+> the cheapest possible reminder that "not established" is a claim that also has to be
+> checked.
+
+**The seasons and the calendar are honestly *leave alone*** — but with one correction to
+the reasoning, not the verdict. `fishing_hole_season` is **not** cleared per stage: it is
+cleared only at game init and otherwise written on entering the Fishing Hole, so the value
+**persists across stages**, and `d_a_obj_lp.cpp:32` tests it with no stage gate at the
+site. So "one area's dressing" understates its reach even though the conclusion stands.
+The calendar and day-of-week drive nothing visual; note only that `d_kankyo_wether.cpp:1146`
+calls `dKy_get_dayofweek()` and discards the result, inside a weather path — harmless, but
+it is where a reader would look to disprove "nothing reads it".
 
 **The sun/moon elevation-cap work rests on no misread name** and checks out end to end.
 
