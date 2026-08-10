@@ -939,11 +939,26 @@ Added **2026-07-29**:
       session does not decay into float noise.
     - `hideSurfaceTag` drops the water surfaces carrying one MAxx tag, so a lake
       is one moving surface rather than several stacked refracting interfaces.
-      **Default 0, hiding nothing** — which layer should survive is a look
-      decision nobody has made yet. From the names logged so far a lake is MA09
-      (`MeraWater`, shine) over MA06 (`NigoriWater`, murky body), so **6 is the
-      first thing to try**. **MA03 is fountains and waterfalls** — hiding that
-      tag would delete them.
+      **Default 0, hiding nothing — and the tag is the WRONG GRANULARITY,
+      measured 2026-08-09 15:56.** A tag is not a layer. MA06 alone is three
+      different surfaces:
+
+      | Name | Japanese | What it is |
+      | :-- | :-- | :-- |
+      | `cc_MA06_mizugiwa_v_x` | mizugiwa | the water's edge / shoreline |
+      | `cc_MA06_nami_v_x` | nami | **waves** |
+      | `cc_MA06_NigoriWater_v_x` | nigori | the murky body |
+      | `cc_MA09_mera_v`, `cd_MA09_MeraWater_v` | mera | the shimmer layer |
+
+      So `hideSurfaceTag = 6` would delete the shoreline and the waves along
+      with the murk. **An earlier revision of this file recommended exactly
+      that; it was wrong and the recommendation is withdrawn.** What separates
+      these layers is the name suffix, not the tag.
+
+      Until that is carried, the precise tool is Remix's own
+      `rtx.hideInstanceTextures` keyed on the hashes `dusklight.water` logs —
+      tagging, but exact. **MA03 is fountains and waterfalls**; hiding that tag
+      would delete them.
     - Aurora carries the MAxx tag per draw in `D3DMATERIAL9::Ambient.a`, the
       last free channel of the side band, and both `dusk.matname` and
       `dusklight.water` report it. That is what turns `hideSurfaceTag` from a

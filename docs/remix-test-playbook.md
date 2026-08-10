@@ -97,12 +97,16 @@ second one, which Remix does not blend. Water is plain glass until a normal map
 is authored against a texture hash; the fork now owns the tiling and scroll
 instead, and can drop all but one of a lake's stacked surfaces.
 
-**What to set before judging anything.** In F1 → Dusklight → Water: try
-**Hide Surface Tag = 6** (the murky body, so a lake is one surface) and move
+**What to set before judging anything.** In F1 → Dusklight → Water, move
 **UV Tiling** until the ripple texture reads at a natural scale from where you
-are standing. Both are live; no rebuild. Report the values that worked — those
-are the result. Do not set Hide Surface Tag to 3: fountains and waterfalls are
-MA03.
+are standing, and adjust **Scroll Speed** to taste. Both are live; no rebuild.
+Report the values that worked — those are the result.
+
+**Leave Hide Surface Tag at 0.** It is too coarse to be useful: MA06 is the
+shoreline *and* the waves *and* the murky body, so hiding that tag deletes three
+different things. MA03 is fountains and waterfalls. If a lake needs a layer
+dropped, use Remix's `rtx.hideInstanceTextures` on the specific hash from a
+`dusklight.water` line instead.
 
 **What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
 Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
