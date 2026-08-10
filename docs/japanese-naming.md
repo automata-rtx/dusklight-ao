@@ -98,7 +98,7 @@ does so **for the same word**:
 
 | Word | In C code | In effect/asset IDs |
 | :-- | :-- | :-- |
-| 飛沫 spray | `dKyr_drawSibuki`, `setSibukiEffect`, `mSibukiAlpha` | `ZI_S_canoe_shibuki_a`, `ZI_S_lk_takishibuki_a`, +27 more |
+| 飛沫 spray | `dKyr_drawSibuki`, `setSibukiEffect`, `mSibukiAlpha` | `ZI_S_canoe_shibuki_a`, `ZI_S_lk_takishibuki_a`, **+67 more** — 69 of the 3201 effect names |
 | 胞子 spore | `dKyr_housi_init`, `dKyw_drawHousi`, `mHousiCount` | `ZI_J_houshiTest`, `ZI_S_pz_BodyHoushi_a` |
 
 So the two halves of one feature are spelled differently, and **either spelling
@@ -151,6 +151,22 @@ write "unknown".
 ---
 
 ## 6. The debug builds are labelled in Japanese, and that is a dictionary
+
+> ### ⚠ Set the locale first, or you will find none of it
+>
+> ```sh
+> export LC_ALL=C.UTF-8      # before any grep -P on Japanese
+> ```
+>
+> The default locale in a session container is `POSIX`. Under it, `grep -P` with a
+> kana/kanji character class matches **nothing** — no error, no warning, exit 1,
+> zero results. The same command with the locale set returns 419 files from
+> `src/d` alone. This was found by accident on 2026-08-10, and it is the most
+> likely reason the game's own labels went unread for this project's whole
+> history: every search for them came back empty and was read as "not there".
+>
+> An empty grep for Japanese is not evidence of absence until the locale is set.
+> This is the §3 rule again, one level lower down.
 
 **496 files under `src/` and `include/` contain literal kana/kanji** — not
 romanized, actual Japanese. It is in the HIO debug sliders, the developer
