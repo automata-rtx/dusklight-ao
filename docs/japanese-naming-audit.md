@@ -769,14 +769,28 @@ texture replacement and tagging; shadows, grass and geometry identity; the other
 in-flight branches; the overlay, option wire and protocol; and the open "game state that
 never reaches Remix" sweep.
 
-Three things are still outstanding, and they are named rather than glossed:
+**The adversarial verification pass is complete.** Every finding was produced by one agent
+reading the source, then attacked by a second agent instructed to refute it and to default
+to refuted when it could not confirm. Result across all twelve areas:
 
-- **The adversarial verification pass had not finished.** Each area's findings were
-  produced by one agent reading the source, and a second agent was queued to attack each
-  set; four of the twelve had returned when this was written. Findings are reported as the
-  auditing agent produced them.
-- **The completeness critic had not returned** — the pass whose job was to say what the
-  twelve areas collectively missed, and which of their findings are not worth acting on.
+| | |
+| :-- | --: |
+| findings that survived | 56 |
+| findings refuted and withdrawn | 11 |
+| findings that survived only in narrowed form | 38 |
+
+Six refutations and six narrowings changed this document or the worklist, and each is
+recorded where it applies rather than quietly fixed. Two of them corrected *me*: the
+"three times the rain case" figure in §4.12, and the "`sch` is not established" line in
+§6. One collapsed a whole work item — P16 — from a session of tool-building to a
+one-line settings change.
+
+**What remains outstanding:**
+
+- **The completeness critic had not returned** — the pass whose job is to say what the
+  twelve areas collectively missed, and which surviving findings are still not worth
+  acting on. Until it lands, treat §5 as the best available answer to the second question
+  rather than a complete one.
 - **Nothing here has been tested in game.** Every proposal is a reading.
 
 The findings carry file:line citations precisely so each prompt can re-verify before
