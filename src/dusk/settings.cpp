@@ -79,6 +79,7 @@ UserSettings g_userSettings = {
         // docs/effect-lights.md section 10 says so plainly.
         .effectLights {"game.effectLights", true},
         .effectLightIntensity {"game.effectLightIntensity", 1.0f},
+        .effectLightMassExponent {"game.effectLightMassExponent", 0.5f},
         .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
         .effectLightDerivedReach {"game.effectLightDerivedReach", 1.0f},
         .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
@@ -326,6 +327,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixLocalLightRadius);
     Register(g_userSettings.game.effectLights);
     Register(g_userSettings.game.effectLightIntensity);
+    Register(g_userSettings.game.effectLightMassExponent);
     Register(g_userSettings.game.effectLightDerivedIntensity);
     Register(g_userSettings.game.effectLightDerivedReach);
     Register(g_userSettings.game.effectLightDerivedRadius);

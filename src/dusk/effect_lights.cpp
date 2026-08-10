@@ -95,7 +95,13 @@ constexpr float kMinParticleScale = 0.001f;
 struct Candidate {
     float pos[3];
     float color[3];   // 0..1, the effect's own colour
-    float weight;     // higher wins the site's position and colour
+    // How much fire this candidate is worth, for scaling the site's output. NOT the lead
+    // score - the lead is decided from class and effect id, deliberately without any animating
+    // term, because a position that depends on an animating value snaps between emitters.
+    // Sweep path: the emitter's global alpha, so a fading fire contributes less as it fades.
+    // Simple path: 1.0 flat - a simple record is one visible effect instance, and the emitter
+    // behind it is shared between instances so its alpha says nothing about this one.
+    float weight;
     Class cls;
     uint16_t effectId;
 };
@@ -125,6 +131,8 @@ struct TrackedSite {
     // widening the API for a log would be the wrong trade.
     float reach;
     float vanillaDistance;
+    float mass;        // summed emitter alpha merged into this site
+    float massBoost;   // what that multiplied reach by
 };
 
 // One press of Log Effect Classification Report has to answer every open question at once, so
@@ -223,6 +231,8 @@ struct SiteReportEntry {
     // shows a maxJump near mergeRadius and a jumps count that climbs every second.
     float maxJump;
     uint32_t jumps;
+    float mass;
+    float massBoost;
 };
 
 // A retrospective ring of site state over time. Retrospective is the point: you throw the bomb
@@ -724,6 +734,8 @@ void snapshotSites(const std::vector<TrackedSite>& tracked) {
             s.vanillaDistance = t.vanillaDistance;
             s.maxJump = t.maxJump;
             s.jumps = t.jumps;
+            s.mass = t.mass;
+            s.massBoost = t.massBoost;
         }
     }
 
@@ -929,7 +941,7 @@ void emitReport(const Params& params) {
     Log.info("[sites] {} live this frame{}", s_siteReportCount,
              s_siteReportCount >= kMaxSiteReport ? "  (CAPPED)" : "");
     Log.info("  id class effect | position | members | derived colourFromGame | reach radius "
-             "radiance | adoptDist | maxJump jumps");
+             "radiance | adoptDist | maxJump jumps | mass boost");
     Log.info("  members > 1 means several emitters merged into one light. adoptDist -1 means it "
              "adopted nothing and is on the configured fallback.");
     Log.info("  maxJump is the largest single-frame move this site has made, in world units, and "
@@ -940,10 +952,11 @@ void emitReport(const Params& params) {
     for (int i = 0; i < s_siteReportCount; i++) {
         const SiteReportEntry& s = s_siteReport[i];
         Log.info("  {:<4} {:<5} {:#06x} | {:8.0f} {:8.0f} {:8.0f} | {:2} | {} {} | {:7.1f} "
-                 "{:5.1f} {:9.2f} | {:8.1f} | {:7.1f} {:<6}",
+                 "{:5.1f} {:9.2f} | {:8.1f} | {:7.1f} {:<6} | {:5.2f} {:5.2f}",
                  s.id, className(s.cls), s.effectId, s.pos[0], s.pos[1], s.pos[2], s.members,
                  s.derived ? "derived  " : "undetermd", s.colorFromGame ? "gameColour" : "effColour",
-                 s.reach, s.radius, s.radiance, s.vanillaDistance, s.maxJump, s.jumps);
+                 s.reach, s.radius, s.radiance, s.vanillaDistance, s.maxJump, s.jumps, s.mass,
+                 s.massBoost);
     }
 
     // ---- 4. the game's own lights ------------------------------------------------------
@@ -1226,7 +1239,7 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             c.color[0] = color[0];
             c.color[1] = color[1];
             c.color[2] = color[2];
-            c.weight = classWeight(cls) * alpha;
+            c.weight = alpha;
             c.cls = cls;
             c.effectId = effectId;
 
@@ -1316,7 +1329,7 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         c.color[0] = color[0];
         c.color[1] = color[1];
         c.color[2] = color[2];
-        c.weight = classWeight(cls);
+        c.weight = 1.0f;
         c.cls = cls;
         c.effectId = rec.effectId;
 
@@ -1546,8 +1559,7 @@ const std::vector<Site>& collect(const Params& params) {
     struct Cluster {
         float pos[3];
         float color[3];
-        float bestWeight;
-        float totalWeight;
+        float mass;   // summed candidate weights - "how much fire is standing here"
         Class cls;
         uint16_t effectId;
         int members;
@@ -1582,8 +1594,7 @@ const std::vector<Site>& collect(const Params& params) {
             n.color[0] = c.color[0];
             n.color[1] = c.color[1];
             n.color[2] = c.color[2];
-            n.bestWeight = c.weight;
-            n.totalWeight = c.weight;
+            n.mass = c.weight;
             n.cls = c.cls;
             n.effectId = c.effectId;
             n.members = 1;
@@ -1592,10 +1603,7 @@ const std::vector<Site>& collect(const Params& params) {
 
         Cluster& t = clusters[target];
         t.members++;
-        t.totalWeight += c.weight;
-        if (c.weight > t.bestWeight) {
-            t.bestWeight = c.weight;
-        }
+        t.mass += c.weight;
 
         // The leading member donates the position and colour rather than a centroid: a centroid
         // drifts as members come and go, and a light that drifts has visible shadow swim.
@@ -1703,6 +1711,11 @@ const std::vector<Site>& collect(const Params& params) {
         bool derived;         // reach came from the game
         bool colorFromGame;   // colour came from the game (a wider set - see gatherVanillaLights)
         float priority;
+        // Summed emitter alpha at this site, and what it multiplied reach by. Report-only, so a
+        // log can show whether a bonfire actually measured as one rather than leaving the
+        // scaling to be judged by eye.
+        float mass;
+        float massBoost;
         // Distance to the vanilla light this site adopted, or -1. Recorded purely for the
         // report: it is the one number the whole burst design turns on and the only one that
         // has never been measured - the site is at calcEmitterGlobalPosition (which includes
@@ -1749,6 +1762,29 @@ const std::vector<Site>& collect(const Params& params) {
         p.vanillaDistance =
             v >= 0 ? std::sqrt(std::max(0.0f, dist2(clusters[i].pos, vanilla[v].pos))) : -1.0f;
 
+        // How much fire is standing here, and what that does to the light.
+        //
+        // Until this existed nothing scaled a light by the amount of fire present: a five
+        // emitter bonfire and a single candle emitted identically, which is the whole reason
+        // large fires read as underwhelming. `mass` is the summed alpha of the emitters merged
+        // into this site - 5 for a full bonfire, 1 for a candle, less for anything fading.
+        //
+        // Applied to REACH rather than to the radiance scale on purpose. Radiance already goes
+        // as reach squared (solveIntensity), so an exponent of 0.5 makes radiance exactly
+        // proportional to mass - twice the fire, twice the light, which is what summing emitters
+        // physically means. Reach also feeds the budget sort, so a genuinely big fire now
+        // outranks a candle when maxLights binds, which it should.
+        //
+        // A single full alpha emitter has mass 1, and 1 to any power is 1 - so every candle and
+        // torch in the game is untouched at every exponent, and existing tuning survives. An
+        // exponent of 0 disables the whole thing exactly, which is what makes it a clean A/B.
+        const float mass = std::max(clusters[i].mass, 0.0f);
+        const float massBoost = (params.massExponent > 0.0f && mass > 0.0f)
+                                    ? std::pow(mass, params.massExponent)
+                                    : 1.0f;
+        p.mass = mass;
+        p.massBoost = massBoost;
+
         if (v >= 0 && vanilla[v].reachKnown) {
             p.derived = true;
             // Scaled rather than replaced: the game's mPow is the only thing that distinguishes a
@@ -1756,12 +1792,12 @@ const std::vector<Site>& collect(const Params& params) {
             // one size. Note the two places reach is read - solveIntensity, where radiance goes as
             // its square, and p.priority below, which is why this is not simply derivedIntensity
             // by another name: it also decides who survives maxLights.
-            p.reach = vanilla[v].reach * params.derivedReach;
+            p.reach = vanilla[v].reach * params.derivedReach * massBoost;
             p.radius = params.derivedRadius;
             p.scale = params.derivedIntensity;
         } else {
             p.derived = false;
-            p.reach = params.undeterminedReach;
+            p.reach = params.undeterminedReach * massBoost;
             p.radius = params.undeterminedRadius;
             p.scale = params.undeterminedIntensity;
         }
@@ -1861,6 +1897,8 @@ const std::vector<Site>& collect(const Params& params) {
         match->site.members = p.members;
         match->reach = p.reach;
         match->vanillaDistance = p.vanillaDistance;
+        match->mass = p.mass;
+        match->massBoost = p.massBoost;
 
         const float intensity =
             solveIntensity(p.reach, match->site.radius, p.scale * params.intensity);

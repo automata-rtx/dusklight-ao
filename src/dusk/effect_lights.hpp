@@ -62,6 +62,11 @@ struct Params {
 
     float intensity = 1.0f;              // master multiplier over every light made here
 
+    // How much a light grows with the amount of fire standing at it. Reach is multiplied by
+    // the site's mass raised to this power; 0 disables it exactly, 0.5 makes radiance
+    // proportional to mass because radiance goes as reach squared. See docs/effect-lights.md.
+    float massExponent = 0.5f;
+
     float derivedIntensity = 19.0f;      // sites that adopted a vanilla light
     float derivedReach = 1.0f;           // multiplies the reach the game authored, not a replacement
     float derivedRadius = 10.0f;

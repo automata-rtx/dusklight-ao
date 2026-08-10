@@ -695,6 +695,7 @@ Remix. The overlay hosts them in the Dusklight tab.
 | :-- | :-- | :-- |
 | `effectLights` | on | the system |
 | `effectLightIntensity` | 1.0 | **multiplies every light this system makes**, derived and undetermined alike — the master brightness |
+| `effectLightMassExponent` | 0.5 | how much a light grows with the amount of fire standing at it — see the note below |
 | `effectLightDerivedIntensity` | 19.0 | multiplier for sites that adopted a vanilla light (§5.1) |
 | `effectLightDerivedReach` | 1.0 | **multiplies** the reach the game authored, rather than replacing it — see the note below |
 | `effectLightDerivedRadius` | 10.0 | emitter radius for those, world units |
@@ -717,6 +718,41 @@ The same names exist in the game's own `config.json` under `game.*`, which is
 what a value falls back to when Remix's option is unreachable — except
 `effectLightReportCommit`, which the bridge reads directly and which has nothing
 to fall back to, being an action rather than a value.
+
+**A light now scales with how much fire is actually there.** Until 2026-08-10
+nothing did: a five-emitter bonfire and a single candle emitted identically,
+which is why large fires read as underwhelming. Each site sums the emitters
+merged into it, weighted by their alpha, into a **mass** — 5 for a full bonfire,
+1 for a candle, less for anything fading out — and multiplies reach by
+`mass ^ effectLightMassExponent`.
+
+The exponent is chosen so the arithmetic means something:
+
+- **0** disables it exactly. `mass^0 == 1`, so every light behaves as it did
+  before this existed. That makes it a clean A/B rather than a thing to unwind.
+- **0.5**, the default, makes **radiance proportional to mass**, because
+  radiance goes as the square of reach. Twice the fire, twice the light — which
+  is what summing emitters physically means.
+- **1.0** makes reach itself proportional to mass, which grows brightness
+  quadratically. Much stronger; there for tuning, not as a default.
+
+**A single full-alpha emitter has mass 1, and 1 to any power is 1**, so every
+candle and torch is untouched at every exponent and existing tuning survives.
+Only the big ones move.
+
+Mass comes from the emitter's global alpha on the sweep path. On the simple path
+each record counts a flat 1.0, because the emitter behind a simple effect is
+shared between instances (`isSharedSimpleEmitter`) and its alpha therefore says
+nothing about the particular one being measured. The sites section prints both
+`mass` and the resulting `boost`, so a log shows whether a bonfire actually
+measured as one rather than leaving it to be judged by eye.
+
+**Note what this replaced.** The same alpha used to be multiplied into
+`classWeight` to decide which member donated the site's *position*. That made
+the position depend on an animating value, so two same-class emitters swapped
+the lead whenever their alphas crossed and the light snapped between them by up
+to `mergeRadius`. Alpha now scales output and has no say in placement, which is
+the right split: alpha is a brightness signal, not a position one.
 
 **Reach and radius are not two ways to say "bigger", and only one of them
 changes the shape of the light.** `reach` is a *design* number — the distance

@@ -210,6 +210,7 @@ struct UserSettings {
         // rather than at the positions of the game's registered lights. docs/effect-lights.md.
         ConfigVar<bool> effectLights;
         ConfigVar<float> effectLightIntensity;
+        ConfigVar<float> effectLightMassExponent;
         ConfigVar<float> effectLightDerivedIntensity;
         ConfigVar<float> effectLightDerivedReach;
         ConfigVar<float> effectLightDerivedRadius;

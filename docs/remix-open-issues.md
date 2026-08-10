@@ -82,7 +82,7 @@ same one-line suppression in `dDlst_shadowControl_c::setReal` if wanted.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 10.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 11.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit.
 
 **Effect lights landed 2026-08-06, were TESTED IN GAME 2026-08-07 — "it works" —
