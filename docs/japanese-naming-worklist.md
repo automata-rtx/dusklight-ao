@@ -46,7 +46,65 @@ merge conflict resolves *cleanly* into a wrong answer.
 
 ---
 
-# Tier 0 — the highest-value action, and it is not a naming finding
+# Tier 0 — the two time-critical items, neither of which is a naming finding
+
+## P17 · ⚠ Two branches want the same two material channels — [RESEARCH FIRST, urgent]
+
+**Do this before merging either branch.** It is the only item in this file with a
+deadline, and the failure mode is a clean merge that silently breaks a tested feature.
+
+```
+Read CLAUDE.md ("Merges that succeed and are still wrong") and
+aurora-ao/docs/dx9/remix-material-interface.md §2 before starting.
+
+CLAIM TO VERIFY FIRST. Investigation and documentation only in this session - you are
+NOT authorised to change either branch's behaviour.
+
+The HD texture pack feature (tested good in game, 2026-08-06) carries its pack index and
+stage in two D3DMATERIAL9 channels. The unmerged branch
+claude/water-rendering-investigation-7baezw is reported to reclaim those same two
+channels for two boolean water flags.
+
+Verify by reading `set_remix_material` in aurora-ao/lib/dx9/dx9_internal.hpp on BOTH
+Fixed-Function-dev and that branch, and the fork's reads in
+dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_texrep.{h,cpp} and
+rtx_dusklight_emissive.h.
+
+WHY THIS IS THE DANGEROUS SHAPE. The water branch does not contain the texrep commit, so
+the conflicting hunk is a SINGLE LINE whose obvious resolution - take the newer side - is
+the wrong one. Git will report a clean or trivially-resolvable merge and every draw will
+then present a texRepIndex of 0 or 1. That is precisely the failure CLAUDE.md documents.
+
+ALSO ESTABLISH, because it changes what anyone can plan: how many D3DMATERIAL9 channels
+are genuinely free on Fixed-Function-dev today, and which unmerged branches have claimed
+each of the remainder. The audit's reading is that BOTH remaining channels are already
+spoken for by different in-flight branches. If that is right, several proposals elsewhere
+in this worklist that assume a spare channel are planning on space that is gone - say so
+explicitly.
+
+IF IT DOES NOT REPRODUCE: say so plainly. A false alarm here is a good outcome.
+
+IN SCOPE:
+ - A written channel-allocation status: for each D3DMATERIAL9 field, who uses it on
+   Fixed-Function-dev, and who claims it on each unmerged branch.
+ - Update aurora-ao/docs/dx9/remix-material-interface.md §2 to record that the remaining
+   channels are spoken for by in-flight branches, since that table is what the next
+   feature will read. Aurora's check_invariants.py already validates §2 against
+   set_remix_material once merged - it cannot see an unmerged branch, which is why this
+   needs a human.
+ - A recommended resolution for the water branch: rebase it onto Fixed-Function-dev and
+   re-derive its channel assignment against the current set_remix_material signature,
+   rather than resolving the conflict by hand.
+
+OUT OF SCOPE: performing the rebase, merging anything, changing either feature.
+
+DONE MEANS: the allocation table is written and cited; §2 says what is actually free; and
+the water branch has a stated, safe merge procedure. Aurora's invariants pass.
+
+Push only your session branch.
+```
+
+## P0 · Merge the effect-lights branch — [PROTOCOL]
 
 ## P0 · Merge the effect-lights branch — [PROTOCOL]
 
@@ -986,6 +1044,65 @@ that is a real answer and it closes the question.
 
 ---
 
+## P18 · Grass is also flowers, and blobShadows drops far more than we say — [DOC ONLY]
+
+```
+Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
+
+TWO CLAIMS TO VERIFY, both in the same area, both record-only.
+
+CLAIM 1 - perBladeGrass covers grass but not flowers.
+  daGrass_c is a grass AND flower actor: kind 0 is 草 kusa, kinds 2 and 3 are 花 hana.
+  perBladeGrass exists to stop the batched path churning the asset hash, and it covers
+  dGrass_packet_c only. dFlower_packet_c has the identical churning batch and appears in
+  NO document in any of the three repos.
+  Verify in d_grass.inc and d_flower.inc (or wherever the packets live) and in the
+  option's implementation.
+  WHY IT MATTERS: the option is named for the English word "grass" and the open issue is
+  titled "Grass patches shade wrongly", so nothing signals that half the vegetation the
+  same actor spawns is untouched. If flowers show the same symptom, toggling the switch
+  will not move it - which reads as the diagnosis being wrong.
+  FIX - DOCUMENTATION ONLY. Do NOT silently widen perBladeGrass to cover flowers: its
+  description promises grass and its cost profile differs. State in
+  docs/remix-open-issues.md issue 7, and in the option text in
+  dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_game.h, that the switch covers
+  dGrass_packet_c only and that the flower packet still batches. A sibling switch is a
+  small mechanical port IF flowers turn out to matter - but that decision comes after the
+  grass switch has been tested in game even once, which it has not been.
+
+CLAIM 2 - blobShadows drops far more than four documents say.
+  It is described as covering shadows "under rupees, hearts and pots". It reportedly drops
+  the simple ground shadow of EVERY actor that registers one - items, objects, insects,
+  enemies, NPCs, cutscene actors - across 48 call sites. Verify the call-site count
+  yourself.
+  The tested-good claim (2026-08-06) is therefore much narrower than what changed. The
+  reasoning still holds for anything whose caster geometry reaches Remix, so this is a
+  prose defect, not a behaviour defect - but a session reading "rupees, hearts and pots"
+  would not predict that an NPC's ground shadow is affected.
+  FIX: correct the four descriptions to say the switch drops the game's simple ground
+  shadows for every actor that registers one, and leaves the projected system alone.
+  dDlst_shadowControl_c::setReal is genuinely untouched - that half is accurate, keep it.
+  While there, record that the game calls the projected shadows リアル影 ("real kage") in
+  its own debug labels, and that "blob shadow" is OUR coinage - the simple class has no
+  Japanese name anywhere in the tree.
+
+THIRD, SMALLER: open issue 11 attributes a black shadow quad to a projected texture
+transform, but the item shadows it names are the class that does NOT use one, and the fix
+it proposes has already shipped for that class. Rewrite it to state which shadow class it
+is about, and note that its requested confirmation now DISCRIMINATES: a matrep.gx line
+showing GX_TG_MTX3x4 means the real-shadow class and the diagnosis stands; GX_TG_MTX2x4
+from GX_TG_TEX0 means the simple class and it does not. Do not build anything.
+
+OUT OF SCOPE: adding a flower switch; changing blob-shadow behaviour; the four
+stage-authored grass types (that is a separate, instrumentation-first item - and note it
+must NOT plan on a spare D3DMATERIAL9 channel, see P17).
+
+DONE MEANS: issue 7, issue 11, the two option descriptions and the shadow prose all say
+what the code does; invariants and CI green. No behaviour changed.
+```
+
+---
+
 # Tier 4 — only with the owner watching
 
 ## P11 · The kasumi blend itself
@@ -1000,7 +1117,8 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 
 | When | Run | Needs a play-test? |
 | :-- | :-- | :-- |
-| First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15 | no |
+| **Before merging any branch** | **P17** (material channel collision) | no |
+| First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15, P18 | no |
 | Then — small guarded changes | P4, P2 step 1, P14 | no |
 | Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10, P16 | no |
 | Measure, then act | P12 (Twilight fog draw count) | one log, then a change |

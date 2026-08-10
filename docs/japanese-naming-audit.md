@@ -316,7 +316,65 @@ Bloom presets 32–35 are marked "vacant" by the panel that describes the table 
 and, for 33, the same base dimming twilight uses. They read as empty slots only because
 the label naming them is in Japanese, in a different menu.
 
-### 4.9 The performance sweep skipped the worst case in the game because of a name — **BEHAVIOUR WRONG** [P12]
+### 4.9 ⚠ A live merge hazard: two branches want the same two material channels — **NOT a naming finding** [P17]
+
+Found while checking whether a spare `D3DMATERIAL9` side channel existed for something
+else, and it is the most time-critical item in this document.
+
+The unmerged `claude/water-rendering-investigation-7baezw` branch **reclaims the two
+channels the HD texture packs already use.** On merge, its write would silently replace
+the texture-pack index and stage with two boolean water flags, so every draw would
+present a `texRepIndex` of 0 or 1 — breaking one of the few features tested good in game
+(2026-08-06).
+
+The trap is the shape of it, not the collision. Because the water branch does not contain
+the texrep commit, the conflicting hunk is **a single line whose obvious resolution —
+take the newer side — is the wrong one.** That is exactly the "merges that succeed and
+are still wrong" failure `CLAUDE.md` documents.
+
+And the wider consequence: **both remaining free channels are already claimed by
+different unmerged branches.** Any new feature that assumes a spare channel — including
+several a reader might infer from this audit — is planning on space that is gone.
+
+Aurora's invariants script already checks the channels `set_remix_material` writes
+against the field map, so it will catch the documentation half *once merged*. It cannot
+see an unmerged branch. This one needs a human.
+
+### 4.10 `perBladeGrass` covers grass but not the flowers from the same actor — **BEHAVIOUR WRONG** [P18]
+
+`daGrass_c` is a grass **and flower** actor — kind 0 is 草 *kusa*, kinds 2 and 3 are
+花 *hana*. `perBladeGrass` exists to stop the batched path churning the asset hash, and
+it covers `dGrass_packet_c` only. `dFlower_packet_c` has the identical churning batch,
+and appears in **no document in any of the three repos**.
+
+Because the option is named for the English word "grass" and the open issue is titled
+"Grass patches shade wrongly", nothing signals that half the vegetation the same actor
+spawns is untouched — so if flowers show the same symptom, toggling the switch will not
+move it, and that reads as the diagnosis being wrong.
+
+Separately: the game classifies **every blade into four stage-authored types**, and
+neither the batch buckets, the per-blade display lists, nor any texture tag can tell them
+apart. That is the answer to "is there a better identity handle than per-blade display
+lists" — yes, the type byte, and it is a *class* handle, so it complements
+`perBladeGrass` rather than replacing it.
+
+### 4.11 `blobShadows` drops far more than the docs say — **RECORD WRONG** [P18]
+
+Described in four places as covering shadows "under rupees, hearts and pots". It drops
+the simple ground shadow of **every actor that registers one** — items, objects, insects,
+enemies, NPCs, cutscene actors: 48 call sites. The tested-good claim from 2026-08-06 is
+much narrower than what actually changed.
+
+The reasoning still holds for anything whose caster geometry reaches Remix, so this is a
+prose defect, not a behaviour defect. But a session reading "rupees, hearts and pots"
+would not predict that an NPC's ground shadow is affected, and would look elsewhere if
+one were reported missing.
+
+Worth recording alongside it: the game calls its projected shadows リアル影 — "real
+*kage*" — in its own debug labels. **"Blob shadow" is our coinage**, not the game's word,
+and the simple class has no Japanese name anywhere in the tree.
+
+### 4.12 The performance sweep skipped the worst case in the game because of a name — **BEHAVIOUR WRONG** [P12]
 
 This is the clearest single vindication of the whole exercise.
 
@@ -348,7 +406,7 @@ inverts them.
 Twilight under Remix and reported a frame rate, so the symptom is predicted, not observed.
 `dx9.draws peak` in that area settles it before any code changes.
 
-### 4.10 The same kasumi mistake, one file away — **RECORD WRONG** [P13]
+### 4.13 The same kasumi mistake, one file away — **RECORD WRONG** [P13]
 
 `kumoTop` and `kumoBottom` are described in the fork as *"lit cloud colour"* and
 *"shaded cloud underside"*. The game's own labels say 上雲 / 下雲 — **upper** and
@@ -365,7 +423,7 @@ Also missed by the batching sweep: **`drawVrkumo`**, the skybox cloud billboards
 *only* clouds in the image, since the fork consumes none of the cloud colours — costs up
 to a few hundred unbatched draws every outdoor frame.
 
-### 4.11 `grp=` is not universally dead, and it leaks — **RECORD WRONG + a latent bug** [P8]
+### 4.14 `grp=` is not universally dead, and it leaks — **RECORD WRONG + a latent bug** [P8]
 
 Three documents state flatly that `grp=` never works. In fact **three kankyo draws label
 themselves at the real GX draw site and do so in release builds**. So the per-draw
@@ -377,14 +435,14 @@ After eight unpopped pushes `currentDebugGroup()` reads out of bounds, and from 
 one every subsequent draw reports a stale `grp=`. Whether the early return ever fires is
 **not established** — but the array index should be clamped regardless.
 
-### 4.12 `hideSkyBillboards` deletes the star field, including a hand-placed constellation — **DATA ON THE FLOOR** [P14]
+### 4.15 `hideSkyBillboards` deletes the star field, including a hand-placed constellation — **DATA ON THE FLOOR** [P14]
 
 The recommended `rtx.conf` leaves the night sky empty. The switch was aimed at the moon,
 whose quad is in `dKyr_drawSun` — a *different* gate — while the star half has never been
 shown to be load-bearing. The loss includes a 13-star 北斗 (Big Dipper) constellation the
 original team placed by hand.
 
-### 4.13 Six time-slot comments in the game tree are wrong, and one has propagated — **RECORD WRONG** [P15]
+### 4.16 Six time-slot comments in the game tree are wrong, and one has propagated — **RECORD WRONG** [P15]
 
 The six canonical time lights are named by the game in Japanese in three independent debug
 surfaces (朝0 / 朝1 / 昼 / 夕0 / 夕1 / 夜) and pinned to exact `daytime` values
@@ -397,7 +455,7 @@ Consequence for the overlay: its four time presets reach only **four of the game
 palette slots**, and the game ships the two missing numbers. Every per-slot colour, fog
 and sky comparison made through that overlay has been made against four of six.
 
-### 4.14 A pack author cannot tell which texture a file is — **DATA ON THE FLOOR** [P16]
+### 4.17 A pack author cannot tell which texture a file is — **DATA ON THE FLOOR** [P16]
 
 The HD-pack feature is content-keyed end to end and the naming lens finds **nothing wrong
 with it**. But the stated end state is that most remastering work becomes *creating art
@@ -410,7 +468,7 @@ Relatedly, for name-keyed *replacements* the machinery is already there and exer
 lookup goes through `getHash()`. `rtx.conf` *category* lists are a separate matter — they
 read the image hash directly.
 
-### 4.15 The effect-lights word lists rot silently — **RECORD WRONG, mostly harmless** [P4]
+### 4.18 The effect-lights word lists rot silently — **RECORD WRONG, mostly harmless** [P4]
 
 Ten of thirty classifier keywords match zero of the 3,205 effect names; the source
 comment and the document say three. **The live words cover everything the dead ones
@@ -568,16 +626,16 @@ in the code comment so nobody "helpfully" adds spellings that match nothing.
 
 Stated plainly, because the instruction was not to assume completeness.
 
-Twelve feature areas were queued. **Eight completed**: the sky/vrbox/atmosphere, fog &
+Twelve feature areas were queued. **Nine completed**: the sky/vrbox/atmosphere, fog &
 colpat & the kytags, effect-lights, material translation, bloom/mono/twilight, the clock &
-light schedule, the kankyo weather/particle systems, and texture replacement & tagging.
+light schedule, the kankyo weather/particle systems, texture replacement & tagging, and
+shadows/grass/geometry identity.
 
-**Four were still running when this was written** and are not represented above:
+**Three were still running when this was written** and are not represented above:
 
 | Area | Why it still matters |
 | :-- | :-- |
 | The overlay, option wire & protocol | Coverage of our 54 pushed fields against the original team's 291-slider panel |
-| Shadows, grass & geometry identity | `kage`; whether the game knows more about which shadows are which |
 | The other six in-flight branches | Water, hair, transparency, thin g-buffer — romanji risk only |
 | The open "unused game data" sweep | 257 of 621 environment fields are still literally unnamed |
 
