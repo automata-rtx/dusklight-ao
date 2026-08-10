@@ -340,6 +340,68 @@ Aurora's invariants script already checks the channels `set_remix_material` writ
 against the field map, so it will catch the documentation half *once merged*. It cannot
 see an unmerged branch. This one needs a human.
 
+### 4.9b ⚠ It is worse than two branches and one struct — **NOT a naming finding** [P17]
+
+The in-flight-branch sweep escalated §4.9 twice:
+
+- **Four live branches each define GX FIFO opcode `0x0053`**, and the dispatch is an
+  `else-if` chain. Two of them merging produces **no conflict at the place that matters** —
+  the first arm wins and the others become unreachable, silently.
+- **Three parties claim overlapping `D3DMATERIAL9` bytes**, not two.
+
+Neither collision announces itself. Both need resolving before any of those branches
+merge, and `P17` now covers both.
+
+Separately, and worth knowing before either is invested in further: **the hair branch and
+the skeleton branch are independently building the same thing** — one merged mesh per
+skinned character.
+
+### 4.9c The authored room lights are live every frame and nothing reads them — **DATA ON THE FLOOR** [P19]
+
+The largest single omission in the whole audit, and it is squarely on the stated goal.
+
+```
+include/d/d_kankyo.h:259        DUNGEON_LIGHT dungeonlight[8];
+src/d/d_kankyo.cpp:8664-8671    refreshed every frame from the current room:
+                                  mPosition, mRefDistance, mCutoffAngle,
+                                  mAngleAttenuation (spot function),
+                                  mDistAttenuation, mAngleX, mAngleY
+```
+
+Every dungeon and interior room's **authored** lighting — up to six placed lights, several
+of them spotlights, some switch-gated, with palette-blended colour — is sitting in
+`g_env_light` every frame. The only reference to it anywhere in our port is a stub
+constructor. **Nothing reads it.**
+
+And the game authors them as *spotlights*, which is shape no other light source we have
+carries — while the bridge hardcodes `sphere.shaping_hasvalue = 0`
+(`remix_bridge.cpp:1389`), so even the lights it does forward discard their cone.
+
+**The honest tension, which must be weighed before wiring it.** The effect-lights design
+argues — correctly — that GameCube point lights were placed where the *shading* looked
+best, not where a light physically is, and that a path tracer exposes that. Room lights
+are authored placements and inherit that criticism. But they are a *different registry*
+from the one local lights mirrored, they are the only source with cone data, and interiors
+are currently lit by whatever the effect emitters and the fallback supply. The right shape
+is an off-by-default option plus found/drawn counters, so one log settles the
+double-counting question against effect lights rather than an argument doing it.
+
+### 4.9d The coverage answer: 11 of 30 — **DATA ON THE FLOOR**
+
+§3 asked what the original team exposed that we do not. The overlay audit answers it:
+**of the 30 live environment fields the original team put a slider on, 11 reach Remix.**
+
+Concretely, three of the game's **four** background-ambient layers never cross the wire —
+and the option carrying the fourth claims to cover all of them. The game routes those four
+layers to different material classes.
+
+### 4.9e The protocol handshake only detects one of the two skews — [affects P0]
+
+The game↔DLL protocol check catches one direction of version skew and not the other, and
+**the untested direction is the one about to happen** when the effect-lights branch
+(protocol 11) meets a `Fixed-Function-dev` DLL (protocol 7). Worth fixing before that
+merge rather than after diagnosing it live.
+
 ### 4.10 `perBladeGrass` covers grass but not the flowers from the same actor — **BEHAVIOUR WRONG** [P18]
 
 `daGrass_c` is a grass **and flower** actor — kind 0 is 草 *kusa*, kinds 2 and 3 are
@@ -626,32 +688,35 @@ in the code comment so nobody "helpfully" adds spellings that match nothing.
 
 Stated plainly, because the instruction was not to assume completeness.
 
-Twelve feature areas were queued. **Nine completed**: the sky/vrbox/atmosphere, fog &
-colpat & the kytags, effect-lights, material translation, bloom/mono/twilight, the clock &
-light schedule, the kankyo weather/particle systems, texture replacement & tagging, and
-shadows/grass/geometry identity.
+Twelve feature areas were queued. **All twelve completed.** In order: the
+sky/vrbox/atmosphere; fog, colpat and the 18 kytags; effect-lights; material translation;
+bloom/mono/twilight; the clock and light schedule; the kankyo weather/particle systems;
+texture replacement and tagging; shadows, grass and geometry identity; the other unmerged
+in-flight branches; the overlay, option wire and protocol; and the open "game state that
+never reaches Remix" sweep.
 
-**Three were still running when this was written** and are not represented above:
+Three things are still outstanding, and they are named rather than glossed:
 
-| Area | Why it still matters |
-| :-- | :-- |
-| The overlay, option wire & protocol | Coverage of our 54 pushed fields against the original team's 291-slider panel |
-| The other six in-flight branches | Water, hair, transparency, thin g-buffer — romanji risk only |
-| The open "unused game data" sweep | 257 of 621 environment fields are still literally unnamed |
+- **The adversarial verification pass had not finished.** Each area's findings were
+  produced by one agent reading the source, and a second agent was queued to attack each
+  set; four of the twelve had returned when this was written. Findings are reported as the
+  auditing agent produced them.
+- **The completeness critic had not returned** — the pass whose job was to say what the
+  twelve areas collectively missed, and which of their findings are not worth acting on.
+- **Nothing here has been tested in game.** Every proposal is a reading.
 
-Also **not** represented: the adversarial verification pass. Every finding above was
-produced by one agent reading the source; a second agent was queued to attack each one
-and had not returned. The findings carry file:line citations precisely so each prompt can
-re-verify before acting — which is why every prompt in the worklist opens by asking the
-session to reproduce the claim and stop if it cannot.
+The findings carry file:line citations precisely so each prompt can re-verify before
+acting — which is why every prompt in the worklist opens by asking the session to
+reproduce the claim and stop if it cannot.
 
 **The four findings I verified personally, line by line, rather than taking on an agent's
 word**, are §4.1 (kytag01), §4.2 (the shader), §4.4 (the `J3DMatPacket` hook and the
-`MAxx` dispatch), and all of §3 (the tuning panel counts and bindings).
+`MAxx` dispatch), §4.9c (the room lights) and all of §3 (the tuning panel counts and
+bindings).
 
 ---
 
-## 7. Priority
+## 8. Priority
 
 The ordering rule is **certainty first, then cost, then value**. Documentation
 corrections lead not because they matter most, but because they cost nothing, cannot

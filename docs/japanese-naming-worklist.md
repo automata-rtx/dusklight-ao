@@ -75,9 +75,15 @@ the conflicting hunk is a SINGLE LINE whose obvious resolution - take the newer 
 the wrong one. Git will report a clean or trivially-resolvable merge and every draw will
 then present a texRepIndex of 0 or 1. That is precisely the failure CLAUDE.md documents.
 
+SECOND COLLISION, SAME SHAPE, FOUND SEPARATELY: **four live branches each define GX FIFO
+opcode 0x0053**, and the dispatch is an else-if chain. Two of them merging produces NO
+CONFLICT at the place that matters - the first arm wins and the others become unreachable,
+silently. Verify which four, and recommend an allocation (a shared registry, or an
+opcode-per-branch assignment) rather than resolving it arm by arm.
+
 ALSO ESTABLISH, because it changes what anyone can plan: how many D3DMATERIAL9 channels
 are genuinely free on Fixed-Function-dev today, and which unmerged branches have claimed
-each of the remainder. The audit's reading is that BOTH remaining channels are already
+each of the remainder. The sweep reports THREE parties overlapping, not two. The audit's reading is that BOTH remaining channels are already
 spoken for by different in-flight branches. If that is right, several proposals elsewhere
 in this worklist that assume a spare channel are planning on space that is gone - say so
 explicitly.
@@ -139,6 +145,11 @@ THREE TRAPS, ALL DOCUMENTED IN CLAUDE.md, ALL LIVE ON THIS MERGE:
    features so 11 is correct to keep - but VERIFY no other live claude/* branch has
    taken 8-11, and that kRequiredProtocol in the fork's showDusklightRemixTab matches on
    the fork side in the same commit.
+   AND FIX THE HANDSHAKE WHILE YOU ARE HERE: the audit found that the protocol check
+   detects only ONE of the two skew directions, and the untested direction is exactly the
+   one this merge creates (a protocol-11 game meeting a protocol-7 DLL). Confirm that,
+   then make the check report both directions before you rely on it to diagnose this
+   merge.
 
 3. The aurora submodule. The branch pins an OLDER aurora than Fixed-Function-dev.
    Aurora is always merged FIRST: merge aurora's Fixed-Function-dev into the aurora
@@ -1099,6 +1110,128 @@ DONE MEANS: issue 7, issue 11, the two option descriptions and the shadow prose 
 what the code does; invariants and CI green. No behaviour changed.
 ```
 
+## P19 · The room's authored lights are live every frame and nothing reads them — [PROTOCOL, high value]
+
+The largest single piece of game-derived data we are throwing away, and it is the only
+light source in the game that carries a **cone**.
+
+```
+Read docs/japanese-naming.md and, on the sphere-lights branch, docs/effect-lights.md §0
+before starting. export LC_ALL=C.UTF-8 before Japanese greps.
+
+CLAIM TO VERIFY FIRST.
+
+  include/d/d_kankyo.h:259       DUNGEON_LIGHT dungeonlight[8];
+  src/d/d_kankyo.cpp:8664-8671   refreshed every frame from the CURRENT room:
+                                   mPosition, mRefDistance, mCutoffAngle,
+                                   mAngleAttenuation (spot function),
+                                   mDistAttenuation, mAngleX, mAngleY
+
+Up to six authored lights per room - several of them spotlights, some switch-gated, with
+palette-blended colour - and the only reference anywhere in our port is a stub
+constructor. Nothing reads it. Confirm that yourself.
+
+Also confirm: the bridge hardcodes sphere.shaping_hasvalue = 0 (remix_bridge.cpp:1389),
+so even the lights it DOES forward discard cone shape - and the room lights are the ones
+that actually have cones.
+
+READ THIS BEFORE PROPOSING ANYTHING, because it is the argument against this work:
+docs/effect-lights.md §0 argues, correctly, that GameCube point lights were placed where
+the SHADING looked best rather than where a light physically is, and that a path tracer
+exposes that - which is why the effect-lights system derives placement from the effect
+that draws the fire instead. Room lights are authored placements and inherit that
+criticism. Your job is to weigh it honestly, not to route around it. What is different
+about these: they are a DIFFERENT registry from the one localLights mirrored, they are
+the only source with cone data, and interiors today are lit only by what the effect
+emitters and the fallback light supply.
+
+IF IT DOES NOT REPRODUCE: stop and report.
+
+IN SCOPE:
+ - Forward dungeonlight[0..5] as Remix sphere lights, guarded EXACTLY as the game guards
+   them: skip unless dComIfGp_roomControl_getStatusRoomDt(stayRoom)->getLightVecInfo() is
+   non-NULL; skip i >= getLightVecInfoNum() (capped at 6); skip slots 0-1 when
+   dKy_SunMoon_Light_Check() is TRUE (the celestial light already covers those); skip a
+   zero colour. Verify each guard in the game before copying it.
+ - Populate remixapi_LightInfoSphereEXT shaping from mCutoffAngle + mAngleX/mAngleY
+   whenever mAngleAttenuation != GX_SP_OFF, and leave shaping off otherwise.
+ - INSTRUMENT BEFORE SHIPPING, per project rule 4: push a roomLightsFound /
+   roomLightsDrawn pair the way localLightsFound/localLightsDrawn already work, so "this
+   room has none" and "we dropped them" stay distinguishable in a log.
+ - OFF BY DEFAULT. The double-counting question against effect lights must be settled
+   from one log, not from an argument.
+
+OUT OF SCOPE: touching localLights (being retired); changing effect-lights; the
+fallback light; anything about outdoor lighting.
+
+PROTOCOL: wire change - bump both sides in one commit, and check the other live branches
+first. The sphere-lights branch is at 11.
+
+REGRESSION SIGNATURE: interiors becoming double-lit (every fire with two lights, one
+offset) means it is double-counting with effect lights - that is what the off-by-default
+plus counters exists to catch. Shadows appearing to come from the wrong place means the
+authored-placement criticism above is real for this registry too, and the honest answer
+is then to say so rather than to tune around it.
+
+DONE MEANS: the option exists and defaults off; the counters are pushed and displayed;
+one log from an interior shows found/drawn; invariants and CI green; marked UNTESTED.
+
+Acceptable outcome: you conclude the authored placements read wrong under a path tracer
+and recommend against it, with the log to back it. That is a real result.
+
+Push only your session branch.
+```
+
+## P20 · Three of four background-ambient layers never cross the wire — [PROTOCOL]
+
+The coverage answer §3 asked for: **of the 30 live environment fields the original team
+put a slider on, 11 reach Remix.**
+
+```
+Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
+
+CLAIM TO VERIFY FIRST.
+
+The game maintains FOUR background-ambient layers (bg_amb_col[0..3]) and routes them to
+different material classes. The bridge sends ONE, as rtx.dusklight.env.bgAmbient - and
+that option's description claims to cover room and terrain geometry generally.
+
+The other three are not spare padding. Their alphas carry named, authored meanings the
+original team put sliders on:
+    bg_amb_col[1].a   水面α    "water surface alpha"
+    bg_amb_col[2].a   補佐α    "auxiliary alpha"
+    bg_amb_col[3].a   ウソFog  "fake fog"
+(d_kankyo.cpp, the ambient panel - find the exact lines yourself.)
+
+Verify which material classes the game routes each layer to before proposing anything.
+That routing is the whole question: if all four land on geometry Remix already relights,
+sending them buys nothing.
+
+IF IT DOES NOT REPRODUCE: stop and report.
+
+IN SCOPE:
+ - Correct the bgAmbient description first, regardless of what else you do: it should say
+   which layer it carries.
+ - If, and only if, the routing shows the layers are meaningfully different, push the
+   remaining three as separate options and display them. Consume nothing in this session.
+
+ALSO IN SCOPE, and cheap: two rtx.dusklight.* option descriptions were found to be
+paraphrases nobody read out of the game. Find them by checking each description against
+the game field behind it - the kasumi pair is the worked example of how that goes wrong -
+and correct them.
+
+OUT OF SCOPE: consuming the new ambients; the grade pass; anything about the four
+material classes themselves.
+
+PROTOCOL: wire change if you add options. Bump both sides in one commit.
+
+DONE MEANS: bgAmbient's description is accurate; the routing is written down; any new
+options are pushed and displayed but not consumed; invariants and CI green.
+
+Acceptable outcome: the routing shows one layer is enough. Say so with the citation -
+that closes a question §3 opened.
+```
+
 ---
 
 # Tier 4 — only with the owner watching
@@ -1119,6 +1252,7 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 | First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15, P18 | no |
 | Then — small guarded changes | P4, P2 step 1, P14 | no |
 | Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10, P16 | no |
+| Then — retained game data | P19 (room lights, off by default), P20 (ambient layers) | yes, one window |
 | Measure, then act | P12 (Twilight fog draw count) | one log, then a change |
 | Together in one window | P6, P7 | yes, one window |
 | When ready for lights | P0 (the merge) | yes |
