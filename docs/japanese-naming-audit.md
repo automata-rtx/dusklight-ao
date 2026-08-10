@@ -309,12 +309,29 @@ single index while every colour it blends against moves continuously.
 
 Both need confirming before anything is deleted; the prompt says so.
 
-### 4.8 Four author-made twilight grades ship in the data and cannot be reached — **DATA ON THE FLOOR** [P10]
+### 4.8 ~~Four author-made twilight grades ship in the data and cannot be reached~~ — **REFUTED**
 
-Bloom presets 32–35 are marked "vacant" by the panel that describes the table and
-**named as four twilight/senses looks** by a different panel — complete with mono amounts
-and, for 33, the same base dimming twilight uses. They read as empty slots only because
-the label naming them is in Japanese, in a different menu.
+*Kept, struck through, because it is the clearest example of the verification pass paying
+for itself — and because deleting it would invite the next session to rediscover it.*
+
+The claim was that bloom presets 32–35 are labelled "vacant" by one panel and named as
+four twilight/senses looks by another, so four author-made grades ship unreachable.
+
+**Every literal in that is true and the conclusion is still wrong.** The 空き ("vacant")
+labels are real, the combo naming 32–35 is real, and the table rows match. But the DEBUG
+assignment that would select them (`d_kankyo.cpp:2540-2542`) is immediately clobbered by
+an unconditional overwrite four lines later (`:2545-2547`, *outside* the `#endif`) under
+the **identical** gate — so nothing ever reads rows 32–35, **even in a DEBUG build**.
+They are scratch slots the authors' own panel calls vacant, tried once and clobbered.
+
+The only durable fact is about the code, not the data: **that DEBUG override is dead on
+arrival**, so anyone using that panel to compare bloom presets will see no change. That
+belongs in a code comment, not in a design document.
+
+This is the failure mode the audit was explicitly told to reject — debug-only data
+reported as lost content — and documenting it in a design doc would have invited the
+follow-on the finding floated (a bloom-table-id override): **scope on a working system,
+for four abandoned rows.**
 
 ### 4.9 ⚠ A live merge hazard: two branches want the same two material channels — **NOT a naming finding** [P17]
 

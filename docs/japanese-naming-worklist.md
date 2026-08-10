@@ -787,15 +787,15 @@ but the member name is upstream's.
 Flag the trap while you are there: m_saturationPattern and mSaturateSubtract* look like
 one family in English and are not - one is a preset id, one is a desaturation amount.
 
-TASK 2: bloom presets 32-35 are labelled "vacant" by the panel that describes the table
-and NAMED as four twilight/senses looks by a different HIO panel. They are four
-author-made alternative grades - complete with mono amounts and, for 33, the same base
-dimming twilight uses - that ship in the game's data and cannot currently be reached.
-Verify, then document 32-35 and their author names in kankyo-remix.md I.1, marked as a
-DEBUG-only experiment rather than shipped behaviour.
-EXPLICITLY DO NOT wire them up in this session. If someone wants them live the cheap
-route is a rtx.dusklight.game.* bloom-table-id override read back by the bridge, NOT a
-change to the game's palette data - and that is a later session's proposal.
+TASK 2 WAS WITHDRAWN. An earlier draft asked you to document bloom presets 32-35 as four
+unreachable author-made grades. That finding was REFUTED on verification: the DEBUG
+assignment that would select them (d_kankyo.cpp:2540-2542) is clobbered four lines later
+by an unconditional overwrite under the identical gate (:2545-2547, outside the #endif),
+so nothing reads those rows even in a DEBUG build. They are scratch slots the authors'
+own panel labels 空き, vacant.
+The only thing worth doing, and it is optional: leave a one-line comment at :2540 saying
+that override is dead on arrival, so nobody uses that panel expecting it to work. Do NOT
+document the rows in kankyo-remix.md and do NOT propose a bloom-table-id override.
 
 TASK 3: add `dalkmist` = "dark mist" to the misspelled-English list in japanese-naming.md
 section 4, with one line on what it is (a Palace-of-Twilight fog-repulsion volume read
