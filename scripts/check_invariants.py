@@ -241,6 +241,12 @@ def check_aurora_pin_is_real() -> None:
 # stops being checked.
 NAMING_NON_SYMBOLS = {"camelCase"}
 
+# Identifiers owned by the other two repos, which this checkout cannot see. The
+# document cites a few when explaining what our code does differently from the
+# game's; they are not glossary entries and there is nothing here to check them
+# against.
+NAMING_FOREIGN_PREFIXES = ("rtx_", "dxvk_", "d3d9_", "dx9_")
+
 # Suffixes worth checking as whole filenames; anything else backticked with a
 # dot in it (docs, options, field accesses like g_env_light.mMoyaCount) is prose
 # as far as this check is concerned.
@@ -275,7 +281,7 @@ def check_japanese_naming_symbols() -> None:
 
     tokens: list[str] = []
     for token in dict.fromkeys(re.findall(r"`([^`\n]+)`", text)):
-        if token in NAMING_NON_SYMBOLS:
+        if token in NAMING_NON_SYMBOLS or token.startswith(NAMING_FOREIGN_PREFIXES):
             continue
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
             tokens.append(token)

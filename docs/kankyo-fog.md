@@ -196,7 +196,7 @@ protocol **2**; the wire has since advanced to **6** (3 = overlay + warp, 4 = th
 | `fogEndZ` | `g_env_light.mFogFar`, quantized to 1 unit |
 | `skyHidden` | `skyIsHidden()` — **recomputed, not `hide_vrbox`**, see below |
 | `skyColor` | `vrbox_sky_col` |
-| `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col` |
+| `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col`. **`outer` is the *near* band and `inner` the *far* one** — the reverse of the English reading; the game labels them 霞手前/霞奥 in its palette exporter and `kasumiF`/`kasumiB` in its debug view ([`japanese-naming.md`](japanese-naming.md) §6) |
 | `kumoTop`, `kumoBottom`, `kumoShadow` | cloud colours; pushed but not consumed yet (Phase D) |
 | `colpat` | `g_env_light.wether_pat1` |
 | `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount`, clamped at 0 |

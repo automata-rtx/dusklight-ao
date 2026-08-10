@@ -396,7 +396,7 @@ knobs, so a hand-tuned `rtx.bloom.dusklight*` value survives the bridge and
 | `rtx.dusklight.env.bgAmbient` | `bg_amb_col[0]` /255 | 3 |
 | `rtx.dusklight.env.fogColor` | `fog_col` /255 (backup to fog capture; see IV.4) | 2/3 |
 | `rtx.dusklight.env.skyColor` | `vrbox_sky_col` /255 | 4 |
-| `rtx.dusklight.env.hazeColor` | `vrbox_kasumi_outer_col` /255 | 4 |
+| `rtx.dusklight.env.hazeColor` | `vrbox_kasumi_outer_col` /255 — the **near** haze band, despite "outer"; see [`japanese-naming.md`](japanese-naming.md) §6 | 4 |
 | `rtx.dusklight.env.darkworld` | `dKy_darkworld_check()` | 4 |
 | `rtx.dusklight.env.sensesStrength` | `senses_effect_strength` | 4 |
 

@@ -23,8 +23,8 @@ you know the rule:
 1. **Searching in the wrong alphabet.** A grep for `shibuki` finds the effect
    IDs and misses the function that draws them. §3.
 2. **"Fixing" a name.** `dKyw_wether_move` looks like a misspelling to correct.
-   It is the name of the weather system across ~200 call sites and the reference
-   decomp. §4.
+   It is the name of the weather system — 314 occurrences across 29 files here,
+   plus the reference decomp. §4.
 3. **Inventing an etymology.** `d_a_ep` is not "environment particle". Nobody
    here knows what `ep` stands for, and a document that says "unknown" is worth
    more than one that guesses — project rule 3.
@@ -145,31 +145,81 @@ two-or-three-letter codes: `d_a_e_rd`, `d_a_b_gnd`, `d_a_obj_so`. Some decode
 from Japanese names, some from English ones, and **many are simply not known**.
 
 Do not reverse-engineer one from its letters and then build on the guess. Decode
-it from what the file *does* (§6) and, if the meaning still is not established,
+it from what the file *does* (§7) and, if the meaning still is not established,
 write "unknown".
 
 ---
 
-## 6. Decoding a name you have not seen
+## 6. The debug builds are labelled in Japanese, and that is a dictionary
+
+**496 files under `src/` and `include/` contain literal kana/kanji** — not
+romanized, actual Japanese. It is in the HIO debug sliders, the developer
+overlay, the CSV exporters and a great many `OS_REPORT` strings:
+
+```
+d_kankyo.cpp:7809      mctx->genSlider("最大数",  &housi_max_number, 0, 1000);
+                                        ^ "maximum count"
+f_op_actor_mng.cpp     "fopAcM_entrySolidHeap 開始 [%s] 見積もりサイズ=%08x\n"
+                                                 ^ "start"  ^ "estimated size"
+```
+
+This is the best translation source in the tree, because it is the original
+authors labelling their own fields. **When a name is ambiguous, find where the
+debug menu prints it.**
+
+> ### Worked example: which `kasumi` is which
+>
+> `vrbox_kasumi_inner_col` and `vrbox_kasumi_outer_col` are two horizon haze
+> bands. Nothing about "inner" and "outer" says which is nearer, and guessing
+> from the English is how this got recorded wrongly once (§10). The game answers
+> it in three independent places:
+>
+> 1. **The palette CSV exporter** (`d_kankyo.cpp:6582`) writes a Japanese header
+>    row and then the fields in the same order. Aligning them column by column:
+>    `空色`→`sky_col`, `上雲色`(upper cloud)→`kumo_top`, `下雲色`(lower
+>    cloud)→`kumo_bottom`, `下雲影色`(lower cloud shadow)→`kumo_shadow`,
+>    then **`霞手前色` (*temae*, near/in-front) → `kasumi_outer`** and
+>    **`霞奥色` (*oku*, far/behind) → `kasumi_inner`**.
+> 2. **The debug view** (`d_kankyo_debug.cpp:301,306`) prints the same fields as
+>    **`kasumiF`** and **`kasumiB`** — Front and Back. Its neighbours use the
+>    same one-letter scheme (`CloudU`/`CloudD` for `kumo_top`/`kumo_bottom`), so
+>    the letters are positional, not incidental.
+> 3. **The dome actors**: `d_a_vrbox.cpp:121` paints `kasumi_inner` onto
+>    `vrbox_sora.bmd` (*sora* = 空, sky), and `d_a_vrbox2.cpp:358` paints
+>    `kasumi_outer` onto the second dome. Two shells, front and back.
+>
+> So **`outer` is the near band and `inner` is the far one** — the opposite of
+> what the English words suggest. No code path anywhere references sun position.
+> The same exporter also settles a smaller question: the `下雲α` column and the
+> debug view's `Cloud A` both print `kumo_top_col.a`, so that alpha is the cloud
+> *layer's*, not the top band's alone.
+
+## 7. Decoding a name you have not seen
 
 In rough order of reliability:
 
-1. **Read the header.** `include/d/actor/d_a_*.h` carries the class name and the
+1. **Find where a debug build prints it** (§6). The game labelling its own field
+   beats every other method.
+2. **Read the header.** `include/d/actor/d_a_*.h` carries the class name and the
    struct layout; a field list usually settles what the actor is faster than the
    name does.
-2. **Find the profile / actor name.** Actors are registered with a profile whose
+3. **Find the profile / actor name.** Actors are registered with a profile whose
    name string often survives in the data — grep the identifier in
    `src/d/d_stage.cpp` and the profile tables.
-3. **Look at the effect IDs it uses.** These are long and descriptive
+4. **Look at the effect IDs it uses.** These are long and descriptive
    (`ZI_S_lk_takishibuki_a`), and — usefully — they are frequently romanized the
    *other* way from the C function, so they double as a translation hint.
-4. **Try both romanizations** (§3), then try it as misspelled English (§4).
-5. **Check the reference decomp.** `zeldaret/tp` has years of naming work and
+5. **Try both romanizations** (§3), then try it as misspelled English (§4).
+6. **Check the reference decomp.** `zeldaret/tp` has years of naming work and
    issue discussion that this port inherits but does not restate.
+
+**One caution when reading logs.** Because the game's own diagnostic strings are
+Japanese, a game-side `OS_REPORT` or assertion can put Japanese in a log the
+owner sends us. That is the game talking, not a corrupted file.
 
 ---
 
-## 7. Working glossary
+## 8. Working glossary
 
 Terms this project's own documents and code paths actually touch. **Symbols are
 mechanically checked to exist; the readings are our gloss.**
@@ -239,7 +289,7 @@ point of keeping the list, and the invariants check will hold the symbol honest.
 
 ---
 
-## 8. Rules
+## 9. Rules
 
 1. **Never rename a game symbol** to make it read as English. §4.
 2. **Never assert a meaning you have not established.** "Unknown" is a finding;
@@ -255,10 +305,32 @@ point of keeping the list, and the invariants check will hold the symbol honest.
 
 ---
 
-## 9. What this changes about the Remix effort
+## 10. What this changes about the Remix effort
 
-Stated as what it is: this is a lens, and the specific claims below are
-**untested** unless they say otherwise.
+### It has already found one wrong claim
+
+Applying §6 to the first ambiguous pair in the atmosphere data turned up a
+description in the fork that the game contradicts. Recorded because it is the
+evidence that this lens pays, and because the correction is small:
+
+`rtx_dusklight_env.h` described `kasumiInner` as "the horizon haze colour **on
+the sun's side**" and `kasumiOuter` as "**away from the sun**". **No code path
+in the game relates either field to sun position**, and three independent
+game-authored labels say the split is front/back instead — the CSV exporter's
+`霞手前`/`霞奥`, the debug view's `kasumiF`/`kasumiB`, and the two dome actors
+painting one band each (§6). The descriptions were corrected to what the game
+says; `RtxOptions.md` is generated, so it carries the old wording until someone
+regenerates it on Windows.
+
+**Corrected to "front/near" and "back/far", not to a claim about what they look
+like.** Whether the near band is *also* the one that visibly carries sunrise —
+which is what the old description was probably reaching for — is a question
+about palette content, and nobody has checked it. It stays open rather than
+being restated in nicer words.
+
+### And it suggests three things nobody has done
+
+Stated as what they are: a lens, and **untested** unless they say otherwise.
 
 - **Coverage searches have been running in one alphabet.** Any past sweep of the
   form "find every place the game does X" is only as complete as its spelling.
