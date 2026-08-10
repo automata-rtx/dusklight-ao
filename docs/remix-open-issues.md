@@ -135,7 +135,9 @@ Selection is by `out.isParticle`, which stock Remix sets **only from texture
 categorisation** — one answer per texture, and unreachable entirely for the draws
 that land past the RTX injection boundary (issue 6).
 
-Two changes, both untested in game:
+Two changes. Both are **CI-green** (dusklight on all its targets with the
+submodule bumped, the fork on its three Windows configs including the Slang
+shader) and **neither has been run in game**:
 
 - **The game now says it per draw.** `GXSetDrawClass` around the six perspective
   JPA particle blocks in `m_Do_graphic.cpp` → `D3DMATERIAL9::Ambient.a` → the
