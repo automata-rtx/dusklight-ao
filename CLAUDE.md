@@ -40,6 +40,8 @@ what it needs:
 | `docs/dx9-fixed-function.md` | how to set the game up under Remix, and the `rtx.conf` | settings change |
 | `docs/sun-elevation.md` | the sun/moon orbit | rarely |
 | `docs/japanese-naming.md` | **how to read the game's symbol names**, which are romanized Japanese | a session works a name out |
+| `docs/japanese-naming-audit.md` | what applying that lens to the existing work found — defects, unused game data, and what is deliberately *not* worth acting on | an audit finding is settled |
+| `docs/japanese-naming-worklist.md` | ready-to-paste prompts for the work that audit produced | an item is done or dropped |
 
 ## The game's code is named in Japanese
 

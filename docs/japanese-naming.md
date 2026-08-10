@@ -367,6 +367,11 @@ Stated as what they are: a lens, and **untested** unless they say otherwise.
 
 ## See also
 
+- [`japanese-naming-audit.md`](japanese-naming-audit.md) — **what applying this lens to
+  the work already on `Fixed-Function-dev` found.** Defects, game data we never picked
+  up, and an explicit list of things that are fine and should be left alone.
+- [`japanese-naming-worklist.md`](japanese-naming-worklist.md) — ready-to-paste session
+  prompts for the work that audit produced
 - `docs/code-conventions.md` — how to mark Dusk changes inside game code
 - `docs/kankyo-remix.md` — the environment system this vocabulary describes
 - [`zeldaret/tp`](https://github.com/zeldaret/tp) — the reference decompilation
