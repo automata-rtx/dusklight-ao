@@ -109,17 +109,31 @@ Candidate fixes, to be taken only if that test implicates I/O, are in §9 of
 **Transparency: two complaints, one mechanism — landed 2026-08-10, UNTESTED.**
 Enemy death smoke is noisy with wrong-looking transparency, and the layered fog
 wall in front of Death Mountain in Hyrule Field is noisy and wrong in the far
-distance. Both are Remix resolving an alpha-blended draw through its *stochastic*
-path: one randomly chosen layer survives per pixel per frame, and its lighting is
-borrowed from a neighbouring **opaque** pixel. Read in the fork, not inferred —
-`resolve.slangh` (`handleStochasticAlphaBlend`, `rtx.enableStochasticAlphaBlend`
-defaults true) and `composite_alpha_blend.comp.slang` (the neighbour search).
+distance. Remix sorts an alpha-blended draw into one of two renderers, and
+**which defect you get depends on which one it landed in.**
 
-The other path — the unordered TLAS, where every layer accumulates and the light
-comes from the volumetric cache — is selected by `out.isParticle`, which stock
-Remix sets **only from texture categorisation**. That is rule 1's failure case
-exactly, and worse here: these draws often land past the RTX injection boundary
-where the categorization UI never sees them (issue 6).
+*Untagged* → the stochastic path: one randomly chosen layer survives per pixel
+per frame, lit from a neighbouring **opaque** pixel. `resolve.slangh`
+(`handleStochasticAlphaBlend`, `rtx.enableStochasticAlphaBlend` defaults true)
+and `composite_alpha_blend.comp.slang`.
+
+*Tagged* → the unordered TLAS: all layers accumulate, but
+`evaluateOpaqueApproximations` returns `true` and the hit is **never resolved as
+a surface**, so the particle reaches no NEE, no RTXDI, no direct light at all.
+Its only illumination is the volumetric froxel cache plus its own emissive.
+
+**The first draft of this entry only knew about the first half, and was wrong
+for it.** The owner tags particle textures today and reports that a number look
+better for it *but not all* — which is exactly what the table above predicts:
+tagging fixes the layering and cannot fix the shading, because the cache is
+render-res ÷ 8 × 64 slices with 128-frame accumulation and saturates past 120 m.
+So **"untagged and noisy" and "tagged and still wrong" are different defects
+needing different fixes**; the second is a volumetrics problem, not a
+classification one. `extern/aurora/docs/dx9/remix-material-interface.md` §11.2b.
+
+Selection is by `out.isParticle`, which stock Remix sets **only from texture
+categorisation** — one answer per texture, and unreachable entirely for the draws
+that land past the RTX injection boundary (issue 6).
 
 Two changes, both untested in game:
 
@@ -131,6 +145,11 @@ Two changes, both untested in game:
   only touched the opaque radiance, so any transparency past the 120 m froxel cap
   never faded while everything around it did. Unconditional — it needs no
   classification and helps every transparency.
+
+**The aim is fewer tags, not more.** The per-draw class exists so nobody has to
+hand-tag for Remix to get this right; every tag still needed is a translation not
+yet written. It is not a reason to pull a tag that is working today — only a
+landed translation is.
 
 **The fog wall is still unidentified in the game source.** The `haze` class is
 plumbed end to end and nothing calls it, deliberately: naming an actor here would
