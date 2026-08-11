@@ -118,6 +118,14 @@ UserSettings g_userSettings = {
         // the second time.
         .timeOfDay {"game.timeOfDay", 0.0f},
         .timeCommit {"game.timeCommit", 0},
+        // The game's own values, so an untouched config is vanilla: envcolor_init() sets
+        // mWaterSurfaceShineRate = 1.0f (d_kankyo.cpp:1424) and grass_light_inf_rate = 1.0f
+        // (:1318). clockRate is a multiplier rather than an absolute, because the field it
+        // scales (time_change_rate, 0.012f at :1494) is in degrees per frame and nobody
+        // wants to think in those.
+        .waterSurfaceShine {"game.waterSurfaceShine", 1.0f},
+        .grassLightInfluence {"game.grassLightInfluence", 1.0f},
+        .clockRate {"game.clockRate", 1.0f},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
@@ -369,6 +377,9 @@ void registerSettings() {
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
     Register(g_userSettings.game.timeCommit);
+    Register(g_userSettings.game.waterSurfaceShine);
+    Register(g_userSettings.game.grassLightInfluence);
+    Register(g_userSettings.game.clockRate);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);

@@ -1786,6 +1786,70 @@ void resyncIfDropped() {
     s_framesSinceFullPush = 0;
 }
 
+// The three values from the original team's own tuning panel that we can actually reach.
+//
+// That panel is a real thing and not a metaphor: d_kankyo.cpp carries 291 genSlider bindings,
+// each one a Japanese label the game's artists wrote beside the exact field and the range they
+// worked in. It is compiled out of every build of this port - one #if DEBUG spans
+// d_kankyo.cpp:4969-8190 and DEBUG is 0 - so the bindings survive only as a specification.
+// docs/kankyo-tuning-surface.md is the extraction and the reasoning about which few are worth
+// exposing.
+//
+// Only three of the 62 bindings on live g_env_light state can be driven from here, and the
+// reason is timing rather than taste: tick() runs after fapGm_Execute() (m_Do_main.cpp:327), so
+// anything setLight() rebuilds from the palette every frame would be overwritten before it was
+// used. These three are set once per scene by envcolor_init() (d_kankyo.cpp:1243) and then only
+// read, so a write here sticks - and re-applies by itself after the next scene load.
+//
+// This is the reverse of the convention the settings mirror above follows, where the bridge
+// mirrors a value and the consumer reads it. There is no consumer of ours to put the read in:
+// these fields are read by the game's own draw code. Moving the read to those sites is the
+// tidier end state and would also make the values work on the non-Remix backends.
+void applyKankyoTuning() {
+    dScnKy_env_light_c* env = dKy_getEnvlight();
+    const auto& game = getSettings().game;
+
+    // "tera-tera" (the mimetic for a wet, glossy sheen), 0.0-1.0, d_kankyo.cpp:7507. Drives the
+    // MA09 water surface's konstant colour (d_kankyo.cpp:11444-11446) and, through
+    // daBg_c::draw, the speed its ripple texture animates at (d_a_bg.cpp:373-374). Both are
+    // per-frame reads, so this takes effect immediately.
+    env->mWaterSurfaceShineRate = std::clamp(game.waterSurfaceShine.getValue(), 0.0f, 1.0f);
+
+    // "kusa raito eikyouritsu", grass light influence rate, 0.0-2.0, d_kankyo.cpp:7590. Scales
+    // the room light that tints every blade before it is drawn - GFSetTevColorS10(GX_TEVREG1)
+    // in both the grass and the flower packet draws (d_grass.inc:705, :1046).
+    env->grass_light_inf_rate = std::clamp(game.grassLightInfluence.getValue(), 0.0f, 2.0f);
+
+    // "jikoku sokudo", time-of-day speed, d_kankyo.cpp:6773. Held as a multiplier on the game's
+    // own 0.012 degrees per frame rather than as the raw rate, which is unreadable as a number.
+    //
+    // Two values of this field are commands rather than speeds, and writing over either of them
+    // would break something. The wolf's howl-to-dawn skip sets it to exactly 1.0f
+    // (d_a_alink_wolf.inc:4167) and the game restores 0.012f at the next dawn or dusk
+    // (d_kankyo.cpp:1591-1596); the stage-select menu uses sentinels at and above 1000.0f
+    // (d_s_menu.cpp:1429-1453, read at d_kankyo.cpp:1489-1492). Refusing to write at or above
+    // 0.9f covers both, and makes the interaction self-healing: the howl runs untouched, and
+    // the requested rate re-applies on the frame after the game resets the field.
+    //
+    // The engaged flag is what keeps the default a true no-op in both directions. Writing
+    // unconditionally would be harmless at 1.0 in normal play - 0.012f is what envcolor_init
+    // sets - but it would also overwrite the deliberate 0.0f the stage-select scene puts here
+    // (d_s_menu.cpp:1424), and a control at its default must change nothing. Without the flag
+    // the opposite bug appears instead: moving the slider back to 1.0 would leave the last
+    // scaled rate in place until the next scene load.
+    static bool s_clockRateEngaged = false;
+    const float clockRate = std::clamp(game.clockRate.getValue(), 0.0f, 20.0f);
+    if (env->time_change_rate < 0.9f) {
+        if (clockRate != 1.0f) {
+            env->time_change_rate = 0.012f * clockRate;
+            s_clockRateEngaged = true;
+        } else if (s_clockRateEngaged) {
+            env->time_change_rate = 0.012f;
+            s_clockRateEngaged = false;
+        }
+    }
+}
+
 void pushKankyoState() {
     mDoGph_gInf_c::bloom_c* bloom = mDoGph_gInf_c::getBloom();
 
@@ -2046,10 +2110,18 @@ void tick() {
             game.remixHideVrbox.setValue(hideVrbox);
         }
 
-        // The game's flat circular shadows under rupees, hearts, pots and the like. Remix
+        // The game's SIMPLE ground shadows - the flat discs it paints under an actor. Remix
         // traces a real shadow for each of those objects, so the painted disc lands on top of
         // a correct one. Suppressed at registration (dDlst_shadowControl_c::setSimple), so no
         // draw call is issued rather than one being hidden downstream.
+        //
+        // Scope, because "rupees, hearts and pots" undersold it for a week: setSimple is the
+        // single funnel behind all 50 dComIfGd_setSimpleShadow call sites, so this drops the
+        // ground shadow of EVERY actor that registers one - items, pots, insects, enemies,
+        // NPCs and cutscene actors alike. Two of those call sites are shared base classes and
+        // account for most of the reach: daNpcT_c::draw (d_a_npc.cpp:1432, 51 derived
+        // classes) and daItemBase_c::setShadow (d_a_itembase.cpp:160). The projected system
+        // (dDlst_shadowReal_c, "riaru kage" in the game's own debug labels) is untouched.
         const bool blobShadows = readOptionBool("rtx.dusklight.game.blobShadows",
                                                 game.remixBlobShadows.getValue());
         if (blobShadows != game.remixBlobShadows.getValue()) {
@@ -2068,6 +2140,13 @@ void tick() {
 
         // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys
         // Remix a stable hash for each blade - see dGrass_packet_c::draw.
+        //
+        // GRASS ONLY. daGrass_c is a grass AND flower actor: kind 0 spawns kusa (grass) into
+        // dGrass_packet_c, kinds 2 and 3 spawn hana (flower) into dFlower_packet_c
+        // (d_a_grass.cpp:250 and :322). dFlower_packet_c::draw batches identically - the same
+        // GXLoadPosMtxImm(identity) plus world-space GXBegin stream, d_flower.inc:772 - and
+        // has no switch, so flowers keep churning their hash with this on. If a symptom is
+        // present on flowers, this control will not move it.
         const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",
                                                   game.remixPerBladeGrass.getValue());
         if (perBladeGrass != game.remixPerBladeGrass.getValue()) {
@@ -2124,6 +2203,26 @@ void tick() {
         if (timeCommit != game.timeCommit.getValue()) {
             game.timeCommit.setValue(timeCommit);
         }
+
+        // The three harvested tuning values. Mirrored here with everything else; applied to
+        // g_env_light by applyKankyoTuning below, which explains why these three and no others.
+        const float waterShine = readOptionFloat("rtx.dusklight.game.waterSurfaceShine",
+                                                 game.waterSurfaceShine.getValue());
+        if (waterShine != game.waterSurfaceShine.getValue()) {
+            game.waterSurfaceShine.setValue(waterShine);
+        }
+
+        const float grassInfluence = readOptionFloat("rtx.dusklight.game.grassLightInfluence",
+                                                     game.grassLightInfluence.getValue());
+        if (grassInfluence != game.grassLightInfluence.getValue()) {
+            game.grassLightInfluence.setValue(grassInfluence);
+        }
+
+        const float clockRate = readOptionFloat("rtx.dusklight.game.clockRate",
+                                                game.clockRate.getValue());
+        if (clockRate != game.clockRate.getValue()) {
+            game.clockRate.setValue(clockRate);
+        }
     }
 
     // Remix's own input blocking sends a message across the 32 bit bridge, which a 64 bit game
@@ -2133,6 +2232,8 @@ void tick() {
     PADBlockInput(readOptionBool("rtx.dusklight.uiActive", false));
 
     resyncIfDropped();
+    // Before the push, so a frame's readout describes the state the next frame will draw with.
+    applyKankyoTuning();
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();

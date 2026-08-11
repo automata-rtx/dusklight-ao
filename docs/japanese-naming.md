@@ -131,6 +131,50 @@ ear. These are **load-bearing identifiers**, not defects:
 | `vectle` | vector | `dKyr_get_vectle_calc` |
 | `resorce` | resource | `d_resorce.cpp` |
 | `tresure` | treasure | `d_tresure`, `mp_tresure` |
+| `dalkmist` | dark mist | `DALKMIST_INFLUENCE`, `dKy_dalkmist_inf_set`, `dalkmist_influence` |
+
+> #### `dalkmist` — and why it must not be piped to Remix as a light
+>
+> The **dark-mist volumes**: up to ten spheres (`d_kankyo.h:258`), each a
+> position and a radius, that **hold the Palace of Twilight's fog off**. The
+> reading is not a guess — the stage object name the game registers the actor
+> that reads them under is **`Drkmst`** (`d_stage.cpp:954`, beside
+> `fpcNm_KYTAG12_e`). That the spelling is *dark* heard as *dalk* is our gloss;
+> the abbreviation is the game's. *(The fog is the Palace of Twilight's: the
+> sound effects are `Z2SE_OBJ_L8_B_*` and the bloom panel names row 11
+> 「LV8闇の宮殿」, LV8 Palace of Darkness, `d_kankyo.cpp:5083`. That the level
+> the SE prefix names is the same one as the stage string `"D_MN08"` is
+> inference from the shared 8 — nothing in the tree states it.)*
+>
+> Verified 2026-08-11, all of it:
+>
+> - **One reader, `d_a_kytag12.cpp`** — the same ten-slot loop, copied into each
+>   of its three execute variants: `daKytag12_Execute_standard` (`:280`),
+>   `_arrival` (`:588`) and `_R00` (`:891`). A fog particle inside any sphere gets
+>   `mStatus = 2` and starts `Z2SE_OBJ_L8_B_FOG_FLY`. That state excludes it
+>   from the player-proximity test at `:337`, which is what feeds
+>   `onForceWolfChange()` at `:396`. So a sphere is a **hole in the fog that
+>   forces wolf form** — which is what the SE name says it is: *fog fly*.
+> - **It is not a light, and the struct says so.** `DALKMIST_INFLUENCE`
+>   (`d_kankyo.h:58-63`) is position + radius + slot index. **No colour, no
+>   intensity** — unlike `LIGHT_INFLUENCE` and `DUNGEON_LIGHT` declared beside
+>   it. Nothing in the game reads a dalkmist sphere for illumination.
+> - **None of the three registering actors registers a light.** `dKy_plight_set`
+>   does not appear in `d_a_tag_lightball.cpp`, `d_a_obj_swLight.cpp` or
+>   `d_a_obj_carry.cpp` — grep over the three files returns nothing.
+> - **They are puzzle state, not scene state.** The tag actor gates its sphere
+>   on `fopAcM_isSwitch` (`d_a_tag_lightball.cpp:30-45`, `:58-81`) and draws
+>   nothing. *(Precisely: only that one gates on a switch directly. The lit
+>   candlestick registers when its own radius becomes non-zero
+>   — `d_a_obj_swLight.cpp:236-243`, driven by its switch-on/switch-off modes —
+>   and the carryable light ball registers unconditionally at creation,
+>   `d_a_obj_carry.cpp:1237-1247`.)*
+>
+> **So treating these as light sources would be inventing intent.** The name
+> contains "light" in two of the three registering actors — `tag_lightball`,
+> `obj_swLight` — and that is exactly the trap: what those actors hand the
+> environment system is a *fog exclusion radius*, and the game never gives it a
+> colour to be wrong about.
 
 **Do not correct them.** Renaming breaks the match with `zeldaret/tp`, which
 `docs/code-conventions.md` asks us to upstream fixes to, and silently breaks
@@ -286,8 +330,101 @@ places — `d_kankyo.cpp`'s time-fix combo (whose six comments also had 朝０ a
 "midnight" and 夕０ as "noon", off by six and five hours), `d_s_menu.cpp`'s
 「ひる固定」 ("Fixed Afternoon"), and `kankyo-remix.md` ("2 afternoon").
 **One is still open**, deliberately left because it sits outside that edit's
-scope: the bloom-panel gloss renders フィールド基準（昼） as "Field standard
-(noon)". Same word, same fix, one line.
+scope: the bloom-panel gloss at `d_kankyo.cpp:6843` renders フィールド基準（昼）
+as "Field standard (noon)". Same word, same fix, one line.
+
+### The bloom is 飽和加算 and the mono colour is 彩度減算
+
+Our documents call this system "the bloom" and "the mono colour". The game has
+its own names for both, and — as with `kasan` in the water work — the names
+carry the mechanism.
+
+| Romanji | Japanese | Meaning | Where the game says it |
+| :-- | :-- | :-- | :-- |
+| houwa-kasan | 飽和加算 | **saturating add** — the bloom system as a whole | the HIO node is 飽和加算設定 "saturating-add settings" (`d_kankyo.cpp:8182`); its CSV export filter is 飽和加算ファイル (`:6720`); its buffer allocation reports 飽和加算用にＲＡＭを確保しました (`:8350`) |
+| saido-gensan | 彩度減算 | **saturation subtraction** — what our docs call the *mono colour* | the four sliders labelled 彩度減算 R/G/B/A (`d_kankyo.cpp:7089-7092`) |
+| kukkiri | くっきり | **crisp** — `BLOOM_CLEAR`, type 0 | `d_kankyo.cpp:7079` |
+| yawaraka | やわらか | **soft** — `BLOOM_SOFT`, type 1 | `d_kankyo.cpp:7080` |
+| aki | 空き | **vacant** — an unused table row | `d_kankyo.cpp:6946-7074` labels 31–39 and 46–63 this way |
+
+`飽和` (*houwa*, saturation-as-in-clipping) and `彩度` (*saido*,
+saturation-as-in-colourfulness) are **different words for different things**,
+and English collapses them into one. That is the whole trap in this struct, and
+it is spelled out below.
+
+#### The authors' own sliders settle every field
+
+`dKankyo_bloomHIO_c::genMessage` builds one slider per member of
+`dkydata_bloomInfo_info_class`, in declaration order, at
+**`d_kankyo.cpp:7078-7092`**. This is a primary source in the §6 sense: the
+original team labelling their own fields.
+
+| Slider | Reading | Member | What it drives (verified `d_kankyo.cpp:2574-2658`, `m_Do/m_Do_graphic.cpp:1456-1708`) |
+| :-- | :-- | :-- | :-- |
+| タイプ ／ くっきり(0)・やわらか(1) | type / crisp・soft | `mType` | non-zero on any of the four blended rows picks the soft composite — `GX_BL_INVDSTCLR` instead of `GX_BL_ONE` (`:2648-2658` → `m_Do_graphic.cpp:1703`) |
+| しきい値 | *shikiichi*, threshold | `mThreshold` | `setPoint`; at 0xFF the bloom is switched off entirely (`:2642`) |
+| ぼやけ幅 | *boyake haba*, blur **width** | `mBlurAmount` | `setBlureSize` |
+| ぼやけ濃さ | *boyake kosa*, blur **density** | `mDensity` | `setBlureRatio` |
+| 濃さ R／G／B | density R/G/B | `mColorR`, `mColorG`, `mColorB` | the bloom tint — `setBlendColor()` RGB |
+| 元濃さ | *moto no kosa*, the **original's** density | `mOrigDensity` | `setBlendColor()` **alpha** |
+| 彩度減算 R／G／B／A | saturation subtraction | `mSaturateSubtractR`…`A` | `setMonoColor`; A is both the strength and the on/off gate (`m_Do_graphic.cpp:1566`) |
+
+**元濃さ answers the `// ?` the decomp left on `mOrigDensity`**
+(`include/d/d_kankyo_data.h`). *Moto* is "the original/base", so the label reads
+"the original's density" — and the code agrees without needing the label: the
+field is written into the **alpha** of the bloom blend colour (`:2614-2618`),
+and the composite passes that alpha as the **destination** factor of
+`GXSetBlendMode(GX_BM_BLEND, …, GX_BL_SRCALPHA, …)` (`m_Do_graphic.cpp:1696-1704`).
+The destination is the frame already drawn, so the number is how much of the
+un-bloomed image survives the composite: 0xFF keeps it whole, and Twilight's
+0xD2 dims the whole scene to 82 %. **The member name is upstream's and stays**
+(§4, rule 1); only the comment beside it gained the answer.
+
+That takes `mOrigDensity` off §8b's list of members carrying an unchecked
+semantic claim. **The list itself is deliberately not edited here** — the
+unmerged `claude/kasumi-naming-correction-w3e204` rewrites that same sentence,
+and resolving two edits to one line is exactly the merge trap `CLAUDE.md`
+describes. Strike it when the two land.
+
+#### The trap: `m_saturationPattern` is not one of the `mSaturateSubtract*`
+
+In English these read as one family. They have nothing to do with each other,
+and they are not even in the same struct:
+
+- **`m_saturationPattern`** (`dKankyo_bloomHIO_c`, `d_kankyo.cpp:5071`) is a
+  **row number** — the panel's ■飽和パターン combo, i.e. *which of the 64
+  entries of `l_kydata_BloomInf_tbl` is in force*. Its 飽和 is the bloom
+  system's own name. Normally the game writes the current palette's
+  `bloom_tbl_id` into it as a readout, and only overrides from it when the
+  HOSTIO setting flag is on (`:2533-2538`, DEBUG only).
+- **`mSaturateSubtractR/G/B/A`** are the 彩度減算 amounts — a colour and a
+  strength for the full-screen desaturating overlay, stored **inside** one row.
+
+One selects a grade; the other is a number within a grade. Nothing converts
+between them, and "saturation" is a different Japanese word in each.
+
+#### One negative result, recorded so nobody re-derives it
+
+The panel at `d_kankyo.cpp:7477-7485` ("トワイライト センス専用飽和実験",
+*a saturation experiment for wolf senses*) offers four bloom rows — 32, 33, 34,
+35 — that look like author-made grades. **They are unreachable, and this was
+checked rather than assumed.** The DEBUG assignment that would select them
+(`:2540-2542`) is gated on `checkNowWolfPowerUp()`; four lines later, **outside
+the `#endif`**, `:2545-2547` runs under that same condition and overwrites all
+four table ids with `3`. `checkNowWolfPowerUp` is a pure getter
+(`d_a_player.h:1187` → `d_a_alink.h:3543`), so it cannot differ between the two
+calls, and nothing between them reads the ids. The override is dead on arrival
+in every build. The panel's own per-row labels agree: rows 31–39 are all 空き,
+*vacant* (`:6944-6978`) — 32–35 are not a distinguishable set, just four of a
+run of scratch slots that still hold leftover numbers. A comment on `:2540` now
+says so in place.
+
+**Nothing is proposed off the back of this**, and specifically not a way to
+force a bloom-table row from our side: Dusk already overrides the bloom at the
+*output* end (the ImGui bloom window writes the blended result straight into
+the bloom object each frame), which is strictly more direct than picking a row.
+The value here is the negative — the panel exists, it looks usable, and it is
+not.
 
 ### Frequently met elsewhere
 
@@ -435,6 +572,11 @@ Stated as what they are: a lens, and **untested** unless they say otherwise.
   up, and an explicit list of things that are fine and should be left alone.
 - [`japanese-naming-worklist.md`](japanese-naming-worklist.md) — ready-to-paste session
   prompts for the work that audit produced
+- [`kankyo-tuning-surface.md`](kankyo-tuning-surface.md) — **§6 applied to the
+  environment system.** Every one of the 340 labelled bindings in the kankyo debug panel,
+  extracted mechanically: the label, the field, the range, and whether it reaches Remix.
+  Three labels that contradict the field name they are bound to, and the honest limits —
+  the panel is compiled out of every build, and only 62 of the bindings touch live state.
 - `docs/code-conventions.md` — how to mark Dusk changes inside game code
 - `docs/kankyo-remix.md` — the environment system this vocabulary describes
 - [`zeldaret/tp`](https://github.com/zeldaret/tp) — the reference decompilation

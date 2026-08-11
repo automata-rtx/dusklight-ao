@@ -238,6 +238,11 @@ struct UserSettings {
         // because only the sun packet draws the moon quad. docs/remix-test-playbook.md §4b.
         ConfigVar<bool> remixHideStarBillboards;
         ConfigVar<bool> remixHideVrbox;
+        // Draw each blade from its display list with its own position matrix instead of
+        // batching a room into one dynamic stream, so Remix sees a stable asset hash.
+        // Covers dGrass_packet_c ONLY. daGrass_c also spawns flowers - kind 2 and kind 3
+        // go to dFlower_packet_c (d_a_grass.cpp:322), whose draw batches identically and
+        // has no switch. Driven from Remix's overlay via rtx.dusklight.game.perBladeGrass.
         ConfigVar<bool> remixPerBladeGrass;
         // Hand the texture_replacements pack to Remix on the D3D9 backend. Separate from
         // enableTextureReplacements so the pack can be registered for the WebGPU backends
@@ -252,9 +257,15 @@ struct UserSettings {
         // keep the vanilla effect. Suppressing it is a hypothesis about the
         // water-while-dashing report rather than a confirmed cause - see that option.
         ConfigVar<bool> remixHideDashEffect;
-        // Suppress the game's flat circular shadows under small objects; Remix traces
-        // real ones from the geometry, so the painted disc lands on top of a correct
-        // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
+        // Suppress the game's SIMPLE ground shadows; Remix traces real ones from the
+        // geometry, so the painted disc lands on top of a correct shadow. This is every
+        // actor that registers one - not just items - because it is dropped inside
+        // dDlst_shadowControl_c::setSimple, which is the single funnel behind all 50
+        // dComIfGd_setSimpleShadow call sites: items, pots, insects, enemies, NPCs
+        // (daNpcT_c::draw covers 51 derived classes) and cutscene actors. The game's
+        // projected shadows (dDlst_shadowReal_c, which the debug labels call "riaru
+        // kage") are a separate system and are untouched.
+        // Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
         ConfigVar<bool> remixBlobShadows;
         // Keep Link's lantern permanently fuelled. Driven from Remix's overlay via
         // rtx.dusklight.game.lanternInfiniteOil; a gameplay change, off by default.
@@ -262,6 +273,19 @@ struct UserSettings {
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;
+        // Three of the original team's own environment sliders, driven from Remix's overlay
+        // via rtx.dusklight.game.{waterSurfaceShine,grassLightInfluence,clockRate}. Their
+        // labels, fields and ranges are extracted in docs/kankyo-tuning-surface.md; the
+        // panel they came from is compiled out of every build (one #if DEBUG covering all of
+        // d_kankyo.cpp's genMessage functions), so this is the only way to reach them.
+        //
+        // Each defaults to the value envcolor_init() gives the field, so a config file that
+        // has never been touched leaves the game exactly as it was. The bridge applies these
+        // to g_env_light rather than the consumers reading them, which is the reverse of the
+        // usual convention here - see the note in remix_bridge.cpp's applyKankyoTuning.
+        ConfigVar<float> waterSurfaceShine;
+        ConfigVar<float> grassLightInfluence;
+        ConfigVar<float> clockRate;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;

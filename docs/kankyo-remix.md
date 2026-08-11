@@ -30,6 +30,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |
 | Work out what a game symbol's name *means* | [`japanese-naming.md`](japanese-naming.md) — the names are romanized Japanese |
+| Find out what the game's own artists could tune, and what we expose of it | [`kankyo-tuning-surface.md`](kankyo-tuning-surface.md) — their debug panel's labels, fields and ranges, extracted; 62 bindings touch live environment state and 29 already reach Remix |
 | Work out why something is **slow** | Read `dx9.draws` in the log first (`extern/aurora/docs/dx9/material-report.md`). Remix charges per draw, not per pixel, so a problem that does not respond to texture categorisation is usually draw count — [`remix-open-issues.md`](remix-open-issues.md) issue 13 is the worked example |
 | Change the overlay / the option wire | `dxvk-remix/documentation/DusklightOverlay.md` |
 
@@ -107,13 +108,33 @@ Global tables in `src/d/d_kankyo_data.cpp`:
   slot with no blend. Slot 2 was called "afternoon" here until 2026-08-11;
   it is midday, and its pure window is 135–240.
 - **`l_kydata_BloomInf_tbl[64]`** (`dkydata_bloomInfo_info_class`): the
-  bloom mood table. Each entry: `mType` (CLEAR/SOFT — SOFT+id≠0 selects
-  screen-blend compositing), `mThreshold`, `mBlurAmount`, `mDensity`,
-  `mColorR/G/B` (bloom tint), `mOrigDensity` (base-image weight during
-  composite — see I.5), `mSaturateSubtractR/G/B/A` (the **mono colour**:
-  full-screen desaturate/tint overlay). Entry 0 = neutral; 1/2 = Twilight
+  bloom mood table — the game's own name for this system is **飽和加算**
+  *houwa-kasan*, "saturating add", and for the mono colour **彩度減算**
+  *saido-gensan*, "saturation subtraction"
+  ([`japanese-naming.md`](japanese-naming.md) §8). Each entry: `mType`
+  (CLEAR/SOFT — the panel calls them くっきり *kukkiri* "crisp" and やわらか
+  *yawaraka* "soft"; SOFT+id≠0 selects screen-blend compositing),
+  `mThreshold`, `mBlurAmount`, `mDensity`, `mColorR/G/B` (bloom tint),
+  `mOrigDensity` (base-image weight during composite — see I.5),
+  `mSaturateSubtractR/G/B/A` (the **mono colour**: full-screen
+  desaturate/tint overlay). Entry 0 = neutral; 1/2 = Twilight
   (golden CF,B1,38 tint, base dimmed to 0xD2/255, 0x60 desaturation);
   3 = wolf senses; 4–9 = field times of day; etc.
+
+  **Every one of those field meanings is the authors' own, not a
+  reconstruction.** The HIO panel at `d_kankyo.cpp:7078-7092` puts one
+  labelled slider on each member in declaration order. That is what closes
+  the `// ?` the decomp left beside `mOrigDensity` in `d_kankyo_data.h`: its
+  slider is 元濃さ, "the **original's** density", which is exactly the
+  base-image weight I.5 derives from the blend state — label and code agree
+  independently. (Do not rename the member; see §4 of the naming doc.)
+
+  **One naming trap here, because English hides it.** `m_saturationPattern`
+  and `mSaturateSubtractR/G/B/A` look like one family and are unrelated:
+  the first is a **row id** (the debug panel's 飽和パターン — which of the 64
+  entries is in force, `d_kankyo.cpp:5071`), the second is a **desaturation
+  amount inside a row**. 飽和 (clipping) and 彩度 (colourfulness) are
+  different Japanese words that both come out as "saturation".
 - Darkworld table (`l_darkworld_tbl`), light-size tables, maple colours.
 
 ### I.2 Selection: time × weather × room
