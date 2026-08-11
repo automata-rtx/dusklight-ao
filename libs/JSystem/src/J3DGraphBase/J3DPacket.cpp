@@ -14,6 +14,8 @@
 #if TARGET_PC
 #include "dusk/gpu_skinning.h"
 #include <dolphin/gx/GXAurora.h>
+#include <cstdio>
+#include <cstdlib>
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -212,18 +214,85 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
     return mMaterialID == pOther->mMaterialID && (mMaterialID & 0x80000000) == 0;
 }
 
+#if TARGET_PC
+// Material identity for the draws a packet is about to issue.
+//
+// aurora mirrors the innermost debug-group label into GXState::currentDebugGroup(), and the
+// D3D9 backend prints that as grp= on every matrep.sum line. So this is what puts the
+// original artists' own name for a surface - MA00_Gake (gake, cliff), MA00_Kusa (kusa,
+// grass), MA00_Enkei_Tree_Color (enkei, distant scenery) - next to the material the backend
+// reconstructed out of TEV state. The names are not decoration: the game's own environment
+// code dispatches on them every frame (dKy_bg_MAxx_proc, src/d/d_kankyo.cpp:11399, which
+// memcmps mat_name[3..6] against "MA00" and friends at :11508), so they are a classification
+// the original team authored rather than one we inferred. docs/japanese-naming.md.
+//
+// It has to be pushed *here* rather than at a draw-scheduling point. TP actor draw methods
+// call mDoExt_modelEntryDL, which enters a model into a J3D draw buffer that dDlst_list_c
+// walks later; a group pushed around fpcDw_Execute is popped before a single GX command is
+// written, which is why the 2026-08-04 attempt logged grp=- for everything
+// (src/f_pc/f_pc_draw.cpp). The push must bracket callDL() below, where the FIFO writes are.
+// Same lesson, same place, as the water mark in J3DMaterial::load.
+//
+// Off by default, because it is not free: aurora's command processor builds a std::string
+// per push while draining the FIFO, so this costs one heap allocation per material per
+// frame. Turn it on for a diagnostic session by setting DUSK_MAT_LABELS=1 in the
+// environment before launching - the release build the owner tests with has it compiled in
+// and dormant, so this needs no rebuild. A build that already asked for graphics debug
+// groups (-DDUSK_GFX_DEBUG_GROUPS=ON, the default in Debug) gets it without the variable.
+//
+// The gate is deliberately one function: when a proper runtime setting exists, read it here
+// instead of the environment and nothing else has to change.
+static bool dusklightReadMaterialLabelSetting() {
+    const char* env = std::getenv("DUSK_MAT_LABELS");
+    if (env != nullptr && env[0] != '\0') {
+        return env[0] != '0';
+    }
+#if DUSK_GFX_DEBUG_GROUPS
+    return true;
+#else
+    return false;
+#endif
+}
+
+static bool dusklightMaterialLabelsEnabled() {
+    static const bool sEnabled = dusklightReadMaterialLabelSetting();
+    return sEnabled;
+}
+
+// Mirrors aurora's GXState::MaxDebugGroupLabel (extern/aurora/lib/gx/gx.hpp). Formatting
+// into a larger buffer only gets the label cut a second time, silently, when the command
+// processor copies it into that fixed slot - so both sides truncate at the same character.
+static const int kDusklightMaterialLabelMax = 48;
+#endif
+
 void J3DMatPacket::draw() {
     ZoneScoped;
-#if TARGET_PC 
+#if TARGET_PC
     j3dSys.setTexture(mpTexture);
 #endif
     mpMaterial->load();
 
-#if DEBUG && TARGET_PC
-    if (mpMaterial->mMaterialName != nullptr) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Mat: %s", mpMaterial->mMaterialName);
+#if TARGET_PC
+    bool pushedMaterialGroup = false;
+    if (mpMaterial->mMaterialName != nullptr && dusklightMaterialLabelsEnabled()) {
+        char buf[kDusklightMaterialLabelMax];
+        // "Mat:" rather than the "Mat: " this used to write, because the label lands in a
+        // key=value log field (grp=) and a value with a space in it is one a reader cannot
+        // split. It also buys a character.
+        //
+        // The prefix leaves 43 characters of name. That fits every background material name
+        // seen so far - the longest known, MA00_Enkei_Tree_Color, is 21 - but the source
+        // tree is not the authority on what is in the .bmd files. A name that does not fit
+        // ends in '~', so a truncated grp= reads as truncated instead of reading as a
+        // shorter, different material. The head is what survives: the MAnn code the game
+        // dispatches on sits at the front, and these names are compounds with the noun
+        // first.
+        const int written = std::snprintf(buf, sizeof(buf), "Mat:%s", mpMaterial->mMaterialName);
+        if (written >= kDusklightMaterialLabelMax) {
+            buf[kDusklightMaterialLabelMax - 2] = '~';
+        }
         GXPushDebugGroup(buf);
+        pushedMaterialGroup = true;
     }
 #endif
 
@@ -263,8 +332,11 @@ void J3DMatPacket::draw() {
                         GX_AURORA_DUSKLIGHT_WATER_LAYER_UNKNOWN);
 #endif
 
-#if DEBUG && TARGET_PC
-    if (mpMaterial->mMaterialName != nullptr) {
+#if TARGET_PC
+    // Balanced off the flag rather than off a second read of the gate, so the push and the
+    // pop can never disagree. aurora logs "Debug group stack underflowed!" and loses the
+    // enclosing label if they do.
+    if (pushedMaterialGroup) {
         GXPopDebugGroup();
     }
 #endif

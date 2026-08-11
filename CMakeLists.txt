@@ -76,6 +76,14 @@ target_compile_definitions(aurora_mtx PRIVATE MTX_USE_PS=1)
 
 add_subdirectory(libs/freeverb)
 
+# DUSK_GFX_DEBUG_GROUPS is a *build* switch and it is OFF in everything CI ships.
+# Every preset the workflow uses inherits `relwithdebinfo`, so `CMAKE_BUILD_TYPE` is
+# never "Debug" there and no preset sets the option explicitly. Anything gated on it
+# is therefore absent from the artifacts the owner tests with, and cannot be turned on
+# without a rebuild. If a piece of labelling has to be reachable from a shipped build,
+# compile it in under TARGET_PC and gate it at runtime instead - see the material label
+# in libs/JSystem/src/J3DGraphBase/J3DPacket.cpp, which uses this option only to pick
+# its default.
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(DUSK_GFX_DEBUG_GROUPS_DEFAULT ON)
 else ()
