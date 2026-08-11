@@ -100,10 +100,49 @@ to read as atmosphere rather than as distance.
 in the Remix doc turns a near `fog_end_z` into a dense medium automatically, and
 the fade is the palette interpolation the game already does.
 
-### 3.3 Dramatic fog banks — Lake Hylia (kytag01)
+### 3.3 Dramatic fog banks — the Lost Woods / Sacred Grove (kytag01)
+
+> **This was attributed to Lake Hylia until 2026-08-11 — in twelve passages
+> across two repos**, four here and eight in `DusklightAtmosphere.md`. (The
+> audit that caught it said five; the rest turned up by grepping `Hylia` across
+> both repos instead of working from the list.) The game says otherwise, twice,
+> and the two sources are independent:
+>
+> ```
+> src/d/actor/d_a_kytag01.cpp:1-4    /** d_a_kytag01.cpp   Sacred Grove Mist Tag */
+> src/d/actor/d_a_kytag01.cpp:202    OS_REPORT("\n迷いの森　霧タグのスケールでの…")
+>                                      迷いの森 = the Lost Woods, 霧タグ = fog tag
+> ```
+>
+> The `OS_REPORT` is the stronger of the two — it is an **authored** string, the
+> original team labelling their own actor, where the header comment is a
+> decompilation reconstruction (`japanese-naming.md` §8b). Treat the *other*
+> reconstruction with more suspicion: `include/d/actor/d_a_kytag01.h:9` calls the
+> class **"Twilight Tag 1"**, which matches nothing this actor does. Do not
+> "correct" it — it is a decomp artefact we inherit — but do not cite it either.
+> They agree anyway,
+> and they are not in conflict: **"Lost Woods" and "Sacred Grove" are the same
+> stage**, `F_SP117` (`src/dusk/map_loader_definitions.h:132,135` — Lost Woods
+> is room 3, Sacred Grove is the `F_SP117_1` layer).
+>
+> **Where the mix-up probably came from**, because it has produced more than one
+> wrong attribution: `d_kankyo.cpp:7457` is an HIO combo item
+> 「２：ハイリア湖専用」 — *"2: Lake Hylia only"* — but it sits in the
+> 「■ トワイライト　センスパターン」 panel (`:7451`) bound to
+> `twilight_sense_pat` (`:7454`), the **wolf-sense** pattern index. That is a
+> different index space from colpat, and one Japanese label read out of its
+> panel appears to have seeded two separate wrong attributions (see
+> `japanese-naming-audit.md` §4.1).
+>
+> **What is *not* established:** whether Lake Hylia also carries a kytag01.
+> Actor placement lives in stage `.dzs` data, which this repo does not contain —
+> `ky_tag1` (the `argument & 0xFF == 0` mist variant, `d_stage.cpp:941`) appears
+> exactly once in the whole tree, in that name table. So this correction moves
+> the *worked example* to where the game names it; it does not prove Lake Hylia
+> has no tag of its own.
 
 This one *is* scripted, and it stacks four things
-(`src/d/actor/d_a_kytag01.cpp:94`):
+(`src/d/actor/d_a_kytag01.cpp:94-102`):
 
 ```cpp
 dKy_fog_startendz_set(-2000.0f, 200.0f, var_f31 * var_f3);
@@ -124,9 +163,53 @@ if (g_env_light.mColPatBlendGather > 0.5f) mDoAud_startFogSe();
 3. **Moya particles** (`mMoyaMode = 3`) — billboard haze on top.
 4. **Audio.**
 
-The blend ratio is driven by distance to the tag's range *and* by the angle
-between the camera's look direction and the tag
-(`d_a_kytag01.cpp:73-92`) — so it strengthens as you look into the fog bank.
+**Only layer 1 varies with where you are.** Layers 2–4 are weighted by
+`field_0x594` alone (`:95-102`), which is a per-actor fade with no spatial term
+at all — so the colour shift, the moya count and the audio are **uniform across
+the whole room** while the fog *range* moves with the camera. The document said
+"the blend ratio" as though one number drove all four; it does not.
+
+#### The tag marks the clear centre, not the bank
+
+Read `:53-71` and `:81-94`. Both weights on layer 1 run the opposite way from
+the mental model these documents were written with:
+
+- **Distance** (`:53-69`) is `0` at or inside `mNamiInnerRange`, ramps
+  `(d − inner) / (outer − inner)` between the two radii, and is `1` beyond
+  `mNamiOuterRange`. It is the third argument to `dKy_fog_startendz_set`, and
+  that argument is a **lerp weight toward the override**, not a density:
+  `d_kankyo.cpp:747-748` (`float_kankyo_color_ratio_set`, called at `:2506-2513`
+  and `:2969-2976`) computes `value += ratio * (override − value)`, so `1`
+  means *fully* `-2000/200` and `0` means the area's own palette fog, untouched.
+  **So the whiteout is strongest far from the tag and absent at it.**
+- **View angle** (`:81-92`) does the same. `temp_f2_2` is
+  `(1 − |Δyaw| / 32768)⁴`, which is `1` when the camera looks straight at the
+  tag; the weight is `1 − temp_f2_2 + 0.2`, clamped to `1`. **Facing the tag
+  gives the floor, 0.2. Looking away gives 1.0**, and because of the fourth
+  power it saturates at 1.0 by roughly 60° off-axis — the "clear" window is
+  narrow.
+
+The old wording, *"it strengthens as you look into the fog bank"*, **was not a
+sign error** and is not being flipped: if "the fog bank" means the away-from-tag
+region, it is correct. The defect was that nothing said where the bank is, so it
+read as though the bank were at the tag.
+
+**Two narrowings, so this is not overstated:**
+
+- **It is conditional on the tag being switched on.** `:71` multiplies the
+  distance term by `field_0x594`, the switch-gated fade from `:124-144`:
+  `mSwNo1` on drives it toward `1`, `mSwNo1` off — or `mSwNo2` *also* on —
+  drives it to `0`, and the actor deletes itself on reaching `0`. If
+  `mSwNo1 == 0xFF` it is never driven at all and stays at its `Create` value of
+  `0` (`:189`) — the one other writer, the `field_0x59c == 2` escape at `:147`
+  that would force it to `1.0`, is **unreachable in this tree**: within
+  `kytag01_class` that member is only ever assigned `0` (`:211`) and `1`
+  (`:64`, `:68`). With the gate shut, `Execute` never even calls `mist_tag_move`
+  (`:151`), so **the fog is zero everywhere regardless of distance.**
+  "Whiteout away from the tag" describes the tag when it is *on*.
+- **Which switches, and where the tag sits, are not in source.** Both come from
+  `.dzs` stage data. The mechanism below is verified; the placement is not
+  knowable from this tree.
 
 **Implication:** layers 1 and 2 arrive for free by reading outputs. Layer 3
 needs an explicit decision (Remix doc §8.1) because a billboard haze plus a
@@ -223,8 +306,25 @@ verified, its *values* are not.
 
 Suggested measurement pass, recording `fogStartZ` / `fogEndZ` / `fogColor` at
 each: Hyrule Field (dawn / noon / dusk / night), Faron Woods (morning and
-midday), Lake Hylia (morning, in and out of the kytag01 bank), Goron Mines
-entrance and interior, Forest Temple, Palace of Twilight.
+midday), the **Lost Woods / Sacred Grove** (`F_SP117`) for the kytag01 bank,
+Lake Hylia (morning) for a dense *palette* regime, Goron Mines entrance and
+interior, Forest Temple, Palace of Twilight.
+
+**How to take the kytag01 reading, because it is the opposite of the obvious
+one.** The tag sits in a **clear centre** and the fog is strongest *away* from
+it (§3.3). So: **stand where the fog is thinnest, then walk outward** and watch
+`fogStartZ` / `fogEndZ` slide toward `-2000` / `200`. Walking *into* the thick
+part to find the tag will not find it. Two things worth capturing on the way:
+
+- the two radii are visible in the numbers — the values stop changing once you
+  are past `mNamiOuterRange`, and are pinned to the palette inside
+  `mNamiInnerRange`;
+- **turn on the spot at a fixed position.** The range moves with view angle
+  alone, weakest facing the tag; that isolates the layer-1 view term from the
+  distance term.
+
+If the numbers never leave the palette values anywhere in the area, the tag's
+gating switches are off (§3.3) rather than the readout being broken.
 
 ---
 
@@ -236,7 +336,7 @@ particles driven by `g_env_light.mMoyaMode` / `mMoyaCount`:
 | Mode | Set by | Case |
 | :-- | :-- | :-- |
 | 1 | `d_a_demo00.cpp:1825` | cutscene |
-| 3 | `d_a_kytag01.cpp` | Lake Hylia fog bank |
+| 3 | `d_a_kytag01.cpp` | Lost Woods / Sacred Grove mist tag (§3.3) |
 | 4 | `d_a_kytag02.cpp` | area haze |
 | 10 / 11 | `d_a_kytag06.cpp` | weather |
 
@@ -276,7 +376,12 @@ density into the medium instead.
 **The calibration pass was skipped, then run.** Phase 0 was finally run on 2026-07-28 and phases A/B were confirmed good
 in game (owner: *"a massive, frankly monumental success"*). One constant was wrong — `skyIntensity` needed 1.0 → 6.0,
 because the palette is sRGB-decoded before it is scaled. `zHalfMin` and `froxelRangeScale` were not reported wrong, but
-the dense-fog regime that would actually challenge them (Lake Hylia in the morning, Goron Mines) was never visited, so
-they remain unchallenged rather than confirmed. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
+the dense-fog regime that would actually challenge them — the **kytag01 whiteout in the Lost Woods / Sacred Grove**
+(§3.3; this said "Lake Hylia" until 2026-08-11 and was wrong), and the Goron Mines — was never visited, so
+they remain unchallenged rather than confirmed. Lake Hylia in the morning *was* visited on 2026-07-29 and read
+"suitably intense", but that is palette fog, and a later run settles it: Lake Hylia's ramp was **measured** at
+`[-3000, 70000]` on 2026-08-06 — a half-density point around 33500, nowhere near the `zHalfMin` clamp, and nothing like
+the tag's `[-2000, 200]` (midpoint −900). Note it is the tag's near `end`, not its negative `start`, that collapses the
+midpoint: negative starts turned out to be ordinary, present in every area measured in that run. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
 pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
 live in stage data rather than in source.
