@@ -135,9 +135,21 @@ Selection is by `out.isParticle`, which stock Remix sets **only from texture
 categorisation** — one answer per texture, and unreachable entirely for the draws
 that land past the RTX injection boundary (issue 6).
 
-Two changes. Both are **CI-green** (dusklight on all its targets with the
-submodule bumped, the fork on its three Windows configs including the Slang
-shader) and **neither has been run in game**:
+**TESTED IN GAME 2026-08-11 — the particle half works.** The owner reports
+particles "considerably better", and separately that **water splash particles
+retain their colour when they did not previously**. The colour observation is
+the load-bearing one: it confirms the predicted sub-mechanism rather than a
+general improvement. On the stochastic path a particle's light is
+`albedo × a neighbouring opaque pixel's denoised radiance`, so its colour was
+being multiplied by whatever solid thing sat near it on screen; the unordered
+path multiplies albedo by the in-scattered light where the particle actually is.
+
+**Still unconfirmed, and not to be rounded up:** the distant fog wall (no report
+either way), the `haze` class (plumbed, never called, so it cannot have run),
+and `hazeAsParticle` (default off, not A/B'd).
+
+Two changes. Both **CI-green** (dusklight on all its targets with the submodule
+bumped, the fork on its three Windows configs including the Slang shader):
 
 - **The game now says it per draw.** `GXSetDrawClass` around the six perspective
   JPA particle blocks in `m_Do_graphic.cpp` → `D3DMATERIAL9::Ambient.a` → the
