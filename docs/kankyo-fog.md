@@ -379,7 +379,9 @@ because the palette is sRGB-decoded before it is scaled. `zHalfMin` and `froxelR
 the dense-fog regime that would actually challenge them — the **kytag01 whiteout in the Lost Woods / Sacred Grove**
 (§3.3; this said "Lake Hylia" until 2026-08-11 and was wrong), and the Goron Mines — was never visited, so
 they remain unchallenged rather than confirmed. Lake Hylia in the morning *was* visited on 2026-07-29 and read
-"suitably intense", but that is palette fog: only the tag's `-2000` start puts the half-density point behind the camera,
-which is the one case `zHalfMin` exists for. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
+"suitably intense", but that is palette fog, and a later run settles it: Lake Hylia's ramp was **measured** at
+`[-3000, 70000]` on 2026-08-06 — a half-density point around 33500, nowhere near the `zHalfMin` clamp, and nothing like
+the tag's `[-2000, 200]` (midpoint −900). Note it is the tag's near `end`, not its negative `start`, that collapses the
+midpoint: negative starts turned out to be ordinary, present in every area measured in that run. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
 pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
 live in stage data rather than in source.
