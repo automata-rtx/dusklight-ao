@@ -88,9 +88,18 @@ wrong, the tag was mis-assigned: say so, retag it, and fix the code.
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 11.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
-branch until those merged on 2026-08-11; 11 is the merged number. Any prompt tagged
-[PROTOCOL] must check the other live `claude/*` branches before taking a number. Two
+**Protocol is at 12**, taken by P6's three vrbox palette alphas. It was 7 on
+`Fixed-Function-dev` and 11 on the effect-lights branch until those merged on
+2026-08-11, and 11 is what that merge produced.
+
+**Do not trust that number, or any number written in a prompt below — read it.**
+`tools/check-remix-protocol.py` prints the live value, and it is in `remix_bridge.cpp`
+and the fork's `dxvk_imgui.cpp`. P6's own prompt said "Currently 7" for long enough to
+be four behind by the time anyone ran it, which would have shipped a skew against a wire
+already at 11.
+
+Any prompt tagged [PROTOCOL] must check the other live `claude/*` branches before taking
+a number. Two
 branches claiming one number is a trap this project has already hit, and the merge
 conflict resolves *cleanly* into a wrong answer — **it hit again here**: the effect
 lights and the HD texture pack readouts both landed at 7, independently, so a build
@@ -128,11 +137,11 @@ code, or only the documents?*
 | **P19** | The largest piece of game data we drop — and cheaper than it looked (see below). Instrument first. |
 | **P12** | The densest particle field in the game is unbatched. **Measure before changing anything.** |
 | **P8** | Turns on per-draw material identity, which is the door to name-keyed art assets. |
-| **P2** | **The one open case of a correction that reached the docs and not the code.** Now authorised to reach the code. |
+| ~~**P2**~~ | ✅ **Done 2026-08-11** — the correction reached the code, gated. What is left is **P11**, the look judgement, which needs one play session. |
 
 ### FIX IN PASSING — cheap, but no longer free
 
-**P3, P5, P6, P7, P9, P10, P13, P14, P15, P16, P18.**
+**P3, P5, ~~P6~~, P7, P9, P10, ~~P13~~, P14, P15, P16, P18.** (P6 and P13 done 2026-08-11.)
 
 The old note here said these were "wrong sentences in documents" and that a wrong sentence
 only bites when someone reads it. **That was true when the prompts were forbidden to touch
@@ -141,7 +150,7 @@ set splits:
 
 - **Genuinely record-only** — P3, P10, P13, P18 and the documentation halves of P5 and
   P15. The code is right; a document is wrong about it. Correct in passing.
-- **Carry a real code change** — P6, P7, P14, P16, P20, the shader half of P2, the overlay
+- **Carry a real code change** — ~~P6~~, P7, P14, P16, P20, ~~the shader half of P2~~, the overlay
   half of P15, and the log line in P5. These were parked as "documentation" because the
   prompt forbade the change, not because the change was not worth making. **P16 is one
   line that has been sitting unmade since it was verified.**
@@ -467,7 +476,43 @@ right. Say what you checked - note that actor placement lives in .dzs stage data
 Push only your session branch.
 ```
 
-## P2 · The kasumi correction never reached the shader — [CODE, GATED]
+## P2 · ✅ DONE 2026-08-11 — The kasumi correction never reached the shader — [CODE, GATED]
+
+> **Ran on `claude/kasumi-naming-correction-w3e204`, rebased onto this branch.** All four
+> labels reproduced, the trap included. **Do not re-run**; the prompt is kept below as the
+> record of what was asked.
+>
+> Step 1: the three stale comments now state the front/back split; §6 cites four
+> confirmations with the English-gloss trap written up; §8b gained the general rule that a
+> translator's comment is not an authored string either; both "the correction is finished"
+> passages are corrected. `DusklightAtmosphere.md` gained **§12.2** with the full site
+> table.
+>
+> Step 2 shipped **gated**: `kasumiBlendMode` defaults to the sun-relative blend, which is
+> bit-identical to what shipped, with the fixed composite as mode 1. Dusklight tab →
+> Atmosphere → Sky → **Haze Bands**. **P11 is this A/B** and is the only part left.
+>
+> One CI round was lost to something unrelated and worth knowing: the game's kanji in a
+> shader comment killed all three Windows configs, because the shader compiler reads source
+> as cp1252 there. **Shader source stays ASCII**; the section sign these files are full of
+> survives only because it happens to be a valid cp1252 byte.
+>
+> ### What this changes for you
+>
+> **What was wrong.** The renderer was building the sky's horizon haze by swinging two
+> colours around to follow the sun. The game never did that — it paints one haze band near
+> and one far, in fixed places, and nothing in it looks at where the sun is. Because that
+> same sky image is also what lights the world and what distant scenery fades into, the
+> whole scene's colour was drifting with the sun's compass direction even when the game's
+> own palette was holding still.
+>
+> **What is better.** The renderer now knows both versions and still runs the old one, so
+> nothing looks different unless you choose. There is a switch in the overlay to try the
+> faithful version and flip back instantly, which is the only honest way to settle whether
+> it is an improvement.
+>
+> **What is still owed.** Nobody has looked at either version. Sunrise and sunset are where
+> they differ most; at midday you will probably see nothing. That comparison is P11.
 
 A correction landed in the option descriptions and the documents, and not in the code
 that consumes the values. The shader still implements the premise the game contradicts,
@@ -757,7 +802,47 @@ instead - that is a real result, not a failure.
 
 One test window covers both of these together.
 
-## P6 · Push the three vrbox alphas the bridge throws away — [PROTOCOL]
+## P6 · ✅ DONE 2026-08-11 — Push the three vrbox alphas the bridge throws away — [PROTOCOL]
+
+> **Ran with P2.** All claims reproduced. **Landed at protocol 12.** The three readouts
+> are pushed and shown in the Dusklight tab. **Do not re-run**; two defects in the prompt
+> below are flagged inline, both of which would have cost a session.
+>
+> **Only the near band's alpha is consumed**, and only as the share in P2's fixed-composite
+> blend — which is off by default, so this changed no pixel by itself. The haze-thickness
+> guess was **left alone**: what a colour register's alpha does depends on the sky models,
+> and no model file exists in any of the three checkouts, so wiring it would be inference.
+>
+> **-1 means "the game has not said."** Only the game writes these, and only from protocol
+> 12, so against an older build the default survives untouched. Reading that silence as 0
+> would drop the near band and look like a deliberate palette. A reported 0 is honoured.
+>
+> ### Two defects in the prompt below, both now fixed in place
+>
+> 1. **It said "Currently 7 on `Fixed-Function-dev`".** It was **11**. Run verbatim it
+>    would have shipped a skew on the first commit — the failure this project has paid for
+>    twice. **A prompt that quotes a number someone else can change goes stale**; it now
+>    says to read the live one.
+> 2. **IN SCOPE and DONE MEANS contradicted each other** — "CONSUME NOTHING" against "the
+>    shader reads the two kasumi alphas". A session could not have satisfied both. P2 opened
+>    a third way: consume it *only where a disabled-by-default blend reads it*.
+>
+> ### What this changes for you
+>
+> **What was wrong.** Every frame, the game works out three extra numbers alongside its sky
+> colours — how strong each of the two horizon haze bands is, and the cloud layer. The
+> bridge that hands the game's state to the renderer was quietly dropping all three, so one
+> of them was being guessed from the colours instead of read from the game.
+>
+> **What is better.** All three now arrive and are displayed, so you can watch what the
+> game actually asks for as weather and time change. One of them is used: the faithful haze
+> blend now takes its strength from the game's own number instead of a placeholder someone
+> picked out of the air.
+>
+> **What is still owed.** Two of the three are shown and nothing more, deliberately — we do
+> not yet know what the game does with them, and guessing is how this project has gone
+> wrong before. Nobody has watched them across a range of weather yet, and the blend that
+> uses the third is still switched off by default.
 
 The sky shader currently *guesses* a number the game states explicitly.
 
@@ -1258,7 +1343,45 @@ you concluded the change was NOT worth making, write those same three parts abou
 instead - that is a real result, not a failure.
 ```
 
-## P13 · The same kasumi mistake, one file away — [RECORD ONLY + MEASURE FIRST]
+## P13 · ✅ DONE 2026-08-11 — The same kasumi mistake, one file away — [RECORD ONLY + MEASURE FIRST]
+
+> **Ran with P2 and P6.** The claim reproduced in all four label sites, and the single
+> consumer confirms it. **Do not re-run.**
+>
+> The three descriptions now say upper band, lower band, and the **lower** band's shadow.
+> The recipe a clouds phase should start from is written up as
+> `dxvk-remix/documentation/DusklightAtmosphere.md` **§12.3**, ledger **C3** points at it,
+> and `kankyo-fog.md`'s key table is corrected.
+>
+> **The measure-first half is instrumented rather than asked.** The prompt's own DONE MEANS
+> allowed "taken or explicitly requested", and requesting it would have satisfied the
+> letter — but the request asked whoever was playing to estimate how much of the screen was
+> sky and compare two totals by eye, because the existing draw counter reports a whole-frame
+> total. Asking for a judgement in place of a number is the defect rule 2 names, so the fix
+> was a log line. `drawVrkumo` now counts its own billboards and prints `vrkumo.draws` on
+> the same period as `dx9.draws`; playbook **§0d** is rewritten around it.
+>
+> Worth noting why this one was cheap: **nothing had been built on the wrong description
+> yet.** P2 is the same error caught after the code existed, and it cost a shader change, an
+> option and a CI round.
+>
+> ### What this changes for you
+>
+> **What was wrong.** Our notes described two of the game's cloud colours as "the lit side"
+> and "the shaded underside", as if they described light falling on a cloud. They do not —
+> they are the top and bottom of a colour gradient the game runs across the sky by distance.
+> Nothing looked wrong, because nothing uses those colours yet. What was wrong was the
+> instruction sheet a future clouds feature would have followed, and it would have built the
+> wrong thing confidently.
+>
+> **What is better.** The description matches what the game does, and the game's actual
+> recipe is written down next to it, so whoever builds clouds starts from the real thing.
+> Separately, the game now counts how many separate draws its sky clouds cost — a number
+> nobody has ever had, and the kind that made rain and snow playable once it was known.
+>
+> **What is still owed.** That count. Play outdoors where there is sky for a few minutes and
+> send the log; the number decides whether the clouds are worth optimising, and until it
+> exists any change there would be made blind.
 
 ```
 Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
@@ -1748,29 +1871,49 @@ instead - that is a real result, not a failure.
 
 # Tier 4 — only with the owner watching
 
-## P11 · The kasumi blend itself
+## P11 · The kasumi blend itself — **built and waiting, 2026-08-11**
 
-This is step 2 of **P2**, and it is listed separately because it is a look judgement, not
-a correctness fix. Ship it behind an option defaulting to today's behaviour, then decide
-by A/B in one session. Do not flip the default without the owner seeing both.
+This is step 2 of **P2**, listed separately because it is a look judgement, not a
+correctness fix.
+
+> **The building half is done.** P2 shipped it behind `kasumiBlendMode`, defaulting to the
+> sun-relative blend that is bit-identical to what shipped. Dusklight tab → Atmosphere →
+> Sky → **Haze Bands**. P6 then replaced the placeholder share with the game's own alpha,
+> so mode 1 is now a faithful translation rather than an approximation — **which is what
+> makes the A/B worth running at all.** Before that it compared a wrong premise against an
+> invented constant.
+>
+> **All that is left is looking at it**, at sunrise or sunset, where the two disagree most.
+> Do not flip the default without the owner seeing both. If mode 1 reads flat — the horizon
+> the same colour all the way round, no warm side — that is a real result and the reason
+> the switch exists.
+>
+> Needs a build carrying **protocol 12** on both sides, or the share falls back to the
+> placeholder and the comparison is the old inconclusive one.
 
 ---
 
 ## Sequencing summary
 
 **✅ Done:** P17 (channel collision), P0 (effect-lights merged, protocol 11), P1 (Lost
-Woods fog tag — record corrected; the measurement it points at is still owed).
+Woods fog tag — record corrected; the measurement it points at is still owed), and as of
+2026-08-11 **P2** (gated), **P6** (protocol 12) and **P13** (record + instrumentation).
+
+**Three measurements are now one play session apart**, and none of them asks anyone to
+judge anything: P12's Twilight fog draw count, P13's cloud draw count (`vrkumo.draws`,
+new), and P5's colpat-9 guard. **P11's A/B wants the same session** — it is a look
+judgement rather than a log, but it is the same build and the same sitting.
 
 | When | Run | Needs a play-test? |
 | :-- | :-- | :-- |
-| **Next** | **P2** — the shader half. The one open case of a correction that reached the docs and not the code | no, it ships gated |
+| ~~Next~~ | ~~**P2** — the shader half~~ ✅ **done**, shipped gated. Also carried P6 and P13 | no |
 | Then — record corrections, in passing | P3, P10, P13, P18 (record half), P5 (record half) | no |
 | Then — contained code | P4, P14, P15, **P16 (one line, overdue)** | no |
 | Then — the strategic reads, each ending in a change | P8 (material identity), P9 (tuning panel → 3 controls) | no |
-| Measure, then act | P12 (Twilight fog), P13 (vrkumo half) | one log, then a change |
+| Measure, then act | P12 (Twilight fog), P13's vrkumo half — **now instrumented**, so it is one log rather than a judgement | one log, then a change |
 | Then — retained game data | P19 (room lights, off by default), P20 (ambient layers) | yes, one window |
-| Together in one window | P6, P7 | yes, one window |
-| Last | P11 (= P2 step 2) | yes, A/B |
+| Together in one window | ~~P6~~ (done, protocol 12), P7 | yes, one window |
+| Last | P11 (= P2 step 2) — **built and waiting**, needs only the A/B | yes, A/B |
 
 **Three items are one log away from being decided rather than discussed** — P12 (a
 `dx9.draws` peak from the Palace of Twilight), P13's vrkumo half (the same, outdoors and

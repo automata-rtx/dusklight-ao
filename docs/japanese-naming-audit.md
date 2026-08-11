@@ -235,7 +235,21 @@ Hylia *also* carries a kytag01. Actor placement is `.dzs` stage data; `ky_tag1` 
 exactly once in the entire tree, in `d_stage.cpp:941`'s name table. The correction moves
 the worked example to where the game names it. It does not prove a negative.
 
-### 4.2 A correction landed in the docs and not in the code — **BEHAVIOUR WRONG** [P2]
+### 4.2 ~~A correction landed in the docs and not in the code~~ — **RESOLVED 2026-08-11** [P2]
+
+> **This is the finding the whole worklist rewrite was made of, and it is now closed.**
+> The shader's comments state the front/back split, and the corrected blend ships behind
+> `kasumiBlendMode`, defaulting to the sun-relative version so nothing moves until someone
+> chooses. The A/B is **P11**.
+>
+> **The lesson generalised and is worth more than the fix.** A correction is finished when
+> the code that acted on the wrong belief has been found — not when the sentence stating it
+> has been rewritten. The mechanical slice of that is now enforced: both repos' invariants
+> scripts carry a `RETIRED_CLAIMS` list, so a sentence this project has established is false
+> cannot reappear anywhere in the tree without failing a check. It is seeded with both
+> kasumi phrasings and both kumo ones from 4.13.
+>
+> The entry below is kept as written.
 
 On 2026-08-10 the fork's `kasumiInner`/`kasumiOuter` descriptions were corrected: the
 game splits its two horizon haze bands **front/back**, not by sun position, and
@@ -576,16 +590,18 @@ Remix cares about and the pre-cull bound is 2000 + 1000** — the actual cost is
 there settles it before any code changes, which is why P12 makes that measurement
 mandatory rather than optional.
 
-### 4.13 ~~The same kasumi mistake, one file away~~ — **RESOLVED 2026-08-11 (docs)** [P13]
+### 4.13 ~~The same kasumi mistake, one file away~~ — **RESOLVED 2026-08-11** [P13]
 
 > **The descriptions are corrected** — upper band, lower band, and the *lower* band's shadow —
 > and the recipe the finding implies is written down at
 > `dxvk-remix/documentation/DusklightAtmosphere.md` §12.3, with ledger entry C3 pointing at it.
 > The one consumer was re-read and confirms the reading exactly.
 >
-> **The `drawVrkumo` half is still open** and is a measurement, not a judgement: one
-> `dx9.draws` peak from an outdoor cloudy scene. Requested in `docs/remix-open-issues.md`
-> and the test playbook.
+> **The `drawVrkumo` half is instrumented rather than requested.** `dx9.draws` is a
+> whole-frame total and cannot separate the clouds, so asking for it meant asking someone
+> to estimate sky coverage and compare — a defect in the logging, not a question to phrase
+> better. `drawVrkumo` now counts its own billboards and prints `vrkumo.draws`; playbook
+> §0d is rewritten around it. What is left is a play session, which nothing here can do.
 >
 > The entry below is kept as written.
 
