@@ -280,10 +280,13 @@ Push only your session branch.
 > current number comes from. The three merge traps the prompt named (settings ordering,
 > the protocol double-bump, the backwards aurora pin) were all live and all resolved.
 >
-> **What is still owed, and it is not small:** the prompt deliberately left
-> `sphere.shaping_hasvalue = 0` alone, so the lights that *are* forwarded still discard
-> cone shape — now at **two** sites (`remix_bridge.cpp:1455`, `:1702`). That is P19's
-> territory, and P19 is still open.
+> **Nothing is owed here.** An earlier version of this entry claimed the merge left
+> `sphere.shaping_hasvalue = 0` in place and that forwarded lights therefore discard cone
+> shape. **Checked 2026-08-11: that is wrong.** Neither forwarded light type carries a cone
+> — `LIGHT_INFLUENCE` has no angle fields, and the effect-light path reads `BOSS_LIGHT` for
+> colour only, deliberately and under a comment saying so. Hardcoding shaping off is the
+> correct encoding of "this light has no cone". The cone question belongs entirely to P19;
+> see the note in the sequencing summary for the trap it contains.
 >
 > This entry was **stale for the whole of 2026-08-11**: the body below still described the
 > branch as unmerged, "27 commits ahead / 15 behind, protocol 11 vs 7", while the merge had
@@ -1777,7 +1780,35 @@ they do not conflict and it collapses three test windows into one.
 **P16 is one line and has been verified since 2026-08-11.** Fold it into whichever session
 opens `settings.{h,cpp}` or `m_Do_main.cpp` first — P14 and P9 both do.
 
-**P19 inherits an unpaid debt from P0.** The effect-lights merge deliberately left
-`sphere.shaping_hasvalue = 0`, now at two sites, so every light forwarded today discards
-its cone. The room lights are the only source in the game that *has* cones. Doing P19
-without fixing that ships the data and throws away the part that made it worth shipping.
+**P19 walks into a trap, and it is the approach the prompt recommends that walks into it.**
+Corrected 2026-08-11 — an earlier version of this paragraph called it "an unpaid debt from
+P0" and said every forwarded light discards its cone. **That was wrong**, and the real
+shape is worth stating precisely:
+
+- **Nothing is discarding a cone today.** `sphere.shaping_hasvalue = 0` appears at two
+  sites — `updateLocalLights` (`remix_bridge.cpp:1455`) and `updateEffectLights` (`:1702`)
+  — and it is **correct at both**, because neither path carries cone data to begin with.
+  `LIGHT_INFLUENCE` (`d_kankyo.h:17-23`) is position, colour, power, fluctuation, index:
+  **no angle fields at all.** The effect-light `Site` (`effect_lights.hpp:41-55`) likewise.
+- **The one cone-bearing source the effect lights touch, they read for colour only, on
+  purpose.** `gatherVanillaLights` harvests `BOSS_LIGHT` at `effect_lights.cpp:1441` and
+  passes `reach = 0, reachKnown = false` under a comment reading "COLOUR ONLY,
+  deliberately". `mCutoffAngle`, `mAngleX` and `mAngleY` are never read. The `spot` bool it
+  sets reaches the log and nothing else.
+- **The cone data exists only in `DUNGEON_LIGHT` and `BOSS_LIGHT`, and neither is
+  forwarded.** So P19 is not paying off a debt; it is the first thing that would ever have
+  a cone to send.
+
+**Here is the trap.** P19's prompt recommends re-deriving `mInfluence` from
+`DUNGEON_LIGHT`'s live fields and letting the existing forwarding loop carry it — which is
+good advice for the transport and fatal for the cone. `mInfluence` is a `LIGHT_INFLUENCE`
+embedded at offset `0x2C`, and **the cone fields sit outside it**, at `0x18`–`0x24`. So the
+recommended route drops the cone *structurally*, before it ever reaches the hardcoded
+`shaping_hasvalue = 0`. Both would have to be fixed, and neither failure is visible in a
+diff.
+
+Populating it is small — `remixapi_LightInfoLightShaping` is a normalized direction,
+`coneAngleDegrees`, `coneSoftness` and `focusExponent` — but mapping GX's
+`mAngleAttenuation` spot function onto those last two is an **approximation nobody has
+characterised**, not a transcription. Treat it as its own step with its own regression
+signature.
