@@ -1050,13 +1050,23 @@ Added **2026-08-08**:
     `dusklight.water.projected … hidden=1` lines, seven surfaces still
     translucent, and water reported as "far more consistent". Same session
     reported it **bland**: with no textures bound at all, water is featureless
-    glass. The draw's own texture now goes in the **normal** slot
-    (`rtx.dusklight.water.surfaceDetailFromGameTexture`, default on), which is
-    both where the game's scroll animates it — the scroll is a texture transform
-    on the draw, so it runs at the game's rate — and where a replacement normal
-    map lands. **Untested.** Until such a map is authored it is a *colour*
-    texture decoded as a tangent normal: an animated perturbation, not real
-    ripples. `rtx.translucentMaterial.normalIntensity` scales it.
+    glass.
+
+    **The fix tried for that was reverted on 2026-08-09 and there is no option
+    for it** — `rtx.dusklight.water.surfaceDetailFromGameTexture` was removed and
+    this paragraph described it as live until 2026-08-11. Binding the draw's own
+    colour texture into the normal slot was wrong twice over: a colour texture
+    decoded as an unsigned octahedral tangent normal is noise rather than
+    ripples, and on a lake where a normal map had already been authored for one
+    layer it put a *second* normal map alongside it — which per an RTX Remix
+    rendering engineer do not blend correctly.
+
+    **So surface detail comes from an authored replacement and from nothing
+    else.** The game's textures keep their hashes and stay replaceable;
+    `rtx.translucentMaterial.normalIntensity` scales whatever map is authored
+    onto them. The generalisable point is the second one: it is not a reason to
+    tune the first idea, it is a reason for a body of water to present **one**
+    surface.
 
     **Normal maps: a lake is drawn from several textures (2026-08-09 15:56).**
     Replacing a water texture with an authored normal map worked, and the same

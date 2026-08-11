@@ -93,10 +93,35 @@ tested good.** If a session ever concludes otherwise, that is the signal to stop
 
 # Tier 0 — the two time-critical items, neither of which is a naming finding
 
-## P17 · ⚠ Two branches want the same two material channels — [RESEARCH FIRST, urgent]
+## P17 · ✅ DONE 2026-08-11 — Two branches wanted the same two material channels
 
-**Do this before merging either branch.** It is the only item in this file with a
-deadline, and the failure mode is a clean merge that silently breaks a tested feature.
+> **Reproduced, then resolved.** Both collisions were real. The audit is
+> `extern/aurora/docs/dx9/in-flight-allocation.md`; the fix was to **rebase** the
+> water branch onto `Fixed-Function-dev` rather than merge it, and re-derive its
+> channel assignment.
+>
+> **Outcome:**
+> - Water's three facts now share `D3DMATERIAL9::Power`, packed as
+>   `tag * 100 + layer * 10 + role`. HD texture packs keep `Ambient.g`/`.b`.
+> - **`Ambient.a` is the only free channel left**, and
+>   `claude/dusklight-remix-transparency-e7l766` has an unmerged claim on it. Any
+>   item in this file that assumes a spare channel should assume it has to pack,
+>   or move to a different transport.
+> - GX FIFO `0x0053` is water's; `0x0054`–`0x0057` are reserved in a registry
+>   comment in `extern/aurora/include/dolphin/gx/GXAurora.h`.
+> - Both invariants scripts now run the side-channel map in **both** directions
+>   and cover `Power`; a third check requires every allocated channel to be in
+>   `computeIdentityHash`; duplicate and unregistered subcommands fail. Each was
+>   verified by breaking the tree deliberately.
+> - One correction to the framing below: git **does** conflict, in two files —
+>   the hunk is a block, not a single line. That made it worse rather than
+>   better, because the conflict's obvious resolution is the wrong one and the
+>   field map merges clean beside it.
+>
+> The original prompt is kept for the record.
+
+**Superseded. Do not run this.** It is left because the shape of the failure
+recurs and this is the only statement of it.
 
 ```
 Read CLAUDE.md ("Merges that succeed and are still wrong") and
@@ -1222,7 +1247,8 @@ from GX_TG_TEX0 means the simple class and it does not. Do not build anything.
 
 OUT OF SCOPE: adding a flower switch; changing blob-shadow behaviour; the four
 stage-authored grass types (that is a separate, instrumentation-first item - and note it
-must NOT plan on a spare D3DMATERIAL9 channel, see P17).
+must NOT plan on a spare D3DMATERIAL9 channel: as of 2026-08-11 there is exactly one,
+`Ambient.a`, and it is already claimed by an unmerged branch. See P17).
 
 DONE MEANS: issue 7, issue 11, the two option descriptions and the shadow prose all say
 what the code does; invariants and CI green. No behaviour changed.
