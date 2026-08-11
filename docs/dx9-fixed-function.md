@@ -480,9 +480,9 @@ through `divNum` 6), so **`rtx.bloom.steps = 6`** reproduces it — Remix's
 default of 5 is one short, which both narrows the halo by a level and
 changes how the total gain is distributed across the passes. `rtx.bloom.burnIntensity`
 still scales the final composite. `rtx.bloom.luminanceThreshold` is *not* used
-in this mode — Dusklight thresholds by subtracting from each channel rather
-than by weighting with luminance, which is what keeps coloured highlights
-saturated, so it gets its own threshold option.
+in this mode — Dusklight keys its threshold off a blue-weighted luminance and
+scales the whole colour by the result (point 1 below), rather than off the
+standard luma Remix weights with, so it gets its own threshold option.
 
 What makes it look different from Remix's default bloom, in `draw2()` order
 (`src/m_Do/m_Do_graphic.cpp`):

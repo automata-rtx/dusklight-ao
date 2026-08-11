@@ -205,15 +205,23 @@ Three mechanisms, all TEV/GX state:
    1. **Mono pass**: if `mMonoColor.a > 0`:
       `out = lerp(fb, replicate(fb.r) * monoRGB, monoA/255)` — greyscale
       (red channel as luma proxy) tinted by monoRGB, lerped by alpha. This
-      is the twilight/senses desaturation.
-   2. **Bloom gather** on the mono'd framebuffer (threshold subtract, blur
-      pyramid — ported to Remix already as `rtx.bloom.dusklight*`).
+      is the **twilight** desaturation (bloom tables 1/2). Senses does not
+      use it: its entry 3 has `mSaturateSubtractA` `0x00`, so `monoA` is 0
+      and the pass is skipped.
+   2. **Bloom gather** on the mono'd framebuffer — a luminance-keyed
+      threshold, `colour × saturate(0.25R + 0.25G + 0.5B − mPoint)`, then the
+      blur pyramid. Ported to Remix already as `rtx.bloom.dusklight*`.
    3. **Composite**: `GXSetBlendMode(BM_BLEND, mMode==1 ? INVDSTCLR : ONE,
       SRCALPHA, …)` with src = bloom × blendRGB, srcAlpha = OrigDensity ⇒
       `out = bloom*blendRGB*(screen|add) + fb*(OrigDensity/255)`.
       **OrigDensity scales the base image** — twilight dims the whole scene
-      to 82 % here. Our Remix bloom port does not yet do the mono pass or
-      the base-image weight.
+      to 82 % here (`mOrigDensity` `0xD2` in bloom table entry 1,
+      `d_kankyo_data.cpp:14`).
+      **Both the mono pass and the base-image weight are ported** (IV.3): the
+      mono pass is `bloom_dusklight_prepass.comp.slang` in the fork, and the
+      base-image weight is the `base * cb.baseWeight` term in
+      `bloom_composite.comp.slang:74`. Both are **CI-green and untested in
+      game.**
 
 ---
 
