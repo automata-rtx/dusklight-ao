@@ -53,7 +53,12 @@ DOC_PROTOCOL = re.compile(
     # 2026-08-11 when a bump left this phrasing behind and only the fork's script noticed.
     # Bold-and-dotted specifically, because a bare "currently 12" is ordinary English that
     # appears all over these documents about things that are not the protocol.
-    r'|\*\*Currently\s+(\d+)\.?\*\*',
+    r'|\*\*Currently\s+(\d+)\.?\*\*'
+    # "**Protocol 7.**" standing alone - aurora's texture-replacements.md phrased the
+    # protocol its feature landed at this way, which reads as the current number. Bold
+    # and full-stopped specifically, so "**Implemented. Protocol 6 -> 7.**" and other
+    # visibly historical forms do not match.
+    r'|\*\*Protocol\s+(\d+)\.\*\*',
     re.IGNORECASE)
 
 
@@ -119,9 +124,19 @@ def doc_paths(fork):
     A list of files to check is a list of files someone has to remember to extend, on the
     day they are thinking about something else entirely.
     """
+    # Aurora is the third repo and states protocol facts too. It went unscanned until
+    # 2026-08-11, and carried a bare "**Protocol 7.**" that read as a claim about the
+    # present while the wire was at 12 - invisible to both this check and the fork's.
+    # Prefer the vendored submodule, since that is the copy a dusklight build actually
+    # ships; fall back to a sibling checkout for a working tree laid out side by side.
+    aurora = os.path.join(ROOT, "extern/aurora")
+    if not os.path.isdir(os.path.join(aurora, "docs")):
+        aurora = os.path.join(ROOT, "..", "aurora-ao")
+
     paths = []
     for root, patterns in ((ROOT, ("*.md", "docs/**/*.md")),
-                           (fork, ("*.md", "documentation/**/*.md"))):
+                           (fork, ("*.md", "documentation/**/*.md")),
+                           (aurora, ("*.md", "docs/**/*.md"))):
         for pattern in patterns:
             paths.extend(sorted(glob.glob(os.path.join(root, pattern), recursive=True)))
     # dict.fromkeys rather than set(): a stable order makes the failure list diffable.
@@ -140,6 +155,11 @@ DOC_NAME_ALLOWED = {
     # Named in remix-open-issues.md for the express purpose of recording that it was
     # renamed to emissive.brightness and that RtxOptions.md still carries the old row.
     "rtx.dusklight.emissive.intensity": "recorded as renamed to emissive.brightness",
+    # Named in aurora's progress.md 3.23 as the record of a superseded design - the
+    # weighted evidence score, which rev 4 replaced with a rule. Surfaced 2026-08-11 when
+    # aurora entered the search path; the entry there says plainly that it no longer
+    # exists, which is the point of keeping the mention.
+    "rtx.dusklight.emissive.threshold": "aurora progress.md 3.23, recorded as removed with the score",
     # Names P7 PROPOSES in japanese-naming-worklist.md - the option it would add if
     # anyone runs it, not a switch that exists. Surfaced on 2026-08-11 the moment
     # doc_paths() started globbing: the worklist had never been scanned, so its proposed
@@ -198,7 +218,7 @@ def check_protocol_number(fork, bridge, failures):
         for match in DOC_PROTOCOL.finditer(text):
             # The pattern is an alternation, so exactly one group carries the digits and
             # the other is None. Take whichever matched.
-            stated = match.group(1) or match.group(2)
+            stated = next((g for g in match.groups() if g), None)
             if stated is None or int(stated) == wire:
                 continue
             line = text[:match.start()].count("\n") + 1
