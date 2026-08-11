@@ -99,6 +99,10 @@ UserSettings g_userSettings = {
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
+        // True, so that remixHideSkyBillboards on its own keeps hiding the stars exactly as
+        // it did while the two were one setting. Set it false to keep the star packet while
+        // the sun/moon packet stays hidden.
+        .remixHideStarBillboards {"game.remixHideStarBillboards", true},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
         .remixTextureReplacements {"game.remixTextureReplacements", true},
@@ -118,6 +122,9 @@ UserSettings g_userSettings = {
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
         .enableTextureReplacements {"game.enableTextureReplacements", true},
+        // Off: the dump directory grows for as long as it is on, and it is a tool rather
+        // than a rendering setting. Read once, at aurora_initialize.
+        .allowTextureDumps {"game.allowTextureDumps", false},
         .enableFrameInterpolation {"game.enableFrameInterpolation", FrameInterpMode::Off},
         .internalResolutionScale {"game.internalResolutionScale", 0},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
@@ -352,6 +359,7 @@ void registerSettings() {
     Register(g_userSettings.game.disableFrustumCulling);
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
+    Register(g_userSettings.game.remixHideStarBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
     Register(g_userSettings.game.remixTextureReplacements);
@@ -365,6 +373,7 @@ void registerSettings() {
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);
     Register(g_userSettings.game.enableTextureReplacements);
+    Register(g_userSettings.game.allowTextureDumps);
     Register(g_userSettings.game.internalResolutionScale);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.shadowResolutionMultiplier);

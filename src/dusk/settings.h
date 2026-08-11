@@ -230,6 +230,13 @@ struct UserSettings {
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
+        // Whether remixHideSkyBillboards also takes the star packet with it. Defaults to
+        // true, which is what that switch has always done - the two were one setting until
+        // 2026-08-11. It is a sub-switch, not an independent one: with
+        // remixHideSkyBillboards off nothing is hidden either way. Turning this off while
+        // that one is on is the A/B that isolates which packet is the shadow occluder,
+        // because only the sun packet draws the moon quad. docs/remix-test-playbook.md §4b.
+        ConfigVar<bool> remixHideStarBillboards;
         ConfigVar<bool> remixHideVrbox;
         ConfigVar<bool> remixPerBladeGrass;
         // Hand the texture_replacements pack to Remix on the D3D9 backend. Separate from
@@ -259,6 +266,13 @@ struct UserSettings {
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;
         ConfigVar<bool> enableTextureReplacements;
+        // Write every texture the replacement registry is asked for and cannot satisfy to
+        // <cachePath>/texture_dumps/, as a .dds named with the exact key a pack file must
+        // carry. Off by default because the directory grows for as long as it is on.
+        // NOTE: aurora only reaches that path from its GX texture resolver, so this
+        // produces files on the WebGPU backends and none at all under D3D9/Remix - see
+        // docs/remix-test-playbook.md "Dumping textures under their pack filenames".
+        ConfigVar<bool> allowTextureDumps;
         ConfigVar<FrameInterpMode> enableFrameInterpolation;
         ConfigVar<int> internalResolutionScale;
         ConfigVar<int> shadowResolutionMultiplier;

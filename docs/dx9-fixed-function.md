@@ -135,6 +135,15 @@ rtx.dusklight.game.localLights          = False
 # and the moonlight comes from the distant light, not the billboard.
 rtx.dusklight.game.hideSkyBillboards = True
 
+# Whether the line above also takes the stars. Defaults True, which is what that
+# switch has always done, so leaving this out changes nothing. Set it False - with
+# hideSkyBillboards still True - to get the star field back while the moon quad
+# stays hidden. Only the sun packet draws that quad, so this separates the half
+# that was measured from the half that never was; the stars include a
+# hand-placed 13-star constellation. UNTESTED - the recipe is
+# remix-test-playbook.md section 4b, and the answer belongs back in this comment.
+#rtx.dusklight.game.hideStarBillboards = False
+
 # Grass, one draw per blade instead of one batch per room. Off by default
 # because it costs exactly what the batching saves - a draw call per blade,
 # paid on the CPU in dense grass. Turn it on when you want grass that Remix can
@@ -255,12 +264,28 @@ elevations barely move either (14.8° → 15.0° at the extreme), so those
 transitions look the same.
 
 **Sky billboards — recommended ON.** The sun, moon and stars are drawn at a
-fixed offset from the camera eye (`dKyr_drawStar`:
-`moon_pos = camera->view.lookat.eye + envlight->moon_pos`), so as world
-geometry they travel with the player. Anything Remix captures from them as
-ordinary geometry becomes an occluder that follows the camera — which only
-shows at night, since stars and the moon are the only sky billboards drawn
-then.
+fixed offset from the camera eye, so as world geometry they travel with the
+player. Anything Remix captures from them as ordinary geometry becomes an
+occluder that follows the camera — which only shows at night, since stars and
+the moon are the only sky billboards drawn then.
+
+**Two packets, one switch — and only one of them was tested.** This paragraph
+said `dKyr_drawStar` drew the moon until 2026-08-11. It does not, and the
+distinction is the whole point of the switch:
+
+| Packet | Drawn by | What it puts in the world |
+| :-- | :-- | :-- |
+| sun packet | `dKyr_drawSun` | the **moon quad** — 8000 units across, hung at `eye + moon_pos`, 80000 units out along the direction the moon light arrives from. Also the daytime sun and its lens flare, 250–850 units and close to the camera |
+| star packet | `dKyr_drawStar` | up to 1200 scattered triangles. Thirteen of them are the hand-placed `hokuto_position` constellation array, ~151 units across at ~39000 out; the rest are ~0.5 units across at ~300 out. It reads `moon_pos` only to fade out stars that land near the moon on screen, and emits nothing there |
+
+*hokuto* (北斗) is the **Northern Dipper** — the Big Dipper — so the symbol has
+been read as "the game placed a Big Dipper". **Do not repeat that without
+checking it.** The array's own in-tree comment says *Cassiopeia and Orion*, and
+the data agrees with the comment rather than the symbol: the 13 entries fall
+into a group of **5** and a group of **8**, on opposite sides of the sky, and
+the first five are drawn larger than the rest. A dipper is seven stars in one
+place. What is verified is that thirteen stars were placed by hand; which
+asterisms they are is the comment's claim, not the game's.
 
 **Tested 2026-07-29: this is real, and `hideSkyBillboards` fixes it.** Shadow
 coverage that wandered as the camera moved stops wandering. The measurement
@@ -268,12 +293,23 @@ predicted it — an 80 m quad 800 m away, sitting in the same direction the moon
 light arrives from, intersects a moving band of every shadow ray cast toward
 the moon — so the cause is confirmed rather than merely masked.
 
+**That test did not separate the two packets**, and the switch turned both off
+together, so "the stars occlude" has never been either shown or ruled out. The
+arithmetic says they should not: they cover roughly 0.05% of the sky hemisphere,
+scattered, and the ones that would sit in front of the moon are already faded
+out by the game itself. That is inference, not a measurement.
+`rtx.dusklight.game.hideStarBillboards` (default `True`, i.e. today's
+behaviour) exists so one play session can settle it — set it `False` with
+`hideSkyBillboards` still `True`. Recipe: `remix-test-playbook.md` §4b.
+
 An earlier revision of this section suggested tagging the billboard textures as
-Sky "to fix it properly". That is still *possible* — unlike the vrbox dome
-these draws are textured — but it is no longer the recommendation: it keeps a
-real quad in the world and depends on an untested assumption about whether a
-Sky-tagged draw still renders while the generated dome has replaced the sky
-probe. If you want the moon back, the clean route is to paint it into the
+Sky "to fix it properly". For the sun and the moon that is still *possible* —
+unlike the vrbox dome those draws are textured — but it is no longer the
+recommendation: it keeps a real quad in the world and depends on an untested
+assumption about whether a Sky-tagged draw still renders while the generated
+dome has replaced the sky probe. **For the stars it is not possible at all**:
+`dKyr_drawStar` binds no texture (`GX_TEXMAP_NULL`), so there is no hash to
+categorise. If you want the moon back, the clean route is to paint it into the
 generated dome, where it is visible, correctly placed, contributes its own
 light and cannot cast a shadow. Not built.
 

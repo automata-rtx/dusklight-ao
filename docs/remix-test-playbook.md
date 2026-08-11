@@ -440,6 +440,50 @@ Not exercised by the 2026-08-06 run, so still worth covering if a session has
 room: a BC7 or BC5 pack, a deliberately-`.png` entry, a window resize (materials
 should be re-created), and palette-animated art.
 
+### 0b-ii. Dumping textures under their pack filenames — not a test, a tool
+
+> **This is for making a pack, not for judging a build.** It changes nothing in
+> the image. Added 2026-08-11; the capability was already in aurora and was held
+> shut by one hardcoded line.
+
+**What it does.** Every texture the replacement registry is asked for and cannot
+satisfy is decoded and written to `<cachePath>/texture_dumps/` as a `.dds`,
+named with **the exact key a pack file must carry** —
+`tex1_<w>x<h>_<texhash>_<fmt>.dds`, or `tex1_<w>x<h>_<texhash>_<tluthash>_<fmt>.dds`
+for a palette format. That is the same string aurora parses when it *loads* a
+pack, so a dumped file can be edited and dropped straight back into
+`texture_replacements/` under its own name. It is also Dolphin's convention, on
+purpose. `extern/aurora/docs/dx9/texture-replacements.md`.
+
+**Turning it on.** `game.allowTextureDumps` in the game's `config.json`, default
+`false`. Read once, at startup, so it needs a relaunch — there is no live
+toggle and it is deliberately not in the Remix overlay.
+
+**Four things worth knowing before you run it:**
+
+- **It writes nothing under D3D9/Remix.** The dump hangs off aurora's GX texture
+  resolver (`gx.cpp` `resolve_static_texture` → `find_replacement`). The D3D9
+  backend resolves textures through its own cache and asks the registry only for
+  an index, on a path that never decodes an image and never dumps. So do the
+  dump run in the game's **normal** rendering mode; the keys are backend
+  independent, so what you collect there is exactly what the Remix setup wants.
+- **Only textures with no replacement are dumped.** With a complete pack
+  installed you get nothing, which is correct and is also how you check coverage.
+  With no pack installed you get everything — the empty-registry early outs are
+  bypassed while dumps are on.
+- **Disk use grows for as long as it is on.** One file per distinct key, written
+  once each, but a long session across many areas is a lot of keys. Turn it off
+  when the pack has what it needs.
+- **`game.enableTextureReplacements` must stay on** (it defaults on). With it
+  off the game never loads the replacement directory at all.
+
+**What "working" looks like:** `texture_dumps/` fills with files matching the
+pack pattern `tex1_{w}x{h}_{textureHash:016x}[_{tlutHash:016x}]_{format}.dds`,
+alongside `texture_replacement: missing runtime key …` lines in the game log
+naming the same keys. **No directory listing from a real run is recorded here**
+— all of the above was read out of the source on 2026-08-11 and has not been
+exercised end to end. Paste one when someone runs it.
+
 ### 0c. Dense weather particles — PASSED 2026-08-08, one number still missing
 
 > **PASSED 2026-08-08.** Rain and snow, previously unusable, are "far better
@@ -657,6 +701,62 @@ comes from the distant light, not the billboard.
 Failure (still wanders) is a **useful** result: it kills the measured
 hypothesis in open issue 2 and points at Remix's denoiser or probe rather than
 at captured geometry.
+
+### 4b. Do the stars occlude anything? — NEVER RUN (added 2026-08-11)
+
+> **§4 turned two things off at once and only one of them was ever suspected.**
+> The moon quad is drawn by the sun packet; the stars are a different packet
+> behind what used to be the same switch. Nobody has looked at the star half on
+> its own, so the recommended setup has been deleting the entire night sky —
+> including a 13-star constellation the original team placed by hand — to fix a
+> problem that was measured on the moon.
+>
+> **Either answer is a good answer.** "Still wanders" means the stars occlude
+> too and the single switch was right; that closes the question for good.
+
+**Setup.** Freeze the clock at **~330** (night, §1), go outdoors, and stand
+somewhere the wandering was seen in §4. Then, in the same Geometry section §4
+uses:
+
+| Setting | Value | Why |
+| :-- | :-- | :-- |
+| Hide Sky Billboards | **on** | keeps the moon quad — the measured occluder — out of the world |
+| `...Including The Stars` | **off** | the new sub-switch. This is the whole test |
+
+Nothing else changes, and it is one A/B from a single standing position.
+
+> **If the sub-switch does nothing, it is not your setup.** The overlay half and
+> the game half of this option landed separately: the checkbox and
+> `rtx.dusklight.game.hideStarBillboards` exist in the fork, and the game only
+> follows them once the bridge reads that name (and the protocol is bumped to
+> match). Until then the setting is reachable game-side only —
+> `game.remixHideStarBillboards = false` in the game's `config.json`, which
+> needs a relaunch but runs exactly the same test.
+
+**What you should see immediately: stars.** They come back and the moon does
+not. If the sky is still empty, the two sides are not talking — check the
+Dusklight tab's protocol line before reading anything else into it.
+
+**The measurement.** Stand still, rotate a full circle, and watch shadowed
+ground. Then walk twenty paces and do it again.
+
+| What happens | What it means | What to do |
+| :-- | :-- | :-- |
+| Shadow coverage stays put | The stars do **not** occlude. The switch was two switches. | Leave the sub-switch off in `rtx.conf` and get the night sky back permanently. Record it in the comment at `d_kankyo_wether.cpp` `dKankyo_star_Packet::draw` |
+| Shadow coverage wanders again, as in §4 | The stars occlude **too**. The single switch was right all along. | Turn the sub-switch back on and record that in the same comment, so nobody re-opens it. Open issue 2 keeps its answer and gains a second cause |
+| Stars visible but sitting *in front of* walls and Link | Separate finding, worth reporting either way: the star shell sits ~300 units from the camera and a path tracer has no sky-list depth reset to hide that | Note it; it does not invalidate the shadow reading above |
+
+**Regression signature to recognise rather than discover:** with the stars
+back, the frame gains one batched draw of up to 1200 triangles. If `dx9.draws`
+climbs by hundreds instead of one, the batching in `dKyr_drawStar` has been
+lost — that is a different bug and issue 13 covers it.
+
+**Prediction on record, so it can be wrong.** The stars cover roughly 0.05% of
+the sky hemisphere, are scattered rather than pooled on the light direction,
+and the game already fades out any star that lands near the moon on screen. The
+moon quad covers about 11 degrees centred exactly on the moon light. So the
+expectation is "stays put". **That is arithmetic off the source, not a
+measurement** — this test is the measurement.
 
 ### 5. Phase C — physical sky — RAN, PARTIAL
 

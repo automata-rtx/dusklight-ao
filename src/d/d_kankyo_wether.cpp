@@ -93,17 +93,45 @@ STAR_EFF::STAR_EFF() {}
 
 void dKankyo_star_Packet::draw() {
 #if TARGET_PC
-    // Confirmed in game 2026-07-29: the moon billboard was the night shadow wandering.
-    // dKyr_drawStar anchors it to the camera eye (moon_pos = eye + envlight->moon_pos), so an
-    // 8000-unit quad hangs 80000 units away in the moon light's own direction and travels with
-    // the player - every shadow ray toward the moon starts by hitting it.
+    // THE MOON IS NOT DRAWN HERE. Corrected 2026-08-11; this comment used to say it was, and
+    // the same sentence had already been copied into docs/dx9-fixed-function.md.
     //
-    // Costs only the visible moon and stars; the generated sky already paints that part of the
-    // image and the moonlight comes from our distant light, not the billboard. If the moon is
-    // wanted back, paint it into the generated sky dome - NOT Sky-texture tagging, which keeps a
-    // real quad in the world. docs/remix-open-issues.md issue 2.
+    // The moon quad is emitted by dKyr_drawSun, from the sun packet, behind the separate gate
+    // in dKyw_drawSun below: d_kankyo_rain.cpp:2431 anchors it at eye + envlight->moon_pos and
+    // :2614 gives it size 8000, so an 8000-unit quad hangs 80000 units out (d_kankyo.cpp:1775)
+    // in the moon light's own direction - the same point d_kankyo.cpp:4749 puts the moon light
+    // at - and travels with the player. That is the mechanism confirmed in game 2026-07-29:
+    // every shadow ray cast toward the moon starts by hitting it.
+    //
+    // dKyr_drawStar touches envlight->moon_pos too (d_kankyo_rain.cpp:4315), but only to
+    // mDoLib_project it to screen space and fade out any star that lands within moon_threshold
+    // of the moon. It emits no geometry there.
+    //
+    // What this packet does draw, measured from d_kankyo_rain.cpp:4239-4556: up to 1200
+    // triangles (mStarCount), of which the first 13 are the hand-placed hokuto_position
+    // constellation array - two groups, 5 stars then 8, on opposite sides of the sky. The 13
+    // are ~151 units across at ~39000 units out; the rest are ~0.5 units across at ~300 units
+    // out. Angular coverage works out at roughly 0.05% of the sky hemisphere, scattered, with
+    // whatever sits near the moon already alpha-zeroed by the threshold above.
+    //
+    // Do not describe those 13 as the Big Dipper without checking. hokuto (北斗) does mean the
+    // Northern Dipper, but the array's own comment says Cassiopeia and Orion, and the data
+    // agrees with the comment rather than the symbol: 5 stars then 8, not one asterism of 7.
+    // The symbol is the team's; nothing establishes it as more than a generic label here.
+    //
+    // So the star half of this switch has never been shown to be load-bearing, and the
+    // arithmetic above says it should not be. THAT IS INFERENCE, NOT A MEASUREMENT - no test
+    // has ever isolated the two packets. remixHideStarBillboards exists to isolate them:
+    // leave hideSkyBillboards on, turn that one off, and the stars come back while the moon
+    // quad stays gone. docs/remix-test-playbook.md section 4b is the recipe; write the result
+    // back into this comment either way.
+    //
+    // Note the stars carry no texture at all (GX_TEXMAP_NULL, d_kankyo_rain.cpp:4332), so the
+    // "categorise them as Sky instead" alternative that is offered for the sun and moon cannot
+    // reach them - there is no texture hash to categorise. docs/remix-open-issues.md issue 2.
     if (aurora_get_backend() == BACKEND_D3D9 &&
-        dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
+        dusk::getSettings().game.remixHideSkyBillboards.getValue() &&
+        dusk::getSettings().game.remixHideStarBillboards.getValue()) {
         return;
     }
 #endif
@@ -168,10 +196,18 @@ void dKankyo_evil_Packet::draw() {
 
 static void dKyw_drawSun(int i_type) {
 #if TARGET_PC
-    // Gated by the same switch so "hide sky billboards" means all of them. Note this is NOT the
-    // shadow-wander case the star packet is: the visible sun is the lens-flare sprites, 250-850
-    // units and sitting near the camera rather than out along the light direction, so that
-    // mechanism is measurably absent by day. docs/remix-open-issues.md issue 2.
+    // THIS is the packet that draws the moon, and the one the 2026-07-29 test was about:
+    // dKankyo_sun_Packet::draw -> dKyr_drawSun, whose draw_moon branch emits the 8000-unit quad
+    // at eye + envlight->moon_pos, 80000 units out along the direction the moon light arrives
+    // from. Hiding it is what stopped shadow coverage wandering with the camera at night.
+    //
+    // By day the same packet draws the sun, and that is NOT the same case: the visible sun is
+    // the lens-flare sprites, 250-850 units and sitting near the camera rather than out along
+    // the light direction, so the mechanism is measurably absent then.
+    //
+    // No sub-switch here on purpose. remixHideStarBillboards splits the star packet off because
+    // that half was never shown to matter; this half was measured. docs/remix-open-issues.md
+    // issue 2.
     if (aurora_get_backend() == BACKEND_D3D9 &&
         dusk::getSettings().game.remixHideSkyBillboards.getValue()) {
         return;
