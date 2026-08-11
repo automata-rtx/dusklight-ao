@@ -94,5 +94,14 @@ bool& celestialFlipDirection();
 // the direction in, not the direction itself.
 bool& celestialLockDirection();
 
+// Diagnostic only - drives no rendering. Called by the horse on every frame it is
+// dashing, and read-and-cleared once per push, so a frame that does not call it reads as
+// not dashing. That way the flag cannot stick on when the player dismounts, which a plain
+// setter would do because the horse stops being updated at all rather than reporting
+// false. Surfaces in Remix's log as dusklight.mark, beside the material report, so a
+// material that first appears mid dash can be attributed to the dash without correlating
+// two logs by wall clock.
+void noteHorseDashing();
+
 }  // namespace remix
 }  // namespace dusk

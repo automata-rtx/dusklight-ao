@@ -79,6 +79,129 @@ rtx.dusklight.rampMaterials = True
 older than the Remix build, the two came from different commits — rebuild both
 before testing anything, or every result is noise.
 
+### 00. Water — translucent, refracting, one layer (2026-08-09, UNTESTED IN GAME)
+
+**Run this first.** It is the only untested thing whose diagnosis is already
+fully in the log, so it costs one walk and no judgement calls.
+
+> **The wire changed on 2026-08-11 and this recipe now checks it too.** Water's
+> three facts used to travel in `D3DMATERIAL9::Ambient.g`/`.b`/`.a`, which HD
+> texture packs already owned — merging that as written would have deleted
+> texture packs. They are now packed into `Power` as
+> `tag * 100 + layer * 10 + role`. The earlier measurements below (the mark
+> reaching Remix, the projected layer being dropped) were taken on the **old**
+> wire: what they establish about the game marking the right draws still holds,
+> but whether the marks arrive at all is open again.
+>
+> **The one number that answers it:** `power=` on each `dusklight.water` line.
+> `power=921` is MA09 / waves / surface. If the game logs `dusk.matname` lines
+> and Remix logs no `dusklight.water` at all, the packing lost them.
+>
+> **Also worth a glance in the same session:** HD texture packs, since they share
+> that side band. If a pack stops applying, say so — it would mean the two
+> features are still colliding somewhere this rebase did not reach.
+
+**Where this stands.** Two things are now measured rather than hoped for: the
+mark reaches Remix (2026-08-08 23:47, 11 water materials), and removing the
+camera-projected reflection layer made water read as **consistent** (2026-08-09
+10:30). That session found it *bland* instead — with no textures bound, water is
+featureless glass. **What this session checks is the fix for that:** the game's
+own ripple texture now drives the water's normal, scrolling at the game's rate.
+
+That binding is **reverted** as of 2026-08-09: a colour texture decoded as a
+tangent normal is noise, and on a lake with an authored normal map it added a
+second one, which Remix does not blend. Water is plain glass until a normal map
+is authored against a texture hash; the fork now owns the tiling and scroll
+instead, and can drop all but one of a lake's stacked surfaces.
+
+**What to set before judging anything.** In F1 → Dusklight → Water, move
+**UV Tiling** until the ripple texture reads at a natural scale from where you
+are standing, and adjust **Scroll Speed** to taste. Both are live; no rebuild.
+Report the values that worked — those are the result.
+
+**The layer switches are the other thing to play with.** Under the same panel
+there is one per pass, named the way the game names them: Shimmer (mera), Waves
+(nami), Shoreline (mizugiwa), Murk (nigori), Additive (kasan). All start off. A
+lake is drawn as several of these stacked, and stacking refracting interfaces is
+not what water is — so try turning them off one at a time and see which one the
+lake is better without. **That choice is the result worth reporting**, and it is
+a look call rather than a correct answer.
+
+The `layer=` field on each `dusklight.water` line says what each body of water is
+actually made of, so a lake made of passes not in that list will say so rather
+than quietly ignoring the switches. `tex=WxH` says the size Remix received, which
+answers "is that texture really that low resolution" without opening anything.
+
+**Also worth a look this run:** the Hyrule Field puddles, for a seam between the
+water and the ground around it. The water's edge pass now keeps its alpha blend
+rather than becoming refracting glass, which is what a hard boundary there was.
+*Shoreline Keeps Its Blend* in the Water panel turns it off for an A/B. A milky
+ring at the edge instead of a hard one is the regression to report.
+
+**What to do.** Walk to any of the large puddles in Hyrule Field, then warp to
+Lake Hylia and look at the lake. If a dungeon with a water level is convenient,
+raise or lower it once. Quit, send both logs. Nothing here needs the clock.
+
+**What to report:** whether anything that is *not* water became see-through or
+disappeared. Those are the two failures the log cannot describe on its own, and
+the first has happened before. Everything else is in the log.
+
+The `tag=MAxx` field on every `dusklight.water` line says what each body of
+water is made of. That is the field to read before deciding what Hide Surface
+Tag should default to.
+
+**What the logs will say.** Four lines trace the mark end to end, so the first
+one that is missing is where it died:
+
+| Line | Which log | Means |
+| :-- | :-- | :-- |
+| `dusk.matname name=… role=surface` | game | the game recognised the material |
+| `dx9.water: first SURFACE mark decoded from the FIFO` | game | it survived the FIFO |
+| `dx9.water: first SURFACE draw translated (matKey …, power …)` | game | a draw carried it to the device. **`power` should be non-zero** — it is the packed `tag*100 + layer*10 + role` |
+| `dusklight.water tex0hash=… tag=MAxx layer=… power=… texXform=… proj=… blend=…` | Remix | Remix received it and decoded the same three facts back |
+
+`PROJECTED` has the same three game-side lines and ends at
+`dusklight.water.projected … hidden=1` — the reflection overlay being dropped.
+**Compare the two `power=` values.** The game's line says what aurora packed and
+Remix's says what it decoded; they are one contract written in two repositories,
+and if they ever disagree that pair of numbers is the only place it shows. A
+`dusklight.water` line whose `tag=`/`layer=` do not match its own `power=` means
+the decode drifted from the encode.
+
+A fifth, `dusklight.water.replaced`, means the mark arrived and a hand-authored
+replacement material claimed the draw first. That is intended — it is how a
+normal map gets onto the surface — but it is not the water path, so it is
+counted separately rather than being silent.
+
+**That open question is now closed, negatively.** Blend state does not separate
+the base water pass from the scrolling one in this game — the `SRC_ALPHA,ONE`
+group holds both a still pass and scrolling ones, and alpha test does not split
+them either. The fields stay on the line because they are cheap, but no rule is
+coming out of them.
+
+**Controls, all under F1 → Dusklight → Water:** *Translucent Water* turns the
+whole thing off for an A/B, and *Hide Projected Reflection Layer* puts the
+painted reflection back — the direct A/B for this session's change. Index of refraction is 1.33 and should not need
+touching. **Transmittance measurement distance defaults to 200 and is an
+uncalibrated guess** — if the water reads as invisible rather than transparent,
+or as too strongly tinted, this is the one number to move, and the value that
+looked right is the result worth reporting.
+
+**Regression signature, worst first:** materials that are not water turning
+translucent (the mark leaking — this happened on 2026-08-08 and made every
+material in the game see-through); water *geometry vanishing* (the new mirror of
+that failure, the projected mark leaking onto things that should be drawn);
+water invisible rather than transparent (measurement distance); a water body
+losing its reflection entirely instead of gaining a traced one.
+
+**Still expected to be wrong, and separate from this:** the ripple *warp* comes
+from indirect texturing, which aurora drops, and the TEV two-constants-per-stage
+ceiling still bites. Water can be correctly translucent and still animate wrong.
+Remix's own dual-layer animated normals (`rtx.translucent.animatedWaterEnable`,
+plus the texture hash in `rtx.animatedWaterTextures`) are the intended route,
+and they need an authored normal map to do anything —
+`translucent_surface_material_interaction.slangh:61`.
+
 ### 0. Materials — colour, emission, vertex colour (2026-08-05, UNTESTED IN GAME)
 
 **This is the section to run.** Everything below it has already been run. Four

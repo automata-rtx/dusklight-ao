@@ -4,6 +4,12 @@
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/JKernel/JKRHeap.h"
 
+#if TARGET_PC
+#include "dusk/water_materials.hpp"
+#include <dolphin/gx/GXAurora.h>
+#include <cstring>
+#endif
+
 J3DColorBlock* J3DMaterial::createColorBlock(u32 flags) {
     J3DColorBlock* rv = NULL;
     switch (flags) {
@@ -185,6 +191,12 @@ void J3DMaterial::initialize() {
     mpOrigMaterial = NULL;
     mMaterialAnm = NULL;
     mSharedDLObj = NULL;
+#if TARGET_PC
+    // J3DModelLoader::AssignMaterialNames fills this for everything it loads, but a
+    // material built any other way never passes through there. Left uninitialised it is
+    // whatever the heap held, which the water check would hand to strlen.
+    mMaterialName = NULL;
+#endif
 }
 
 u32 J3DMaterial::countDLSize() {
@@ -216,9 +228,44 @@ void J3DMaterial::makeSharedDisplayList() {
     makeDisplayList_private(mSharedDLObj);
 }
 
+#if TARGET_PC
+// Tells the backend whether the material about to be programmed is water.
+//
+// Done here rather than from dKy_bg_MAxx_proc, which is where the game already reads these
+// names, because that runs while the draw is being *scheduled* - J3D enters models into a
+// draw buffer walked later - and a hint set there would not bracket the draws it meant to.
+// This is the point the material's GX state is actually programmed. It is the same lesson
+// that removed the material report's grp= field: in this engine, scheduling a draw and
+// issuing one are far apart.
+//
+// GXSetDusklightWater rather than a direct backend call, because the same lesson applies
+// one layer down. GX writes go into a FIFO that aurora drains in end_frame, so a backend
+// global set from here is read after every draw in the frame has already been translated.
+// The mark has to travel in the command stream, next to the state it describes.
+//
+// Reads mMaterialName, which J3DModelLoader::AssignMaterialNames fills for every material
+// at load time on this platform. An earlier revision looked the name up through
+// j3dSys.getModel() and the model data's name table instead, and marked nothing at all:
+// J3DMatPacket::draw() sets the packet's texture before calling load() but does not set the
+// model, so that lookup was reading whatever model was last drawn, or none. The name is
+// already on the material - there was never a reason to go looking for it.
+static void noteDusklightWaterMaterial(const J3DMaterial* material) {
+    const char* name = material->mMaterialName;
+    const int nameLength = name != NULL ? (int)strlen(name) : 0;
+    const u32 role = name != NULL ? dusk::water::waterRoleForMaterialName(name, nameLength)
+                                  : GX_AURORA_DUSKLIGHT_WATER_NONE;
+    const u32 tag = name != NULL ? dusk::water::waterTagForMaterialName(name, nameLength) : 0;
+    const u32 layer = dusk::water::waterLayerForMaterialName(name);
+
+    dusk::water::reportMaterialName(name, role, tag, layer);
+    GXSetDusklightWater(role, tag, layer);
+}
+#endif
+
 void J3DMaterial::load() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
+    noteDusklightWaterMaterial(this);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {
@@ -229,6 +276,7 @@ void J3DMaterial::load() {
 void J3DMaterial::loadSharedDL() {
     j3dSys.setMaterialMode(mMaterialMode);
 #if TARGET_PC
+    noteDusklightWaterMaterial(this);
     mTevBlock->loadTexture();
 #endif
     if (!j3dSys.checkFlag(2)) {

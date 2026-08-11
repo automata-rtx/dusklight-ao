@@ -87,7 +87,9 @@ release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
 **Protocol is at 7.** When you bump it, bump `kRequiredProtocol` in the fork's
-`showDusklightRemixTab` in the same commit.
+`showDusklightRemixTab` in the same commit. (This line said 6 until 2026-08-09,
+which is exactly the skew the coupling warning exists to prevent — the fork's
+`CLAUDE.md` and the tab's readout are the authorities, not this file.)
 
 **HD texture replacement packs work on the D3D9 backend — tested good
 2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each
@@ -996,6 +998,207 @@ Added **2026-08-08**:
     **false** by default — so with performance already acceptable this is an
     optimisation to try, not a fix to chase.
     `extern/aurora/docs/dx9/unsupported-effects.md` R7.
+
+14. **Water renders as a milky white sheet.** Reported 2026-08-08. Confirmed
+    across Hyrule Field puddles and Lake Hylia; splash particles and the
+    player's ripples are fine, and the surface textures "always showed as
+    white", which with overlapping scrolling UV layers is what reads as milk.
+
+    **Four causes are identified. They are independent, and only some are
+    addressed.** Written out because "water is broken" was treated as one
+    defect for two sessions and it is not.
+
+    | # | Cause | Status |
+    | :-- | :-- | :-- |
+    | 1 | Every water layer fell through to `as<OpaqueMaterialData>()` — an opaque dielectric at roughness 0.7 | addressed: marked draws now become a translucent material |
+    | 2 | Projective texture transforms were discarded, so projected layers sampled with an undivided coordinate | **fixed, CI-green, untested in game** |
+    | 3 | Aurora drops indirect texturing, which is the ripple *warp* | untouched; 3 configs logged (`unsupported-effects.md`) |
+    | 4 | The TEV two-constants-per-stage ceiling — 48 hits in one session | untouched |
+
+    **Cause 1's mark works as of 2026-08-08 23:47 — measured, not inferred.**
+    All three game-side hops reported and 11 distinct water materials reached
+    Remix. Getting there cost two failed revisions, and neither was a water
+    bug: GX calls serialize into a FIFO that aurora drains in `end_frame`, so
+    the game thread issues every draw in a frame before the backend translates
+    any of them, and a backend global set from game code is read after the fact
+    — describing whichever material was last, for every draw in the frame. Left
+    latched it marked everything (**every material in the game turned
+    translucent, 20:35**); cleared per material packet it marked nothing (**7
+    marked, zero `dusklight.water` lines, 22:38**). The mark is a FIFO command
+    now, which is what `GX_AURORA_SET_VIEW_MTX` already was and for the same
+    reason.
+
+    **Water was translucent and still did not read as one continuous surface,
+    and the log says why: water is not one draw.** Of the 11 materials, 4
+    arrived as `texXform=3 proj=1` — a projective texgen fed by a camera-built
+    matrix. That is `MA02`/`MA10`, and the game says so itself:
+    `dKy_bg_MAxx_proc` (`d_kankyo.cpp:11479`) calls `dComIfGd_setListInvisisble`
+    for those two tags and installs a `C_MTXLightPerspective` built from the
+    live camera's fovy and aspect as their texture matrix. It is a painted
+    reflection *over* the water, which Remix traces for real anyway — and made
+    refractive it is a second interface just above the first, carrying a
+    screen-space image through it.
+
+    So the mark carries a **role** now — `NONE`/`SURFACE`/`PROJECTED`, packed
+    into `D3DMATERIAL9::Power` beside the tag and the layer. `PROJECTED` is hidden
+    (`rtx.dusklight.water.hideProjectedLayer`, default on, live in the overlay
+    under Water). Same reasoning that retired the blob shadows: a painted effect
+    on top of a correctly traced one. **Untested in game.** Full account:
+    `extern/aurora/docs/dx9/remix-material-interface.md` §11.
+
+    **The layer split worked — measured 2026-08-09 10:30.** Two
+    `dusklight.water.projected … hidden=1` lines, seven surfaces still
+    translucent, and water reported as "far more consistent". Same session
+    reported it **bland**: with no textures bound at all, water is featureless
+    glass. The draw's own texture now goes in the **normal** slot
+    (`rtx.dusklight.water.surfaceDetailFromGameTexture`, default on), which is
+    both where the game's scroll animates it — the scroll is a texture transform
+    on the draw, so it runs at the game's rate — and where a replacement normal
+    map lands. **Untested.** Until such a map is authored it is a *colour*
+    texture decoded as a tangent normal: an animated perturbation, not real
+    ripples. `rtx.translucentMaterial.normalIntensity` scales it.
+
+    **Normal maps: a lake is drawn from several textures (2026-08-09 15:56).**
+    Replacing a water texture with an authored normal map worked, and the same
+    lake then showed large chunks without it and hard cutoffs between them.
+    **One cause, and it is a mod-side one.** That session's log has one replaced
+    hash and three unreplaced ones still on the water path with `normalTex=1` —
+    the raw colour texture in the normal slot, which is the noisy look.
+    Replacing one hash fixes the draws that use it and nothing else. The
+    `dusklight.water` lines name every hash that reached Remix; authoring the
+    rest needs no rebuild.
+
+    **A second mechanism was proposed here and it was wrong** — that the
+    replacement was itself opaque, because `GameCapturer::captureMaterial`
+    (`rtx_game_capturer.cpp:505`) writes an albedo texture path and nothing else
+    and so captures water as opaque. The capturer fact is real and read from
+    source, but the Remix Toolkit lets a material's type be overridden to
+    translucent, that is what had been done, and an opaque water ripple would
+    have been visible at a glance. **The inference required the person testing
+    not to notice something obvious, which is never a sound reading** — it is
+    the same shape of error rule 3 exists for, and it was written into these
+    docs as a cause before being checked.
+
+    **The normal-slot binding is reverted (2026-08-09).** Putting the draw's own
+    colour texture in the water's normal slot was wrong twice over: a colour
+    texture decoded as a tangent normal is noise, and on a lake where a normal
+    map had been authored for one layer it added a *second* one — which per an
+    RTX Remix rendering engineer does not blend correctly. The game's textures
+    are left as they are, keeping their hashes and staying replaceable; surface
+    detail comes from an authored replacement and from nothing else.
+
+    That second point is the general one, and it is why a body of water should
+    present **one** surface. Three things landed for it, all **untested**:
+
+    - `uvTiling` and `scrollSpeed` drive the water surface's texcoords in place
+      of the transform the draw arrived with. The game's mapping was authored
+      for its own scale and a 640x480 rasterizer, and a ripple texture stretched
+      once across Lake Hylia reads as a smear. Same clock as the shader's
+      `timeSinceStartSeconds`, and the scroll offset is wrapped so a long
+      session does not decay into float noise.
+    - **Layers are hidden by the game's own word for the pass**, one switch each,
+      all default off: `hideShimmerLayer` (mera), `hideWavesLayer` (nami),
+      `hideShorelineLayer` (mizugiwa), `hideMurkLayer` (nigori),
+      `hideAdditiveLayer` (kasan). An unrecognised layer is **never** hidden —
+      it arrives as `layer=unknown`, stays visible, and shows up in the log as a
+      word to add.
+    - Aurora carries all three facts — role, MAxx tag and layer — packed into
+      `D3DMATERIAL9::Power` as `tag * 100 + layer * 10 + role`. **Changed
+      2026-08-11**: they were in `Ambient.g`/`.b`/`.a`, which HD texture packs
+      already owned, and merging that as written would have deleted texture
+      packs. Packing them into one field also leaves `Ambient.a` free, which is
+      now the only spare channel there is. Both `dusk.matname` and
+      `dusklight.water` report them — the latter prints `power=` raw as well, so
+      a wire that drifts is visible rather than silent.
+
+    **The seam between water and the ground around it (2026-08-10).** Reported on
+    the Hyrule Field puddles and Remix-exclusive. **Cause read from the shader:
+    a translucent material has no partial coverage.** Its only opacity term is
+    `diffuseOpacity`, which comes from the transmittance texture's alpha and
+    feeds only the diffuse layer water disables
+    (`translucent_surface_material_interaction.slangh:123-171`). So converting a
+    draw to translucent discards its alpha blend — fine for the surface, fatal
+    for the pass whose job is feathering the boundary into the shore.
+
+    `mizugiwa`, the water's edge, therefore keeps its alpha and falls through to
+    the legacy path (`rtx.dusklight.water.shorelineAsBlend`, default on).
+    **Untested.** Regression signature: a milky ring at the water's edge, which
+    would be that pass hitting the white-albedo problem translucency was
+    introduced to avoid.
+
+    **Not yet known:** whether the puddle's *own* surface material is that pass
+    or another one. The puddles are `d_a_obj_groundwater`, whose `Draw()` enters
+    two models — one on the XLU list (the game stating its alpha matters) and one
+    given a `C_MTXLightPerspective` from the live camera (the projected layer,
+    already hidden) — both animating UVs through BTK tracks. The `layer=` field
+    now on every `dusklight.water` line will name it.
+
+    **Texture resolution is not a pipeline loss.** Remix hashes `XXH3` over
+    subresource 0, and aurora uploads GX textures at native size with the full
+    mip chain, so a wave texture that looks low resolution *is* the game's art.
+    What is not representative is reading that texture as the rendered result:
+    vanilla's detail came from the stacked passes and the indirect-texture warp,
+    which aurora drops. `dusklight.water` now reports `tex=WxH`.
+
+    **The tag-based control that preceded this was wrong and is removed.** MA06
+    is the waves *and* the shoreline *and* the murky body, so `hideSurfaceTag = 6`
+    — which this file recommended — would have deleted two surfaces to be rid of
+    a third. What separates the passes is the material name, and this
+    decompilation preserves the original Japanese team's naming, so the name says
+    what the pass is. `kasan` is the example worth carrying elsewhere: it is 加算,
+    *addition*, and every material bearing it had measured `SRC_ALPHA,ONE` a
+    session before anyone read the word. The convention is documented in
+    `CLAUDE.md`.
+
+    `rtx.dusklight.water.applyToReplacements` (default on) survives as a guard
+    for the case where an opaque material really does reach a water draw: it
+    keeps the authored normal map and applies the water treatment, and leaves an
+    already-translucent replacement completely alone. **It has never been
+    observed to fire**, and `coerced=` in the log is what would say it had.
+
+    **The real cost to weigh is that per-hash replacement is tagging.** One
+    authored normal map has to be re-keyed to every water texture in the game,
+    and water in an unvisited area shows raw-colour noise until someone finds it
+    and adds another. One normal map applied to every water surface regardless of
+    which game texture the draw carries would be the translation-shaped answer;
+    not built, because it means loading a texture outside the replacement system.
+
+    **A dead end, recorded so it is not re-derived.** The idea that an additive
+    pass marks "light over a surface" and would separate the base water pass
+    from the scrolling one is **wrong for this game.** Measured over that
+    session's seven surfaces: `SRC_COLOR,ZERO` ×2,
+    `SRC_ALPHA,ONE_MINUS_SRC_ALPHA` ×1, `SRC_ALPHA,ONE` ×4 — and that last group
+    holds both a still pass (`texXform=0`) and scrolling ones. Alpha test does
+    not split them either. Separating those passes would need geometry
+    coincidence, not material state, and nothing needs it while water reads as
+    consistent.
+
+    **Regression signature, in order of severity:** materials that are not water
+    turning translucent (the mark leaking again — the 20:35 failure); water
+    geometry *vanishing* (the projected mark leaking, the mirror of that
+    failure); the water texture at the wrong scale or not
+    moving (`uvTiling` / `scrollSpeed`, both live in the overlay); water geometry
+    disappearing where a fountain or waterfall used to be (`hideSurfaceTag` set
+    to a tag that is load-bearing elsewhere — MA03); an authored water material losing
+    colour or detail it used to show (the replacement coercion dropping more
+    than albedo — turn `applyToReplacements` off to compare); water invisible rather than transparent
+    (`transmittanceMeasurementDistance`, 200 and **still an uncalibrated
+    guess**); a water body losing its reflection entirely rather than gaining a
+    traced one (turn `hideProjectedLayer` off to confirm).
+
+    **What a test session produces.** Four log lines trace the mark end to end,
+    so one session says where it died rather than only that it did:
+    `dusk.matname … role=surface` → `dx9.water: first SURFACE mark decoded from
+    the FIFO` → `dx9.water: first SURFACE draw translated` →
+    `dusklight.water tex0hash=…`. The first three are in the game log, the last
+    in the Remix log. `PROJECTED` has the same three and ends at
+    `dusklight.water.projected … hidden=1`.
+
+    **One trap when reading the image instead of the log:** a hand-authored
+    replacement material wins in `determineMaterialData` *before* the water
+    check. Translucency visible on some water is therefore not evidence the mark
+    landed — that is by design, since a replacement is how a real normal map
+    gets onto the surface, but it is why `dusklight.water.replaced` exists.
 
 #### Built and CI-green but NEVER RUN
 

@@ -142,6 +142,40 @@ the stage's alpha to build opacity and the alpha test).
 
 Full statement: `aurora-ao/docs/dx9/remix-material-interface.md` §0.
 
+## The game's names are Japanese, and they are load-bearing
+
+Twilight Princess is a Japanese production and this decompilation preserves the
+original team's naming, so a material, actor or function name is usually a
+*romanised Japanese word describing what the thing is*. Read it before inventing
+a classification — the answer is very often already in the name.
+
+Worked examples from the water work, all of which changed a decision:
+
+| Name | Reading | What it meant |
+| :-- | :-- | :-- |
+| `cc_MA06_nami_v_x` | nami — wave | a wave pass, **not** interchangeable with the murk pass beside it |
+| `cc_MA06_mizugiwa_v_x` | mizugiwa — water's edge | the shoreline |
+| `cc_MA06_NigoriWater_v_x` | nigori — turbidity | the murky body |
+| `cc_MA09_mera_v` | mera — shimmer | the shimmer pass |
+| `ce_MA03_WaterKasan_v_x` | kasan (加算) — **addition** | an additively blended pass — and every material carrying it measured `SRC_ALPHA,ONE` |
+| `cd_MA03_Funsui_v` | funsui — fountain | a fountain, an object rather than a lake layer |
+| `cc_MA02_IndirectWater_v` | (indirect texturing) | the warp the game uses to fake refraction |
+
+Two lessons worth carrying into unrelated features:
+
+- **`kasan` is the case to remember.** The blend state was measured a session
+  before anyone read the name, and the name had said it all along. Reading the
+  vocabulary first would have saved the measurement.
+- **A numeric tag is usually coarser than the name.** `MA06` alone covers the
+  waves, the shoreline and the murk; a control that cut on the tag was built,
+  recommended, and would have deleted two of the three. The suffix is where the
+  distinction lives.
+
+When adding a classifier over these names, prefer matching `_word` and `Word`
+(the convention lowercases after the tag and capitalises inside a compound) over
+a bare substring, so `minami` is not read as `nami` — and make "unrecognised"
+mean "leave it alone".
+
 ## How this project works — read before proposing a fix
 
 Five rules. They exist because each was learned the expensive way, and following
@@ -263,14 +297,34 @@ path filter, unlike `build.yml`, because a docs-only commit is the most likely
 way to introduce exactly this drift. It also runs aurora's own script against
 the pinned submodule, since that repo has no CI.
 
-**What it cannot check, and therefore what a human still has to:**
+**Two more shared numbers, both nearly exhausted, and both now machine-checked
+in the repos that own them** (audited and resolved 2026-08-11,
+`extern/aurora/docs/dx9/in-flight-allocation.md`):
+
+- **`D3DMATERIAL9` side channels — one left, `Ambient.a`.** Water and HD texture
+  packs both wanted `Ambient.g`/`.b`; water was rebased and packed all three of
+  its facts into `Power` instead. `claude/dusklight-remix-transparency-e7l766`
+  has an unmerged claim on `Ambient.a`, and after that there is nothing.
+- **GX FIFO subcommands.** Four branches had each taken `0x0053`; it is water's,
+  and `0x0054`–`0x0057` are reserved in the registry comment at the top of
+  `extern/aurora/include/dolphin/gx/GXAurora.h`.
+
+Both are enforced by the other two repos' invariants scripts — including, now,
+in **both** directions, so a merge that drops the code claiming a channel fails
+rather than passing green with the table still describing it.
+
+**What none of it can check, and therefore what a human still has to:**
 
 - whether a "tested in game" claim survived the change underneath it
 - whether a document's *prose* still describes reality, as opposed to its
   numbers agreeing with the code
-- whether two in-flight branches are about to claim the same protocol number —
-  nothing can see a branch that has not merged yet, so **check the other live
-  branches before bumping** (`git log origin/claude/... -- src/dusk/remix_bridge.cpp`)
+- whether two in-flight branches are about to claim the same protocol number,
+  side channel or subcommand — nothing can see a branch that has not merged yet,
+  so **check the other live branches before taking any of the three**
+  (`git log origin/claude/... -- src/dusk/remix_bridge.cpp`)
+- a side channel that keeps being written with a **different meaning**. Both
+  directions of the check pass and the field map reads as true. That is exactly
+  what the water branch would have done to the texture-pack channels
 
 **When auditing documentation after a merge, re-derive the file list from the
 diff, not from memory.** On the merge that prompted all of this, every gap found
