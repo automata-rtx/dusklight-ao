@@ -354,8 +354,17 @@ fixing everything built on reading it wrong are two separate jobs**, and the sec
 the one that changes pixels.
 
 Names still carrying an unchecked semantic claim: `mFogDensity` (the label says 雲影の濃さ,
-cloud-shadow density), `mOrigDensity`, `kumo_top_col` / `kumo_bottom_col`, and
+*cloud-shadow* density, on a member the decomp named for fog), `mOrigDensity`, and
 `dungeonlight_col` — whose palette source is spelled `plight_col`.
+
+`kumo_top_col` / `kumo_bottom_col` **came off this list on 2026-08-11**: the labels say
+上雲 / 下雲, upper and lower, and the one consumer lerps them by horizontal distance
+(`d_kankyo_rain.cpp:5026-5039`), so they are positions in a gradient. The fork had them
+as lit-versus-shaded, which was the spec its clouds phase would have built from.
+
+**One useful negative result on `mFogDensity`**, so nobody treats it as urgent: nothing in
+`src/dusk/`, aurora, or the fork reads it. It is a latent trap in the spec, not a live
+defect — but it is the same shape as the kasumi and kumo pairs, and it is the next one due.
 
 **Apply this opportunistically**, when you are already in a field. Not as a sweep.
 

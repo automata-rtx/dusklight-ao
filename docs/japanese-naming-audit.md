@@ -89,7 +89,7 @@ the header name is the one artifact in the chain that **no Japanese developer wr
 
 Still armed under that rule, because the kasumi fix corrected the *meaning* and kept the
 coined names: `mFogDensity` (actually 雲影の濃さ, cloud-shadow density), `mOrigDensity`,
-`kumo_top_col` / `kumo_bottom_col`, and `dungeonlight_col` — whose palette source is
+~~`kumo_top_col` / `kumo_bottom_col`~~ (checked 2026-08-11, see 4.13), and `dungeonlight_col` — whose palette source is
 spelled `plight_col`. Apply the rule **opportunistically**, when someone is already in a
 field. Not as a sweep.
 
