@@ -109,12 +109,20 @@ number — the one loose end. The generalisable rule: **a Remix performance
 problem that does not respond to texture categorisation is a draw-count
 problem**, and `dx9.draws` is where you look.
 
-**One `dx9.draws` reading is owed and nobody has taken it (2026-08-11).**
+**One reading is owed, and as of 2026-08-11 the game takes it for you.**
 `dKyw_drawVrkumo`, the skybox cloud billboards, was **missed by the 2026-08-08
-batching sweep**. Whether it costs anything is unknown; `peak` from an outdoor
-cloudy scene answers it in a minute. Recipe: playbook §0d. **Do not add a
-`hideVrkumo` switch to isolate it** — the fork consumes none of the cloud
-colours, so those billboards are the only clouds in the image.
+batching sweep**, and each billboard is its own `GXBegin`/`GXEnd` — one D3D9
+draw apiece. Whether that costs anything is still unmeasured.
+
+It is now answerable from a log rather than by eye: the game prints
+`vrkumo.draws frames=600 mean=… peak=…` counting **only** the cloud billboards.
+`dx9.draws` could never settle this on its own — it is a total, so using it meant
+asking whoever was playing to estimate how much of the frame was sky and compare
+two numbers, which is rule 2's defect-in-the-logging exactly. **Play outdoors,
+send the log.** Recipe: playbook §0d.
+
+**Do not add a `hideVrkumo` switch to isolate it** — the fork consumes none of
+the cloud colours, so those billboards are the only clouds in the image.
 
 **Three fork guards fire only in CI**, and all three have now cost a round:
 `CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;

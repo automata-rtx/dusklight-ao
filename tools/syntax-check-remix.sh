@@ -103,6 +103,11 @@ echo "MinGW syntax check ($CXX):"
 check src/dusk/effect_lights.cpp
 check src/dusk/remix_bridge.cpp
 check src/d/d_particle.cpp
+# Added 2026-08-11 with the vrkumo draw counter. Everything this file does that matters to
+# Remix sits inside #if TARGET_PC - the same reason a native Linux g++ is worse than useless
+# on remix_bridge.cpp, since it preprocesses the interesting half away and then reports
+# success. Cross-compiling is the only way the counter gets checked before CI.
+check src/d/d_kankyo_rain.cpp
 
 if [ "$failed" = 1 ]; then
     echo

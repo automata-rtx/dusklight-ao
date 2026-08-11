@@ -18,6 +18,79 @@
 #include <cstring>
 #if TARGET_PC
 #include "dusk/frame_interpolation.h"
+#include "dusk/logging.h"
+#endif
+
+#if TARGET_PC
+// Dusk: how many skybox cloud billboards drawVrkumo actually emits, per frame.
+//
+// It wraps each billboard in its own GXBegin/GXEnd, and aurora turns each of those into a
+// separate D3D9 draw. Remix charges per draw rather than per pixel - a draw too small for
+// its own acceleration structure still contributes its own geometry entry and surface to a
+// bucket that rebuilds every frame - which is what made rain and snow unusable until they
+// were batched game-side on 2026-08-08. This loop was missed by that sweep.
+//
+// Whether it costs anything is a measurement, not a judgement. aurora already logs
+// dx9.draws, but that is a TOTAL and cannot separate clouds from everything else on
+// screen; answering the question from it would mean asking someone to stand outdoors,
+// estimate how much of the frame is sky, and compare two numbers by eye. That is the
+// project's rule 2 exactly - a question we would have to ask is a defect in the logging -
+// so this counts the clouds directly instead. They play, they send a log, we know.
+//
+// Same 600-frame period as dx9.draws on purpose, so the two lines land near each other and
+// read side by side. Bounded and self-describing: one line per period, nothing per draw,
+// and silent whenever no clouds are being drawn - which is every interior, and is the
+// correct amount to say about a frame with no clouds in it.
+namespace {
+
+const u32 kVrkumoStatsPeriod = 600;
+
+struct VrkumoDrawStats {
+    u32 lastFrame;
+    u32 frameDraws;
+    u32 periodFrames;
+    u32 periodDraws;
+    u32 periodPeak;
+    bool started;
+};
+
+VrkumoDrawStats s_vrkumoStats;
+
+// Folds the previous frame's count into the period, when the frame has actually changed.
+// drawVrkumo may be called more than once in a frame, so the roll keys on the game's own
+// per-frame counter rather than on entry to this function.
+void vrkumoRollFrameIfNeeded() {
+    const u32 frame = g_Counter.mCounter0;
+    if (s_vrkumoStats.started && frame == s_vrkumoStats.lastFrame) {
+        return;
+    }
+
+    if (s_vrkumoStats.started) {
+        s_vrkumoStats.periodDraws += s_vrkumoStats.frameDraws;
+        if (s_vrkumoStats.frameDraws > s_vrkumoStats.periodPeak) {
+            s_vrkumoStats.periodPeak = s_vrkumoStats.frameDraws;
+        }
+        s_vrkumoStats.periodFrames++;
+
+        if (s_vrkumoStats.periodFrames >= kVrkumoStatsPeriod) {
+            DuskLog.info(
+                "vrkumo.draws frames={} mean={} peak={} - skybox cloud billboard draws per frame, "
+                "one D3D9 draw each; compare against dx9.draws",
+                s_vrkumoStats.periodFrames,
+                s_vrkumoStats.periodDraws / s_vrkumoStats.periodFrames,
+                s_vrkumoStats.periodPeak);
+            s_vrkumoStats.periodFrames = 0;
+            s_vrkumoStats.periodDraws = 0;
+            s_vrkumoStats.periodPeak = 0;
+        }
+    }
+
+    s_vrkumoStats.frameDraws = 0;
+    s_vrkumoStats.lastFrame = frame;
+    s_vrkumoStats.started = true;
+}
+
+} // namespace
 #endif
 
 static void vectle_calc(DOUBLE_POS* i_pos, cXyz* o_out) {
@@ -4809,6 +4882,9 @@ void drawCloudShadow(Mtx drawMtx, u8** tex) {
 }
 
 void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
+#if TARGET_PC
+    vrkumoRollFrameIfNeeded();
+#endif
     dKankyo_sun_Packet* sun_packet = g_env_light.mpSunPacket;
     dScnKy_env_light_c* envlight = dKy_getEnvlight();
     dKankyo_vrkumo_Packet* vrkumo_packet = g_env_light.mpVrkumoPacket;
@@ -5196,6 +5272,9 @@ void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
                         }
 
                         if (sp84 == 0) {
+#if TARGET_PC
+                            s_vrkumoStats.frameDraws++;
+#endif
                             GXBegin(GX_QUADS, GX_VTXFMT0, 4);
                             GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                             GXTexCoord2s16(0, 0);
@@ -5246,6 +5325,9 @@ void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
                             }
 
                             if (sp84 == 0) {
+#if TARGET_PC
+                                s_vrkumoStats.frameDraws++;
+#endif
                                 GXBegin(GX_QUADS, GX_VTXFMT0, 4);
 
                                 y_pos = -pos[0].y;

@@ -476,19 +476,33 @@ GX path in aurora, or Remix's BLAS/instance handling. Issue 13;
 > rain and snow. Whether that matters is unknown, and one number decides it.
 > Nothing has been changed in anticipation.
 
-Nothing to enable. Needs an **outdoor area with visible cloud cover** — Hyrule
-Field on a clear day has them, and the clock (§1) will find a sky with more.
+**Nothing to enable, nothing to judge, and no need to hold a particular view.**
+As of 2026-08-11 the game counts these draws itself and prints the number, so
+this is now: play outdoors for a while, send the log.
 
-1. Stand outdoors with clouds filling a good part of the sky, camera up.
-2. **Read `dx9.draws`**, exactly as in §0c: `peak` is the measurement.
-3. Note roughly how much of the screen is sky, since the count scales with the
-   number of billboards actually drawn.
+Go outdoors where there is sky. Hyrule Field will do; the clock (§1) will find a
+cloudier one if you want. Wander for a few minutes with sky on screen, then send
+the log. That is the whole recipe.
 
-| What you find | Reading |
+The line to look for prints once every 600 frames, the same period as
+`dx9.draws`, so the two land near each other:
+
+```
+vrkumo.draws frames=600 mean=48 peak=213 - skybox cloud billboard draws per frame, one D3D9 draw each; compare against dx9.draws
+```
+
+`peak` is the measurement. **It counts only the cloud billboards**, which is the
+point — `dx9.draws` is a total and cannot separate them from everything else on
+screen, and the earlier version of this recipe asked whoever was playing to
+estimate how much of the frame was sky and compare two totals by eye. That is a
+defect in the logging, not a test.
+
+| What the log says | Reading |
 | :-- | :-- |
-| `peak` close to the §0c clear-weather baseline | `drawVrkumo` is not a meaningful contributor. **Close the question** and leave it alone — batching it would be work for nothing. |
-| `peak` a few hundred above baseline, tracking how much sky is on screen | It is emitting per-billboard draws, the same shape of problem rain had. Worth batching game-side in `d_kankyo_rain.cpp`; issue 13's diagnosis applies unchanged. |
-| `peak` in the thousands | Something else is also unbatched. Do not attribute it to clouds without checking what else is on screen. |
+| No `vrkumo.draws` line at all | No clouds were drawn — an interior, or a sky with none. Not a failure; find a cloudier sky. |
+| `peak` in the low tens | `drawVrkumo` is not a meaningful contributor. **Close the question**; batching it would be work for nothing. |
+| `peak` in the hundreds | It is emitting per-billboard draws, the same shape of problem rain had. Worth batching game-side in `d_kankyo_rain.cpp`; issue 13's diagnosis applies unchanged. |
+| `peak` near 600 | The ceiling — the loop is 2 passes × 3 layers × 100 billboards. Nothing is being culled, and batching is clearly worth it. |
 
 **Do not add a `hideVrkumo` switch to find out.** The fork consumes none of the
 cloud colours, so these billboards are the *only* clouds in the image — hiding
