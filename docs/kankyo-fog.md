@@ -8,6 +8,12 @@ to send so Remix can reproduce it.
 The palette/pselect/EnvR data model is already documented in
 `docs/kankyo-remix.md` §I.1–I.3; this file does not repeat it.
 
+**Vocabulary.** The game's identifiers are romanized Japanese: **kankyo** = 環境
+(environment), **kasumi** = 霞 (the horizon haze band), **kumo** = 雲 (cloud),
+**moya** = 靄 (mist). "vrbox" is the game's word for the skybox dome, and
+"wether" is its own spelling of *weather*. [`japanese-naming.md`](japanese-naming.md)
+is the reference.
+
 ---
 
 ## 1. Fog is authored alongside the sky, not separately
@@ -59,6 +65,9 @@ This is why the bridge must read the **outputs** (`fog_col`, `mFogNear`,
 | 4 | `dKy_fog_startendz_set` | `d_kankyo.cpp:9324` → `field_0x11ec/f0/f4` | start/end override with a blend ratio |
 | 5 | Gather colpat blend | `mColpatPrevGather` / `mColpatCurrGather` / `mColPatBlendGather` / `mColPatModeGather` | a **second**, independent palette blend layered on layer 1 |
 | 6 | `fog_avoid_tag` (kytag08) | `env_light.fog_avoid_tag` | a moving position that pushes fog away from the player |
+
+("kytag" = *kankyo tag*: `d_a_kytag00`…`d_a_kytag17`, invisible actors that
+override environment state for the area they sit in.)
 
 Reading the final values inherits layers 1–5 for free and keeps working if the
 game changes. Re-deriving would mean reimplementing all five and keeping them
@@ -187,7 +196,7 @@ protocol **2**; the wire has since advanced to **11** (3 = overlay + warp, 4 = t
 | `fogEndZ` | `g_env_light.mFogFar`, quantized to 1 unit |
 | `skyHidden` | `skyIsHidden()` — **recomputed, not `hide_vrbox`**, see below |
 | `skyColor` | `vrbox_sky_col` |
-| `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col` |
+| `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col`. **`outer` is the *near* band and `inner` the *far* one** — the reverse of the English reading; the game labels them 霞手前/霞奥 in its palette exporter and `kasumiF`/`kasumiB` in its debug view ([`japanese-naming.md`](japanese-naming.md) §6) |
 | `kumoTop`, `kumoBottom`, `kumoShadow` | cloud colours; pushed but not consumed yet (Phase D) |
 | `colpat` | `g_env_light.wether_pat1` |
 | `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount`, clamped at 0 |
@@ -221,8 +230,8 @@ entrance and interior, Forest Temple, Palace of Twilight.
 
 ## 6. Moya (haze particles)
 
-Separate from GX fog — billboard particles driven by
-`g_env_light.mMoyaMode` / `mMoyaCount`:
+**Moya** is 靄 — mist, or low-lying haze. Separate from GX fog — billboard
+particles driven by `g_env_light.mMoyaMode` / `mMoyaCount`:
 
 | Mode | Set by | Case |
 | :-- | :-- | :-- |

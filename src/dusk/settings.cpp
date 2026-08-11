@@ -101,6 +101,7 @@ UserSettings g_userSettings = {
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
+        .remixTextureReplacements {"game.remixTextureReplacements", true},
         .remixBlobShadows {"game.remixBlobShadows", true},
         .remixLanternInfiniteOil {"game.remixLanternInfiniteOil", false},
         .freezeTime {"game.freezeTime", false},
@@ -349,6 +350,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
+    Register(g_userSettings.game.remixTextureReplacements);
     Register(g_userSettings.game.remixBlobShadows);
     Register(g_userSettings.game.remixLanternInfiniteOil);
     Register(g_userSettings.game.freezeTime);

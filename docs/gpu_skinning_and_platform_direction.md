@@ -161,7 +161,11 @@ This corrected a wrong premise from the initial exploration.
      Used **only** for models that (a) carry INF1 flag `J3DMLF_NoMatrixTransform`
      (0x100) **and** (b) had `setSkinDeform` called. In the entire game that is
      **two actors**: `d_a_door_boss` (boss-door lock) and `d_a_demo00` (cutscene
-     dummies). `mSkinDeform` is NULL for Link and all normal characters.
+     dummies — "demo" is デモ, Japanese industry usage for a **cutscene**, not a
+     demonstration build; `d_demo.h`'s classes derive from JStage's staging
+     types. The game's names are Japanese, see
+     [`japanese-naming.md`](japanese-naming.md)). `mSkinDeform` is NULL for Link
+     and all normal characters.
   2. `calcWeightEnvelopeMtx` (**GX matrix-palette**, the normal path). Envelope
      matrices are blended into a small per-influence-set matrix palette on the
      CPU (cheap, per-draw-matrix — NOT per-vertex), and **the GPU applies them

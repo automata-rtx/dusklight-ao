@@ -140,6 +140,13 @@ rtx.dusklight.game.hideSkyBillboards = True
 # paid on the CPU in dense grass. Turn it on when you want grass that Remix can
 # identify: stable per-blade hashes make the blades taggable, replaceable with
 # authored geometry, and able to hold denoiser history.
+#
+# Note this trades the opposite way from the weather particles, which were
+# batched in 2026-08-08 to fix exactly the draw-call cost this option spends.
+# The difference is whether there is a stable identity to lose: grass has a
+# per-blade display list whose positions do not move, particles move every
+# vertex every frame and never had one. Batching is wrong for the first and
+# right for the second.
 #rtx.dusklight.game.perBladeGrass = True
 
 # Recommended for calibration: fix exposure so thresholds/fog read stably.
@@ -292,9 +299,10 @@ Still unmeasured: the churn cost in a busy room. Still ignored: `mFluctuation`,
 the per-light flicker, because applying it would mean re-creating every
 flickering light every frame.
 
-**Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox by
-*texture* hash in the dev menu does not work: it is painted from a handful of
-vertex colours with no texture bound, so there is no texture content to hash.
+**Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox —
+the game's word for its skybox dome, `d_a_vrbox.cpp` — by *texture* hash in the
+dev menu does not work: it is painted from a handful of vertex colours with no
+texture bound, so there is no texture content to hash.
 
 *(An earlier revision went further and said it therefore could not be
 categorised at all. That does not follow, and it was corrected on 2026-07-29:
@@ -358,6 +366,19 @@ Notes:
   investigating (`rtx.ignoreTextures`, `ignoreTransparencyLayerTextures`,
   `terrainTextures`, …) persist across runs and silently hide or reclassify
   textures in later sessions. Clear them before judging a new build.
+- **`rtx.particleTextures` is not a performance control**, and expecting it to
+  be one cost a session (2026-08-07). It decides which TLAS a draw lands in and
+  how the resolve loop treats it — nothing about per-draw cost. If a dense
+  effect is slow and tagging it as a particle changes nothing, the cost is
+  **per draw, not per pixel**; read `dx9.draws` in the log
+  (`extern/aurora/docs/dx9/material-report.md`) rather than reaching for
+  another category.
+- **Tagging something as UI is a diagnostic, not a fix.** UI draws are
+  rasterized and never enter the raytraced scene, so if that makes the frame
+  rate fine, the answer is draw count. As a *setting* it costs the effect its
+  path-traced lighting, and for anything the game draws twice — snow, whose
+  planar-reflection copies are real geometry — a screen overlay composites both
+  copies unconditionally and it looks wrong.
 
 > **The table below is now automatic.** With the kankyo bridge active
 > (`game.remixKankyoBridge`, on by default under Remix) the game pushes its
@@ -507,6 +528,52 @@ open-ended linear radiance, and none of them mean what they meant.
   **`config.json` is not rewritten**, so the same config moves between a
   modded build and a D3D9 test build with no edits either way. Remix's path
   tracer replaces the graphics mods' effects wholesale.
+- **HD texture replacement packs work in this mode** as of 2026-08-05,
+  **tested good 2026-08-06**. Drop `.dds` files named the usual
+  `tex1_{w}x{h}_{hash}_{fmt}.dds` way into `<ConfigPath>/texture_replacements/`
+  and launch on the D3D9 backend with our fork's `d3d9.dll`. Nothing else to
+  turn on: `game.enableTextureReplacements` and `game.remixTextureReplacements`
+  both default to true, and both are read at launch — there is no live toggle.
+
+  **The pack's bytes never go through D3D9.** The game hands each file to Remix
+  through the API and tags each draw with which replacement it wants; Remix
+  loads the file itself and swaps it in. That matters for one reason above all:
+  Remix's texture hash — the key for the categorization grid, for every
+  `rtx.conf` category list and for every USD material binding — is the hash of
+  the D3D9 texture, which stays the game's own. **Installing, changing or
+  removing a pack does not move a single hash.** Tags authored without a pack
+  stay valid with one.
+
+  Two consequences to plan around:
+
+  - **`.dds` only.** Remix's asset loader rejects `.png`, which the game's own
+    registry accepts. PNG entries are skipped and logged
+    (`texrep: skipping <file> - Remix loads .dds only`). BC1/BC3/BC7/BC5 are all
+    fine — D3D9's format limits do not apply, because D3D9 never sees them.
+  - **Packs shipped inside a mod still do not load**, because mod discovery is
+    skipped wholesale on this backend (see the mods bullet above). The user
+    directory is the only route.
+
+  This also sharpens the **HUD**, which a Remix USD mod cannot: Remix rasterizes
+  UI draws instead of path-tracing them, so they never reach material
+  replacement. Turn `rtx.dusklight.texrep.applyToRaster` off to isolate a
+  HUD-only regression.
+
+  **Expect a slow first launch.** With a pack installed the first run spends a
+  long period at poor performance before the replacements appear; later runs
+  have them immediately. Expected, not a fault — but note that *every* first
+  launch of this runtime is slow, pack or no pack, because Remix compiles
+  shaders and caches the result to disk. The pack adds its own cost on top
+  (Remix keeps no on-disk cache of textures, so every `.dds` is re-read each
+  launch), and which of the two dominates has not been measured. A reboot
+  separates them: it clears the OS file cache while keeping the shader cache.
+  `extern/aurora/docs/dx9/texture-replacements.md` §9.
+
+  If a pack appears to do nothing, the Dusklight tab's **HD Texture Pack**
+  section says which half is at fault — it reports the game's counts and Remix's
+  separately, because "never handed over" and "handed over then ignored" look
+  identical otherwise. Design and failure modes:
+  `extern/aurora/docs/dx9/texture-replacements.md`.
 - **Frame interpolation should be disabled** — its presentation-camera path
   depends on pass resolves that no-op in this mode.
 - **ImGui dev overlay is headless** — game-side ImGui code runs (no crashes),

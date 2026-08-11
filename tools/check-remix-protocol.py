@@ -30,6 +30,7 @@ Defaults to ../dxvk-remix. Skips (exit 0) if the fork is not found, because a
 dusklight checkout on its own is a legitimate state.
 """
 
+import glob
 import os
 import re
 import sys
@@ -53,12 +54,20 @@ DOC_PROTOCOL = re.compile(
 # the two option surfaces, but check 5 reads the docs, and the docs legitimately name
 # atmosphere, grade, emissive and matrep options too - so the authority has to be all of
 # them or every such mention reads as a missing switch.
+#
+# Globbed rather than listed, because a hand-maintained list is wrong exactly when it
+# matters. This was a fixed tuple of six until 2026-08-11, and it went stale twice
+# without anyone noticing: rtx_dusklight_texrep.h existed only on the fork's
+# Fixed-Function-dev, and rtx_dusklight_catrep.h was added after the tuple was written.
+# Merging both together made this script report four options as undeclared that the fork
+# declares perfectly well - a false alarm, which is the failure mode that teaches people
+# to ignore a checker. The rtx_dusklight_* naming convention is what makes the glob
+# correct; a fork option surface that does not follow it will be missed, so follow it.
+OPTION_SOURCE_GLOBS = (
+    "src/dxvk/rtx_render/rtx_dusklight_*.h",
+    "src/dxvk/rtx_render/rtx_dusklight_*.cpp",
+)
 OPTION_SOURCES = (
-    "src/dxvk/rtx_render/rtx_dusklight_game.h",
-    "src/dxvk/rtx_render/rtx_dusklight_env.h",
-    "src/dxvk/rtx_render/rtx_dusklight_atmosphere.h",
-    "src/dxvk/rtx_render/rtx_dusklight_grade.h",
-    "src/dxvk/rtx_render/rtx_dusklight_emissive.h",
     "src/d3d9/d3d9_rtx_matrep.h",
 )
 
@@ -68,12 +77,18 @@ def declared(path):
         return {f"{m.group(1)}.{m.group(2)}" for m in DECL.finditer(handle.read())}
 
 
+def option_source_paths(fork):
+    paths = []
+    for pattern in OPTION_SOURCE_GLOBS:
+        paths.extend(sorted(glob.glob(os.path.join(fork, pattern))))
+    paths.extend(os.path.join(fork, rel) for rel in OPTION_SOURCES)
+    return [p for p in paths if os.path.isfile(p)]
+
+
 def declared_all(fork):
     names = set()
-    for rel in OPTION_SOURCES:
-        path = os.path.join(fork, rel)
-        if os.path.isfile(path):
-            names |= declared(path)
+    for path in option_source_paths(fork):
+        names |= declared(path)
     return names
 
 

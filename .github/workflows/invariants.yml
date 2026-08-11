@@ -1,0 +1,44 @@
+name: Invariants
+
+# Deliberately NOT path-filtered, unlike build.yml.
+#
+# build.yml ignores docs/** and *.md, which is correct for a compile but exactly
+# wrong here: the drift these checks look for is between code and documentation,
+# and a documentation-only commit is the most likely way to introduce it. A
+# check that does not run on doc changes would have missed every instance this
+# script was written for.
+#
+# Runs in seconds, so it is cheap enough to run on everything.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: invariants-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  invariants:
+    name: Cross-file invariants
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The submodule is needed for the extern/aurora pin check, but a bad
+          # pin makes checkout itself fail - which is the loud version of the
+          # same finding, so either outcome reports the problem.
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Check cross-file invariants
+        run: python3 scripts/check_invariants.py
+
+      # Aurora has no CI of its own, so its checks run here against the pinned
+      # submodule. Without this they only ever run when someone remembers to.
+      - name: Check aurora's cross-file invariants
+        run: |
+          if [ -f extern/aurora/scripts/check_invariants.py ]; then
+            python3 extern/aurora/scripts/check_invariants.py
+          else
+            echo "extern/aurora predates its invariant script; skipping"
+          fi

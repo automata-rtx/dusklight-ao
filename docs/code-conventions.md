@@ -1,5 +1,24 @@
 # Code conventions for Dusk
 
+## The original game's names are Japanese — leave them alone
+
+Twilight Princess was written by a Japanese team, and the decompilation keeps
+its symbol names. So identifiers throughout the original codebase are romaji
+(Japanese in Latin letters), abbreviated Japanese, or English spelled by ear:
+`kankyo` (環境) is *environment*, `dKyr_drawSibuki` draws 飛沫 *shibuki* — spray,
+and `dKyw_wether_move` is the weather system.
+
+**Do not rename them and do not correct the misspellings** (`wether`,
+`Schejule`, `Sord`, `Blure`, `parcent`, `vectle`, `resorce`, `tresure`). A
+rename breaks the match with the upstream decompilation we PR fixes back to, and
+breaks everyone's grep. If a name needs explaining, add a comment.
+
+**Code we write ourselves** — everything under `src/dusk/` — uses ordinary
+English `camelCase`. Do not romanize anything new.
+
+Full reference, including how to decode an unfamiliar name and why a search can
+come back empty for a symbol that exists: [`japanese-naming.md`](japanese-naming.md).
+
 ## Upstream when appropriate
 
 Bug fixes, documentation improvements, code cleanup, etc that also apply to the [original decompilation project](https://github.com/zeldaret/tp) should preferably be PR'd there.
