@@ -206,6 +206,27 @@ struct UserSettings {
         ConfigVar<bool> remixLocalLights;
         ConfigVar<float> remixLocalLightIntensity;
         ConfigVar<float> remixLocalLightRadius;
+        // Effect lights: sphere lights at the origin of the game's own fire and glow effects,
+        // rather than at the positions of the game's registered lights. docs/effect-lights.md.
+        ConfigVar<bool> effectLights;
+        ConfigVar<float> effectLightIntensity;
+        ConfigVar<float> effectLightMassExponent;
+        ConfigVar<float> effectLightDerivedIntensity;
+        ConfigVar<float> effectLightDerivedReach;
+        ConfigVar<float> effectLightDerivedRadius;
+        ConfigVar<float> effectLightUndeterminedIntensity;
+        ConfigVar<float> effectLightUndeterminedReach;
+        ConfigVar<float> effectLightUndeterminedRadius;
+        ConfigVar<float> effectLightFireOffset;
+        ConfigVar<float> effectLightGlowOffset;
+        ConfigVar<float> effectLightMergeRadius;
+        ConfigVar<float> effectLightAdoptRadius;
+        ConfigVar<int> effectLightMaxLights;
+        ConfigVar<float> effectLightMaxDistance;
+        ConfigVar<bool> effectLightBursts;
+        ConfigVar<float> effectLightMinChroma;
+        ConfigVar<float> effectLightMinLuma;
+        ConfigVar<float> effectLightVolumetric;
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
@@ -220,6 +241,9 @@ struct UserSettings {
         // real ones from the geometry, so the painted disc lands on top of a correct
         // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
         ConfigVar<bool> remixBlobShadows;
+        // Keep Link's lantern permanently fuelled. Driven from Remix's overlay via
+        // rtx.dusklight.game.lanternInfiniteOil; a gameplay change, off by default.
+        ConfigVar<bool> remixLanternInfiniteOil;
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;

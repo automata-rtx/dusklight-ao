@@ -82,7 +82,53 @@ void DrawRemixBridgeWindow(bool& open) {
         }
     }
 
-    ImGui::SeparatorText("Local point lights");
+    ImGui::SeparatorText("Effect lights");
+    {
+        auto& settings = getSettings().game;
+
+        bool effectEnabled = settings.effectLights.getValue();
+        if (ImGui::Checkbox("Effect Lights", &effectEnabled)) {
+            settings.effectLights.setValue(effectEnabled);
+        }
+
+        const remix::EffectLightsDebug& eff = remix::effectLightsDebug();
+        ImGui::SameLine();
+        if (effectEnabled && !eff.enabled) {
+            ImGui::TextUnformatted("waiting for the D3D9 device");
+        } else {
+            ImGui::Text("drawn: %d | tracked: %d", eff.drawn, eff.tracked);
+        }
+
+        // The whole chain, so a light lost at any step shows which step lost it.
+        ImGui::Text("emitters %d -> considered %d -> candidates %d -> sites %d",
+                    eff.stats.emitters, eff.stats.considered, eff.stats.candidates,
+                    eff.stats.sites);
+        ImGui::Text("reach from the game: %d | colour from the game: %d | game lights unused: %d",
+                    eff.stats.derived, eff.stats.colorFromGame, eff.stats.orphans);
+        ImGui::Text("game lights available (point/spot): %d/%d | culled: %d",
+                    eff.stats.vanillaPoint, eff.stats.vanillaSpot, eff.stats.culled);
+
+        float effIntensity = settings.effectLightIntensity.getValue();
+        if (ImGui::SliderFloat("Effect Intensity", &effIntensity, 0.0f, 8.0f, "%.2f")) {
+            settings.effectLightIntensity.setValue(effIntensity);
+        }
+
+        float fireOffset = settings.effectLightFireOffset.getValue();
+        if (ImGui::SliderFloat("Fire Height Offset", &fireOffset, -200.0f, 200.0f, "%.1f units")) {
+            settings.effectLightFireOffset.setValue(fireOffset);
+        }
+
+        if (ImGui::Button("Log classification report")) {
+            effect_lights::requestReport();
+        }
+
+        ImGui::TextWrapped(
+            "Lights at the origin of the game's own fire and glow effects, rather than where the "
+            "game registered a light. The full set of knobs lives in Remix's Dusklight tab, which "
+            "is the one that is actually reachable while the D3D9 backend is running.");
+    }
+
+    ImGui::SeparatorText("Local point lights (comparison)");
     {
         auto& settings = getSettings().game;
 

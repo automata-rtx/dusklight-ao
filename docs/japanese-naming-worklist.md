@@ -39,10 +39,13 @@ Tags: **[DOC ONLY]** no code changes · **[SAFE]** contained change, no protocol
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 7 on `Fixed-Function-dev` and 11 on the effect-lights branch.** Any
-prompt tagged [PROTOCOL] must check the other live `claude/*` branches before taking a
-number. Two branches claiming one number is a trap this project has already hit, and the
-merge conflict resolves *cleanly* into a wrong answer.
+**Protocol is at 11.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
+branch until those merged on 2026-08-11; 11 is the merged number. Any prompt tagged
+[PROTOCOL] must check the other live `claude/*` branches before taking a number. Two
+branches claiming one number is a trap this project has already hit, and the merge
+conflict resolves *cleanly* into a wrong answer — **it hit again here**: the effect
+lights and the HD texture pack readouts both landed at 7, independently, so a build
+reporting 7 may carry either or both. `DusklightOverlay.md`'s protocol ladder says so.
 
 ---
 

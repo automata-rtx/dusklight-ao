@@ -28,6 +28,7 @@
 
 #if TARGET_PC
 #include "dusk/frame_interpolation.h"
+#include "dusk/effect_lights.hpp"
 #endif
 
 #ifndef __MWERKS__
@@ -907,6 +908,24 @@ u32 dPa_simpleEcallBack::set(cXyz const* i_pos, dKy_tevstr_c const* param_2, u8 
 
     pData->field_0x0c.a = param_3;
     pData->field_0x10.a = param_6;
+
+    // A "simple" effect is one shared emitter teleported around the world once per frame to
+    // stand in for every instance of it, so by the time anything could sweep the emitter table
+    // only the last torch's position survives. This is the one point where each instance is
+    // still its own thing, so the effect light system takes its copy here. Inert unless that
+    // system is on. docs/effect-lights.md.
+#if TARGET_PC
+    {
+        const f32 prm[3] = {pData->field_0x0c.r * (1.0f / 255.0f),
+                            pData->field_0x0c.g * (1.0f / 255.0f),
+                            pData->field_0x0c.b * (1.0f / 255.0f)};
+        const f32 env[3] = {pData->field_0x10.r * (1.0f / 255.0f),
+                            pData->field_0x10.g * (1.0f / 255.0f),
+                            pData->field_0x10.b * (1.0f / 255.0f)};
+        dusk::effect_lights::recordSimple(mID, mEmitter, i_pos->x, i_pos->y, i_pos->z, prm, env);
+    }
+#endif
+
     field_0xc++;
     return 1;
 }
