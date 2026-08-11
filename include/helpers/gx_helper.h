@@ -92,6 +92,22 @@ struct GXScopedDrawClass {
     GXScopedDrawClass& operator=(const GXScopedDrawClass&) = delete;
 };
 
+// Declares which of the game's draw lists is executing, so a backend can attribute a draw to
+// the code that issued it. This is the working replacement for GXPushDebugGroup, which cannot
+// do it: a group pushed around an actor's draw method labels where the draw is *scheduled* into
+// a J3D buffer, not where GX commands are *issued* when that buffer is walked - which is why
+// every material ever logged reported grp=-. It is also compiled out in release. This is a FIFO
+// write at the right moment, and it is not compiled out.
+//
+// Diagnostic only: nothing renders differently because of it.
+struct GXScopedDrawPhase {
+    explicit GXScopedDrawPhase(u32 phase) { GXSetDrawPhase(phase); }
+    ~GXScopedDrawPhase() { GXSetDrawPhase(GX_AURORA_DRAW_PHASE_NONE); }
+
+    GXScopedDrawPhase(const GXScopedDrawPhase&) = delete;
+    GXScopedDrawPhase& operator=(const GXScopedDrawPhase&) = delete;
+};
+
 struct GXScopedDebugGroup {
     explicit GXScopedDebugGroup(const char* text) {
 #if DUSK_GFX_DEBUG_GROUPS

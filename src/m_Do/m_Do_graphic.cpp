@@ -2254,7 +2254,7 @@ int mDoGph_Painter() {
     #endif
 
     dComIfGp_setCurrentGrafPort(&ortho);
-    GX_DEBUG_GROUP(dComIfGd_drawCopy2D);
+    { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_UI2D); GX_DEBUG_GROUP(dComIfGd_drawCopy2D); }
 
     #if DEBUG
     // "↓↓↓↓↓↓↓↓↓↓ CPU time measuring start ↓↓↓↓↓↓↓↓↓↓"
@@ -2361,8 +2361,8 @@ int mDoGph_Painter() {
                 dKy_setLight_again();
             }
 #endif
-            GX_DEBUG_GROUP(dComIfGd_drawOpaListSky);
-            GX_DEBUG_GROUP(dComIfGd_drawXluListSky);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_SKY_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListSky); }
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_SKY_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluListSky); }
 
             GXSetClipMode(GX_CLIP_ENABLE);
 
@@ -2378,9 +2378,9 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawOpaListBG);
-            GX_DEBUG_GROUP(dComIfGd_drawOpaListDarkBG);
-            GX_DEBUG_GROUP(dComIfGd_drawOpaListMiddle);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_BG_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListBG); }
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_BG_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListDarkBG); }
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_MIDDLE); GX_DEBUG_GROUP(dComIfGd_drawOpaListMiddle); }
 
             if (fapGmHIO_getParticle()) {
                 GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
@@ -2412,14 +2412,14 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawOpaList);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaList); }
 
             if (DEBUG && g_kankyoHIO.navy.field_0x30d) {
                 if (dKy_darkworld_check() != TRUE) {
-                    GX_DEBUG_GROUP(dComIfGd_drawOpaListDark);
+                    { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListDark); }
                 }
             } else {
-                GX_DEBUG_GROUP(dComIfGd_drawOpaListDark);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListDark); }
             }
 
 #if TARGET_PC
@@ -2432,7 +2432,7 @@ int mDoGph_Painter() {
             }
 #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawOpaListPacket);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_OPA); GX_DEBUG_GROUP(dComIfGd_drawOpaListPacket); }
 
 #if TARGET_PC
             dusk::mods::gfx_run_stage(GFX_STAGE_SCENE_AFTER_OPAQUE, &camera_p->view, view_port);
@@ -2445,8 +2445,8 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawXluListBG);
-            GX_DEBUG_GROUP(dComIfGd_drawXluListDarkBG);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_BG_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluListBG); }
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_BG_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluListDarkBG); }
 
             if (fapGmHIO_getParticle()) {
                 GXScopedDrawClass drawClass(GX_AURORA_DRAW_CLASS_PARTICLE);
@@ -2461,14 +2461,14 @@ int mDoGph_Painter() {
             fapGm_HIO_c::startCpuTimer();
             #endif
 
-            GX_DEBUG_GROUP(dComIfGd_drawXluList);
+            { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluList); }
 
             if (DEBUG && g_kankyoHIO.navy.field_0x30d) {
                 if (dKy_darkworld_check() != TRUE) {
-                    GX_DEBUG_GROUP(dComIfGd_drawXluListDark);
+                    { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluListDark); }
                 }
             } else {
-                GX_DEBUG_GROUP(dComIfGd_drawXluListDark);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ACTOR_XLU); GX_DEBUG_GROUP(dComIfGd_drawXluListDark); }
             }
 
             #if DEBUG
@@ -2516,8 +2516,8 @@ int mDoGph_Painter() {
                 if (!(DEBUG && g_kankyoHIO.navy.field_0x30d != 0 &&
                       dKy_darkworld_check() == TRUE)) {
                     if (g_env_light.is_blure == 0) {
-                        GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible);
-                        GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible);
+                        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_INVISIBLE); GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible); }
+                        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_INVISIBLE); GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible); }
                     }
                 }
 
@@ -2542,7 +2542,7 @@ int mDoGph_Painter() {
                 fapGm_HIO_c::startCpuTimer();
                 #endif
 
-                GX_DEBUG_GROUP(dComIfGd_drawListZxlu);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_ZXLU); GX_DEBUG_GROUP(dComIfGd_drawListZxlu); }
 
                 #if DEBUG
                 // "drawing up to 2-draw Z-update translucent (Rendering)"
@@ -2555,10 +2555,10 @@ int mDoGph_Painter() {
 
                 if (DEBUG && g_kankyoHIO.navy.field_0x30d) {
                     if (dKy_darkworld_check() != TRUE) {
-                        GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter);
+                        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_FILTER); GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter); }
                     }
                 } else {
-                    GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter);
+                    { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_FILTER); GX_DEBUG_GROUP(dComIfGd_drawOpaListFilter); }
                 }
 
                 #if DEBUG
@@ -2602,8 +2602,8 @@ int mDoGph_Painter() {
                 if (!(DEBUG && g_kankyoHIO.navy.field_0x30d != 0 &&
                       dKy_darkworld_check() == TRUE)) {
                     if (g_env_light.is_blure == 1) {
-                        GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible);
-                        GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible);
+                        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_INVISIBLE); GX_DEBUG_GROUP(dComIfGd_drawOpaListInvisible); }
+                        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_INVISIBLE); GX_DEBUG_GROUP(dComIfGd_drawXluListInvisible); }
                     }
                 }
 
@@ -2621,7 +2621,7 @@ int mDoGph_Painter() {
 
                 GXSetClipMode(GX_CLIP_ENABLE);
 
-                GX_DEBUG_GROUP(dComIfGd_drawIndScreen);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_SCREEN); GX_DEBUG_GROUP(dComIfGd_drawIndScreen); }
 
                 if (strcmp(dComIfGp_getStartStageName(), "F_SP124") == 0) {
                     retry_captue_frame(&camera_p->view, view_port,
@@ -2645,7 +2645,7 @@ int mDoGph_Painter() {
 
                 cMtx_lookAt(m2, &sp38c, &cXyz::Zero, &sp398, 0);
                 j3dSys.setViewMtx(m2);
-                GX_DEBUG_GROUP(dComIfGd_drawXluList2DScreen);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_SCREEN); GX_DEBUG_GROUP(dComIfGd_drawXluList2DScreen); }
 
                 j3dSys.setViewMtx(camera_p->view.viewMtx);
                 GXSetProjection(camera_p->view.projMtx, GX_PERSPECTIVE);
@@ -2692,7 +2692,7 @@ int mDoGph_Painter() {
                 }
                 #endif
 
-                GX_DEBUG_GROUP(dComIfGd_drawOpaList3Dlast);
+                { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_LAST3D); GX_DEBUG_GROUP(dComIfGd_drawOpaList3Dlast); }
 
                 #if DEBUG
                 // "saturation add filter (Rendering)"
@@ -2827,7 +2827,7 @@ int mDoGph_Painter() {
         GX_DEBUG_GROUP(dComIfGp_particle_draw2DmenuBack, &draw_info3);
         ortho.setPort();
 
-        GX_DEBUG_GROUP(dComIfGd_draw2DOpa);
+        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_UI2D); GX_DEBUG_GROUP(dComIfGd_draw2DOpa); }
         GX_DEBUG_GROUP(drawItem3D);
         ortho.setPort();
 
@@ -2835,8 +2835,8 @@ int mDoGph_Painter() {
         captureScreenSetPort();
         #endif
 
-        GX_DEBUG_GROUP(dComIfGd_draw2DOpaTop);
-        GX_DEBUG_GROUP(dComIfGd_draw2DXlu);
+        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_UI2D); GX_DEBUG_GROUP(dComIfGd_draw2DOpaTop); }
+        { GXScopedDrawPhase phase(GX_AURORA_DRAW_PHASE_UI2D); GX_DEBUG_GROUP(dComIfGd_draw2DXlu); }
 
         if (dComIfGp_isPauseFlag()) {
             GX_DEBUG_GROUP(dComIfGp_particle_draw2Dfore, &draw_info3);
