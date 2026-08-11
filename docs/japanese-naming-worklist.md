@@ -242,7 +242,18 @@ These are documentation corrections. They lead not because they matter most, but
 they cost nothing, cannot regress anything, and they remove the wrong information that
 produced the defects. None needs a test window.
 
-## P1 · kytag01 is the Lost Woods, not Lake Hylia — [DOC ONLY]
+## P1 · ~~kytag01 is the Lost Woods, not Lake Hylia~~ — **DONE 2026-08-11** [DOC ONLY]
+
+**Landed.** The claim reproduced in full, including the blend direction, and **twelve**
+passages were corrected rather than five — `kankyo-fog.md` §3.3/§5/§6/§7 and
+`DusklightAtmosphere.md` §3/§5.1/§8.1/§8.4/§10/§13(×2)/§14.7. Both invariant scripts pass.
+Two things the prompt did not anticipate: "Lost Woods" and "Sacred Grove" are the same
+stage (`F_SP117`), so the header comment and the `OS_REPORT` never disagreed; and only
+the fog *range* varies with position — the colpat blend, moya count and audio are uniform
+across the room. Whether Lake Hylia also carries a kytag01 remains **unprovable from
+source** (placement is `.dzs` data). Findings in `japanese-naming-audit.md` §4.1.
+
+*Original prompt kept below for provenance.*
 
 The dense-fog worked example is attributed to the wrong area in five places across two
 repos — including the instruction the owner follows during a test session. The game says

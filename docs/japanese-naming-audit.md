@@ -178,7 +178,7 @@ Ordered by what they cost us today, not by how interesting they are. The work it
 brackets is the prompt in
 [`japanese-naming-worklist.md`](japanese-naming-worklist.md).
 
-### 4.1 The test plan has been sending us to the wrong place — **RECORD WRONG** [P1]
+### 4.1 The test plan has been sending us to the wrong place — **RECORD WRONG — CORRECTED 2026-08-11** [P1]
 
 The dense-fog worked example — the one regime the atmosphere calibration still needs and
 has never visited — is attributed to **Lake Hylia** in five places across two repos,
@@ -205,6 +205,35 @@ is why.
 
 Note this one did not even need the Japanese. The file's own English header says Sacred
 Grove. Nobody read it.
+
+**Corrected 2026-08-11.** Re-verified against the source first — every element of the
+finding reproduced, including the blend direction. **Twelve** passages were changed, not
+five: `kankyo-fog.md` §3.3 (heading and body), §5 (the measurement instruction), §6 (the
+moya table) and §7 (the calibration-status paragraph), plus `DusklightAtmosphere.md` §3,
+§5.1, §8.1, §8.4, §10, §13 (twice) and §14.7. The seven extra ones were found by grepping
+`Hylia` across both repos rather than working from this finding's list — the
+re-derive-from-the-diff rule applied to a correction instead of a merge. **A finding's own
+site list is a starting point, not a work order**; this one undercounted by more than
+half.
+
+Three things worth keeping from the re-verification:
+
+- **The two names are one stage.** The English header comment says Sacred Grove and the
+  authored `OS_REPORT` says 迷いの森 / Lost Woods; `map_loader_definitions.h:132,135` maps
+  both to `F_SP117`. There was never a conflict to resolve.
+- **The finding understated itself.** Only the fog *range* override varies with position;
+  the colpat blend, the moya count and the audio are weighted by `field_0x594` alone and
+  are uniform across the room. The documents said "the blend ratio" as though one number
+  drove all four.
+- **The whole layer is switch-gated** (`:71`, `:124-144`). With the gate shut the fog is
+  zero everywhere, so "whiteout away from the tag" describes the tag when it is on — a
+  narrowing the original finding did not carry, and one that matters if the owner walks
+  the area and sees nothing.
+
+**Still not established, and probably not establishable from this tree:** whether Lake
+Hylia *also* carries a kytag01. Actor placement is `.dzs` stage data; `ky_tag1` appears
+exactly once in the entire tree, in `d_stage.cpp:941`'s name table. The correction moves
+the worked example to where the game names it. It does not prove a negative.
 
 ### 4.2 A correction landed in the docs and not in the code — **BEHAVIOUR WRONG** [P2]
 
