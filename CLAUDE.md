@@ -241,7 +241,7 @@ implying it was tested.
 
 **The game and the Remix DLL are a single protocol.** The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol` in
-`showDusklightRemixTab`. **Protocol is at 11.** Build both sides from the same
+`showDusklightRemixTab`. **Protocol is at 12.** Build both sides from the same
 commit point, and when you bump one, bump the other in the same commit. Skew in
 either direction has already cost an evening twice — the Dusklight tab reports
 which side is old, so read it before debugging anything else.
@@ -314,6 +314,20 @@ Both are enforced by the other two repos' invariants scripts — including, now,
 in **both** directions, so a merge that drops the code claiming a channel fails
 rather than passing green with the table still describing it.
 
+**It also enforces a list of retired claims** (`RETIRED_CLAIMS` in that script,
+mirrored in the fork's). Once this project establishes a sentence is *false*, its
+words must not reappear in the tree. It exists because of a specific failure: the
+kasumi haze bands were corrected from "on the sun's side"/"away from the sun" to
+front/back on 2026-08-10 — and the correction reached the descriptions and the
+`.md` files while **the fork's shader kept the wrong comment and the blend built
+on it** for another day. Correcting the sentence and finding the code built on the
+wrong belief are two different jobs; only the second changes pixels.
+
+It cannot tell whether prose is true — only that something already known to be
+false has been re-typed. Documents about a correction may quote the old wording:
+put it in a fenced block, or frame it within the same paragraph.
+**When you retire a claim, add its old words to the list in the same commit.**
+
 **What none of it can check, and therefore what a human still has to:**
 
 - whether a "tested in game" claim survived the change underneath it
@@ -326,6 +340,9 @@ rather than passing green with the table still describing it.
 - a side channel that keeps being written with a **different meaning**. Both
   directions of the check pass and the field map reads as true. That is exactly
   what the water branch would have done to the texture-pack channels
+- whether a **new** false sentence has been written. The retired-claims list only
+  catches ones already known to be false; nothing catches the first occurrence
+
 
 **When auditing documentation after a merge, re-derive the file list from the
 diff, not from memory.** On the merge that prompted all of this, every gap found

@@ -41,7 +41,7 @@ on branch rules** — this file deliberately does not restate them.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **11**; skew in either direction has cost an
+   commit point. Protocol is at **12**; skew in either direction has cost an
    evening twice. The Dusklight tab reports which side is old — read it before
    debugging anything else.
 2. **Interactive approval prompts do not work in the owner's environment.**
@@ -606,7 +606,9 @@ bullet says so.
   `dKy_SunMoon_Light_Check()`.)
 - **Sky/vrbox tint** (implemented, and the answer was neither branch the draft
   offered). The sky colours are pushed every frame — `skyColor`,
-  `kasumiInner`/`kasumiOuter` and the kumo set, `kankyo-fog.md` §5 — and Remix
+  `kasumiInner`/`kasumiOuter`, the kumo set, and since protocol 12 the three
+  palette **alphas** (`kasumiInnerAlpha`, `kasumiOuterAlpha`, `kumoAlpha`),
+  `kankyo-fog.md` §5 — and Remix
   builds its own lat-long dome from them and registers it as a **dome light**,
   with the game's vrbox hidden (`rtx.dusklight.game.hideVrbox`) so there is
   only one sky. Tested good 2026-07-28. Probing the vrbox raster draws was

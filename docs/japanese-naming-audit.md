@@ -337,7 +337,20 @@ two uses of one texture.
 
 **This is the single most promising item in the audit for the project's stated goal.**
 
-### 4.5 The bridge drops the sky's alpha channels — **DATA ON THE FLOOR** [P6]
+### 4.5 ~~The bridge drops the sky's alpha channels~~ — **RESOLVED 2026-08-11** [P6]
+
+> **Fixed at protocol 12.** All three are now pushed as `rtx.dusklight.env.kasumiInnerAlpha`,
+> `kasumiOuterAlpha` and `kumoAlpha`, and shown in the Dusklight tab.
+>
+> **One half of the finding was acted on, the other deliberately was not.** `kasumiOuterAlpha`
+> now supplies the near band's share in the fixed-composite haze blend, which previously used
+> an invented `0.5`. `hazeLevel` — the guess quoted below — was **left exactly as it is**,
+> because what a TEV colour register's alpha does depends on the alpha stages inside
+> `vrbox_sora.bmd` / `vrbox_kasumiM.bmd` / `vrbox_kumo.bmd`, and no `.bmd` exists in any of the
+> three checkouts. Calling these alphas "density" is the inference this audit entry itself
+> warned against; watch them across palettes and weather first.
+>
+> The entry below is kept as written.
 
 `formatColorS10` (`remix_bridge.cpp:242-251`) formats only R, G, B. Three of the sky
 palette colours carry an authored alpha that the game blends every frame exactly like the
@@ -563,7 +576,18 @@ Remix cares about and the pre-cull bound is 2000 + 1000** — the actual cost is
 there settles it before any code changes, which is why P12 makes that measurement
 mandatory rather than optional.
 
-### 4.13 The same kasumi mistake, one file away — **RECORD WRONG** [P13]
+### 4.13 ~~The same kasumi mistake, one file away~~ — **RESOLVED 2026-08-11 (docs)** [P13]
+
+> **The descriptions are corrected** — upper band, lower band, and the *lower* band's shadow —
+> and the recipe the finding implies is written down at
+> `dxvk-remix/documentation/DusklightAtmosphere.md` §12.3, with ledger entry C3 pointing at it.
+> The one consumer was re-read and confirms the reading exactly.
+>
+> **The `drawVrkumo` half is still open** and is a measurement, not a judgement: one
+> `dx9.draws` peak from an outdoor cloudy scene. Requested in `docs/remix-open-issues.md`
+> and the test playbook.
+>
+> The entry below is kept as written.
 
 `kumoTop` and `kumoBottom` are described in the fork as *"lit cloud colour"* and
 *"shaded cloud underside"*. The game's own labels say 上雲 / 下雲 — **upper** and

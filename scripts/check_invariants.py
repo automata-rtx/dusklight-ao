@@ -318,12 +318,144 @@ def check_japanese_naming_symbols() -> None:
             )
 
 
+# Claims established as WRONG, and the phrasing each was stated in. Mirrors
+# RETIRED_CLAIMS in dxvk-remix/scripts/check_dusklight_invariants.py - both repos'
+# documents restate these facts, so both need the guard.
+#
+# The failure it exists for: on 2026-08-10 the kasumi haze bands were corrected from
+# "on the sun's side" / "away from the sun" to front/back. The option descriptions and
+# the .md files were fixed; the fork's sky SHADER kept the wrong comment and the blend
+# built on it for another day. Correcting the sentence that is wrong and finding the code
+# built on the wrong belief are two different jobs, and only the second one changes pixels.
+#
+# The mechanical slice is narrow but real: once a claim is retired, its words must not
+# reappear. This cannot tell whether prose is true - only that a sentence we have already
+# decided is false has been re-typed by someone who half-remembered it.
+RETIRED_CLAIMS: list[tuple[str, str]] = [
+    (
+        "on the sun's side",
+        "the kasumi bands are front/back, not sun-relative - nothing in the game relates "
+        "either to sun position, and 'outer' is the NEAR band. Retired 2026-08-10; the "
+        "fork's shader was still saying it on 2026-08-11. docs/japanese-naming.md section 6",
+    ),
+    (
+        "away from the sun",
+        "the other half of the same retired kasumi claim. Say 'the far (back) band' rather "
+        "than describing either band by where the sun is",
+    ),
+    (
+        "lit cloud colour",
+        "kumoTop is the UPPER cloud band - a position in a distance gradient, not a lighting "
+        "term. The game labels it upper-cloud (d_kankyo.cpp:6302) and lerps top->bottom by "
+        "horizontal distance (d_kankyo_rain.cpp:5026-5039). Retired 2026-08-11",
+    ),
+    (
+        "shaded cloud underside",
+        "kumoBottom is the LOWER cloud band, the far end of that same gradient, not a shaded "
+        "underside. Retired 2026-08-11",
+    ),
+]
+
+RETIRED_CLAIM_EXEMPT = {
+    "scripts/check_invariants.py",  # this file, which must name them to ban them
+}
+
+
+def _in_fenced_block(lines: list[str], index0: int) -> bool:
+    """True if this line sits inside a ``` fence.
+
+    Structural, not a keyword guess: a fenced block in markdown is quoted or verbatim
+    material by construction - a transcript, a prompt kept as the record of what was
+    asked, a paste of the code being discussed. It is never the document asserting
+    something in its own voice, which is the only thing this check is trying to stop.
+    """
+    fences = 0
+    for line in lines[:index0]:
+        if line.lstrip().startswith("```"):
+            fences += 1
+    return fences % 2 == 1
+
+def _framing_window(lines: list[str], index0: int, suffix: str) -> list[str]:
+    """The text allowed to mark a retired phrase as a quotation rather than a claim.
+
+    Deliberately different for prose and for code, because they are shaped differently
+    and a single fixed window is wrong for both.
+
+    Prose frames at paragraph level - a sentence introduces the old wording and the quote
+    follows a line or two later - so for markdown the window is the enclosing paragraph,
+    bounded by blank lines.
+
+    Code does not. Comments sit hard against what they describe, and option descriptions
+    are packed one after another, so a generous window lets one historical note at the top
+    of a block excuse every claim below it. That is not hypothetical: a 20-line window was
+    tried first, and a "Corrected 2026-08-11:" comment above three option declarations
+    silently suppressed the check for all three - the guard reported clean while an option
+    a few lines down asserted the retired claim outright. Two lines either way, so the
+    framing has to be next to the thing it frames.
+    """
+    if suffix == ".md":
+        start = index0
+        while start > 0 and lines[start - 1].strip():
+            start -= 1
+        end = index0
+        while end + 1 < len(lines) and lines[end + 1].strip():
+            end += 1
+        return lines[start:end + 1]
+    return lines[max(0, index0 - 2):index0 + 3]
+
+
+def check_retired_claims() -> None:
+    """A claim established as false must not be restated anywhere in the tree."""
+    global checks_run
+    checks_run += 1
+
+    # Documents whose subject IS the correction quote the old wording to explain it, which
+    # is legitimate - but only where the quote is visibly framed as history rather than
+    # asserted as fact. Prose wraps, so look at a few lines either side.
+    history_markers = (
+        "retired", "corrected", "was wrong", "used to", "previously", "no longer",
+        "old wording", "old description", "described", "describes", "the old ", "mistake",
+        "misreading", "instead", "rather than", "not fixed", "was not", "wrongly",
+        "banned", "must not", "stopped there", "premise", "contradicts", "otherwise",
+        "claim", "verbatim", "quotation", "do not re-run",
+    )
+
+    for rel in tracked_files():
+        if rel in RETIRED_CLAIM_EXEMPT:
+            continue
+        if Path(rel).suffix not in {".h", ".hpp", ".c", ".cpp", ".inc", ".md"}:
+            continue
+        text = read(rel)
+        if text is None:
+            continue
+        lowered = text.lower()
+        for phrase, correction in RETIRED_CLAIMS:
+            if phrase not in lowered:
+                continue
+            lines = text.splitlines()
+            for n, line in enumerate(lines, 1):
+                if phrase not in line.lower():
+                    continue
+                if Path(rel).suffix == ".md" and _in_fenced_block(lines, n - 1):
+                    continue
+                window = " ".join(_framing_window(lines, n - 1, Path(rel).suffix)).lower()
+                if any(marker in window for marker in history_markers):
+                    continue
+                fail(
+                    "retiredclaims",
+                    f"{rel}:{n} restates a retired claim, \"{phrase}\" - {correction}. "
+                    f"If this is a quotation of the old wording, say so within a line or "
+                    f"two so a reader can tell history from assertion",
+                )
+
+
 def main() -> int:
     check_conflict_markers()
     check_settings_consistency()
     check_protocol()
     check_aurora_pin_is_real()
     check_japanese_naming_symbols()
+    check_retired_claims()
 
     for s_ in skipped:
         print(f"SKIPPED {s_}")

@@ -46,7 +46,14 @@ DECL = re.compile(r'RTX_OPTION(?:_ARGS|_FLAG)?\(\s*"([^"]+)"\s*,\s*[^,]+,\s*(\w+
 DOC_PROTOCOL = re.compile(
     r'(?:protocol is at|protocol is|wire has since advanced to|'
     r'protocol\s*[-—]\s*currently|single protocol\s*[-—]\s*currently)'
-    r'\s*\**(\d+)\**',
+    r'\s*\**(\d+)\**'
+    # "**Currently 12.**" - a phrasing only DusklightOverlay.md uses, and only the fork's
+    # own invariants script knew about it. The two checks had complementary blind spots:
+    # this one had the wider vocabulary and a narrow file list, that one the reverse. Found
+    # 2026-08-11 when a bump left this phrasing behind and only the fork's script noticed.
+    # Bold-and-dotted specifically, because a bare "currently 12" is ordinary English that
+    # appears all over these documents about things that are not the protocol.
+    r'|\*\*Currently\s+(\d+)\.?\*\*',
     re.IGNORECASE)
 
 
@@ -101,14 +108,24 @@ def read_text(path):
 
 
 def doc_paths(fork):
-    return [os.path.join(ROOT, p) for p in (
-        "CLAUDE.md", "docs/kankyo-remix.md", "docs/kankyo-fog.md",
-        "docs/remix-open-issues.md", "docs/dx9-fixed-function.md",
-        "docs/remix-test-playbook.md", "docs/effect-lights.md",
-    )] + [os.path.join(fork, p) for p in (
-        "CLAUDE.md", "documentation/DusklightOverlay.md",
-        "documentation/DusklightAtmosphere.md",
-    )]
+    """Every markdown document on both sides that could state the protocol.
+
+    Globbed rather than listed, for the same reason OPTION_SOURCE_GLOBS above is - and
+    this one had already gone stale in exactly the predicted way. It was a hand-written
+    tuple of ten until 2026-08-11, and docs/japanese-naming-worklist.md, added after it,
+    carried a present-tense "Protocol is at 11" that this check could not see. A protocol
+    bump silently left it behind, which is the precise failure the check exists to stop.
+
+    A list of files to check is a list of files someone has to remember to extend, on the
+    day they are thinking about something else entirely.
+    """
+    paths = []
+    for root, patterns in ((ROOT, ("*.md", "docs/**/*.md")),
+                           (fork, ("*.md", "documentation/**/*.md"))):
+        for pattern in patterns:
+            paths.extend(sorted(glob.glob(os.path.join(root, pattern), recursive=True)))
+    # dict.fromkeys rather than set(): a stable order makes the failure list diffable.
+    return list(dict.fromkeys(p for p in paths if os.path.isfile(p)))
 
 
 # Names the docs mention on purpose that the fork does not declare. Each needs a reason,
@@ -123,6 +140,13 @@ DOC_NAME_ALLOWED = {
     # Named in remix-open-issues.md for the express purpose of recording that it was
     # renamed to emissive.brightness and that RtxOptions.md still carries the old row.
     "rtx.dusklight.emissive.intensity": "recorded as renamed to emissive.brightness",
+    # Names P7 PROPOSES in japanese-naming-worklist.md - the option it would add if
+    # anyone runs it, not a switch that exists. Surfaced on 2026-08-11 the moment
+    # doc_paths() started globbing: the worklist had never been scanned, so its proposed
+    # names had never been checked against reality either way. Delete these two entries
+    # when P7 lands, at which point the fork declares them and the check passes on its own.
+    "rtx.dusklight.env.colpatPrev": "japanese-naming-worklist.md P7, proposed, unbuilt",
+    "rtx.dusklight.env.colpatBlend": "japanese-naming-worklist.md P7, proposed, unbuilt",
 }
 
 
@@ -172,11 +196,15 @@ def check_protocol_number(fork, bridge, failures):
         if text is None:
             continue
         for match in DOC_PROTOCOL.finditer(text):
-            if int(match.group(1)) != wire:
-                line = text[:match.start()].count("\n") + 1
-                rel = os.path.relpath(path, ROOT)
-                failures.append(f"{rel}:{line} says the protocol is "
-                                f"{match.group(1)}, but the wire is at {wire}")
+            # The pattern is an alternation, so exactly one group carries the digits and
+            # the other is None. Take whichever matched.
+            stated = match.group(1) or match.group(2)
+            if stated is None or int(stated) == wire:
+                continue
+            line = text[:match.start()].count("\n") + 1
+            rel = os.path.relpath(path, ROOT)
+            failures.append(f"{rel}:{line} says the protocol is "
+                            f"{stated}, but the wire is at {wire}")
     return wire
 
 

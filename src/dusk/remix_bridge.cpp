@@ -278,6 +278,16 @@ const char* formatBool(bool value) {
     return value ? "True" : "False";
 }
 
+// A GXColorS10 alpha to 0..1. Same signed-16-holding-signed-10 story as formatColorS10: the
+// environment blend keeps these inside 0..255 but events add before clamping, so clamp here.
+//
+// Never returns a negative value, and that is load-bearing. The fork defaults these options to -1
+// to mean "the game has not said", so it can tell an older game's silence from an authored zero.
+// Pushing a negative would make a real value indistinguishable from no value at all.
+f32 clampAlpha01(s16 alpha) {
+    return std::clamp(static_cast<f32>(alpha), 0.0f, 255.0f) / 255.0f;
+}
+
 // Whether this area has a sky at all.
 //
 // The game answers this itself in g_env_light.hide_vrbox, but that flag is written by the sky
@@ -1800,7 +1810,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "11");
+    push("rtx.dusklight.env.protocol", "12");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -1873,6 +1883,28 @@ void pushKankyoState() {
     push("rtx.dusklight.env.kumoTop", formatColorS10(env->vrbox_kumo_top_col));
     push("rtx.dusklight.env.kumoBottom", formatColorS10(env->vrbox_kumo_bottom_col));
     push("rtx.dusklight.env.kumoShadow", formatColorS10(env->vrbox_kumo_shadow_col));
+
+    // The three sky alphas, added at protocol 12. formatColorS10 sends rgb only, so until now
+    // these were blended every frame by the game and then thrown away at the bridge.
+    //
+    // Each is authored per palette entry and blended by kankyo_color_ratio_set exactly like the
+    // colours - kasumi_outer at d_kankyo.cpp:2827, kasumi_inner at 2847, the cloud layer at 2775 -
+    // and each had a slider in the original team's own panel (6376, 6399, 6353). They are
+    // deliberate authored values, not incidental struct padding.
+    //
+    // The cloud one is named for the LAYER, not for the upper band. The game keeps it in
+    // vrbox_kumo_top_col.a, but its palette source is kumo_shadow_col.a, its slider sits under the
+    // lower-cloud-shadow heading and the debug view prints it as "Cloud A" rather than "CloudU A".
+    // Naming the option kumoTopAlpha would have shipped that confusion into the fork.
+    //
+    // Only kasumiOuterAlpha is consumed on the far side, and only by a blend that is off by
+    // default. What a TEV colour register's alpha actually does is decided by the alpha stages
+    // inside vrbox_sora.bmd / vrbox_kasumiM.bmd / vrbox_kumo.bmd, and no .bmd exists in any of the
+    // three checkouts - so these are pushed to be watched across palettes and weather first.
+    // dusklight-ao/docs/kankyo-remix.md, dxvk-remix documentation/DusklightAtmosphere.md 12.2.
+    push("rtx.dusklight.env.kasumiInnerAlpha", formatFloatQ(clampAlpha01(env->vrbox_kasumi_inner_col.a), 0.004f));
+    push("rtx.dusklight.env.kasumiOuterAlpha", formatFloatQ(clampAlpha01(env->vrbox_kasumi_outer_col.a), 0.004f));
+    push("rtx.dusklight.env.kumoAlpha", formatFloatQ(clampAlpha01(env->vrbox_kumo_top_col.a), 0.004f));
 
     char sceneBuffer[16];
     std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->wether_pat1));

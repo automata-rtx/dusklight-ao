@@ -109,16 +109,29 @@ number — the one loose end. The generalisable rule: **a Remix performance
 problem that does not respond to texture categorisation is a draw-count
 problem**, and `dx9.draws` is where you look.
 
-**Two fork guards fire only in CI**, and both have now cost a round:
-`CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
-release-only, so no container check sees it) and `hashStructByMemory`'s padding
-assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
+**One `dx9.draws` reading is owed and nobody has taken it (2026-08-11).**
+`dKyw_drawVrkumo`, the skybox cloud billboards, was **missed by the 2026-08-08
+batching sweep**. Whether it costs anything is unknown; `peak` from an outdoor
+cloudy scene answers it in a minute. Recipe: playbook §0d. **Do not add a
+`hideVrkumo` switch to isolate it** — the fork consumes none of the cloud
+colours, so those billboards are the only clouds in the image.
 
-**Protocol is at 11.** When you bump it, bump `kRequiredProtocol` in the fork's
-`showDusklightRemixTab` in the same commit. (This line has been stale twice — it
-said 6 until 2026-08-09 and 7 until 2026-08-11 — which is exactly the skew the
-coupling warning exists to prevent. The fork's `CLAUDE.md` and the tab's readout
-are the authorities, not this file.)
+**Three fork guards fire only in CI**, and all three have now cost a round:
+`CheckRtInstanceSize` (any field added to `RtSurface` grows `RtInstance`;
+release-only, so no container check sees it), `hashStructByMemory`'s padding
+assert (this one *is* checkable locally), and — added 2026-08-11 — **non-ASCII
+bytes in shader source**. `compile_shaders.py` reads `.slang` with a bare
+`open(f, "r")`, which is cp1252 on Windows, so quoting the game's kanji in a
+shader comment kills all three configs 60 seconds in, before any C++ compiles.
+The section sign these files are full of survives only because `0xA7` happens to
+be valid cp1252; that is not permission. Romanize in shaders and cite
+`japanese-naming.md` for the kanji. Listed in the fork's `CLAUDE.md`.
+
+**Protocol is at 12.** When you bump it, bump `kRequiredProtocol` in the fork's
+`showDusklightRemixTab` in the same commit. (This line has been stale three times —
+it said 6 until 2026-08-09, 7 until 2026-08-11 and 11 until the vrbox alphas took 12 —
+which is exactly the skew the coupling warning exists to prevent. The fork's
+`CLAUDE.md` and the tab's readout are the authorities, not this file.)
 
 **HD texture replacement packs work on the D3D9 backend — tested good
 2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each

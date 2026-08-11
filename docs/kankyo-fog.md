@@ -267,8 +267,8 @@ Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
 All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
-protocol **2**; the wire has since advanced to **11** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
-6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout) and gained more keys. The authoritative list is
+protocol **2**; the wire has since advanced to **12** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
+6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout, 12 = the three vrbox palette alphas) and gained more keys. The authoritative list is
 `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 
 | Key | Source |
@@ -280,7 +280,8 @@ protocol **2**; the wire has since advanced to **11** (3 = overlay + warp, 4 = t
 | `skyHidden` | `skyIsHidden()` — **recomputed, not `hide_vrbox`**, see below |
 | `skyColor` | `vrbox_sky_col` |
 | `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col`. **`outer` is the *near* band and `inner` the *far* one** — the reverse of the English reading; the game labels them 霞手前/霞奥 in its palette exporter and `kasumiF`/`kasumiB` in its debug view ([`japanese-naming.md`](japanese-naming.md) §6) |
-| `kumoTop`, `kumoBottom`, `kumoShadow` | cloud colours; pushed but not consumed yet (Phase D) |
+| `kumoTop`, `kumoBottom`, `kumoShadow` | the **upper** cloud band, the **lower** band, and the **lower band's shadow** — positions in a gradient, not lighting terms. The game labels them 上雲/下雲/下雲影 and lerps top→bottom by horizontal distance (`d_kankyo_rain.cpp:5026-5039`). Pushed, not consumed yet (Phase D) |
+| `kasumiInnerAlpha`, `kasumiOuterAlpha`, `kumoAlpha` | the three palette alphas, added at protocol 12. Blended per frame exactly like the colours (`d_kankyo.cpp:2847`, `2827`, `2775`) and each had its own slider in the original team's panel. **`kumoAlpha` is the cloud *layer's*, not the upper band's** — it lives in `vrbox_kumo_top_col.a` but its palette source is `kumo_shadow_col.a`. Only `kasumiOuterAlpha` is consumed, and only by the fixed-composite haze blend, which is off by default |
 | `colpat` | `g_env_light.wether_pat1` |
 | `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount`, clamped at 0 |
 

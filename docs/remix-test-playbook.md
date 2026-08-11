@@ -469,6 +469,34 @@ Re-run this whenever anything touches `d_kankyo_rain.cpp`, the immediate-mode
 GX path in aurora, or Remix's BLAS/instance handling. Issue 13;
 `extern/aurora/docs/dx9/progress.md` §3.32.
 
+### 0d. Skybox clouds — one number, never taken (2026-08-11)
+
+> **This is a measurement, not a bug report.** `dKyw_drawVrkumo` — the skybox
+> cloud billboards — was **missed by the 2026-08-08 batching sweep** that fixed
+> rain and snow. Whether that matters is unknown, and one number decides it.
+> Nothing has been changed in anticipation.
+
+Nothing to enable. Needs an **outdoor area with visible cloud cover** — Hyrule
+Field on a clear day has them, and the clock (§1) will find a sky with more.
+
+1. Stand outdoors with clouds filling a good part of the sky, camera up.
+2. **Read `dx9.draws`**, exactly as in §0c: `peak` is the measurement.
+3. Note roughly how much of the screen is sky, since the count scales with the
+   number of billboards actually drawn.
+
+| What you find | Reading |
+| :-- | :-- |
+| `peak` close to the §0c clear-weather baseline | `drawVrkumo` is not a meaningful contributor. **Close the question** and leave it alone — batching it would be work for nothing. |
+| `peak` a few hundred above baseline, tracking how much sky is on screen | It is emitting per-billboard draws, the same shape of problem rain had. Worth batching game-side in `d_kankyo_rain.cpp`; issue 13's diagnosis applies unchanged. |
+| `peak` in the thousands | Something else is also unbatched. Do not attribute it to clouds without checking what else is on screen. |
+
+**Do not add a `hideVrkumo` switch to find out.** The fork consumes none of the
+cloud colours, so these billboards are the *only* clouds in the image — hiding
+them removes the clouds rather than isolating their cost.
+
+Background and the recipe a clouds phase would use instead:
+`dxvk-remix/documentation/DusklightAtmosphere.md` §12.3.
+
 ### 1. Clock — do this first, it is the tool the rest want
 
 > **PASSED 2026-07-29** — slider, presets and Freeze Time all "work flawlessly
