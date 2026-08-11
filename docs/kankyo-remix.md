@@ -97,8 +97,15 @@ Global tables in `src/d/d_kankyo_data.cpp`:
 - **`l_time_attribute[11]`** (`dKyd_lightSchejule` — the game's spelling of
   *schedule*, §4 of [`japanese-naming.md`](japanese-naming.md)): maps time of day
   (0–360, 15°/hour) to a pair of the 6 canonical time lights and a blend
-  window. The six slots are: 0 morning-0, 1 morning-1, 2 afternoon,
-  3 evening-0, 4 evening-1, 5 night. Boss stages use a rotated variant.
+  window. The six slots are: 0 morning-0 (朝 *asa*), 1 morning-1,
+  2 **midday** (昼 *hiru* — holds 09:00–16:00), 3 evening-0 (夕 *yuu*),
+  4 evening-1, 5 night (夜 *yoru*). Boss stages use a rotated variant.
+  **The game names all six itself** and pins each to one exact time in its
+  debug time-fix menu (`d_kankyo.cpp:1641-1658` sets `daytime`, labelled at
+  `:6776-6795` and again at `:8062-8071`): 90 = 06:00, 105 = 07:00,
+  165 = 11:00, 255 = 17:00, 285 = 19:00, 345 = 23:00 — each landing on one
+  slot with no blend. Slot 2 was called "afternoon" here until 2026-08-11;
+  it is midday, and its pure window is 135–240.
 - **`l_kydata_BloomInf_tbl[64]`** (`dkydata_bloomInfo_info_class`): the
   bloom mood table. Each entry: `mType` (CLEAR/SOFT — SOFT+id≠0 selects
   screen-blend compositing), `mThreshold`, `mBlurAmount`, `mDensity`,

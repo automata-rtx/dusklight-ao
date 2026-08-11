@@ -255,6 +255,40 @@ mechanically checked to exist; the readings are our gloss.**
 | vrbox | *(English, "VR box")* | the skybox dome | `vrbox_class`, `d_a_vrbox.cpp` |
 | kytag | 環境 + tag | per-area environment override actor | `kytag01_class` |
 
+### The six canonical time lights — the game names *and* pins all six
+
+`l_time_attribute` (`d_kankyo_data.cpp:212`) blends the environment between
+**six** time-of-day palette slots. The game names each one in Japanese in four
+independent places, and the debug time-fix menus additionally pin each to one
+exact `daytime` — a value chosen so the schedule lands on that slot with **no
+blend**, which makes them the game's own answer to "show me slot N".
+
+| Slot | Romanji | Japanese | Meaning | Pinned `daytime` | Clock |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| 0 | asa 0 | 朝０ | morning 0 | 90 | 06:00 |
+| 1 | asa 1 | 朝１ | morning 1 | 105 | 07:00 |
+| 2 | hiru | 昼 | **midday** | 165 | 11:00 |
+| 3 | yuu 0 | 夕０ | evening 0 | 255 | 17:00 |
+| 4 | yuu 1 | 夕１ | evening 1 | 285 | 19:00 |
+| 5 | yoru | 夜 | night | 345 | 23:00 |
+
+`daytime` runs 0–360 over 24 hours, so 15 units is an hour. The four surfaces,
+all verified 2026-08-11: the two time-fix combo boxes (`d_kankyo.cpp:6785-6795`
+and `:8064-8069`, whose values feed the switch in
+`dScnKy_env_light_c::setDaytime` at `:1641-1658` — that switch *is* the pin),
+plus the bloom panel naming its entries 4–9 after the same six slots
+(`:5076-5081` and `:6836-6856`, フィールド基準（朝０）… "field standard (morning 0)").
+
+**昼 *hiru* is the one that keeps being mistranslated.** It is **midday**, not
+"afternoon" and not "noon": its pure window in `l_time_attribute` is 135–240,
+i.e. **09:00–16:00**, and its pin is 11:00. Corrected 2026-08-11 in three
+places — `d_kankyo.cpp`'s time-fix combo (whose six comments also had 朝０ as
+"midnight" and 夕０ as "noon", off by six and five hours), `d_s_menu.cpp`'s
+「ひる固定」 ("Fixed Afternoon"), and `kankyo-remix.md` ("2 afternoon").
+**One is still open**, deliberately left because it sits outside that edit's
+scope: the bloom-panel gloss renders フィールド基準（昼） as "Field standard
+(noon)". Same word, same fix, one line.
+
 ### Frequently met elsewhere
 
 | Romanji | Japanese | Meaning | A symbol in this tree |

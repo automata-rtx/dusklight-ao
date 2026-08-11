@@ -6776,17 +6776,22 @@ void dKankyo_bloomHIO_c::genMessage(JORMContext* mctx) {
     mctx->startComboBox("■時刻切替", &g_kankyoHIO.time_change);
     // "Normal time"
     mctx->genComboBoxItem("通常時間", 0);
-    // "Fixed at midnight"
+    // The six entries below are the game's six canonical time lights, not clock hours: 朝 asa is
+    // morning, 昼 hiru is midday, 夕 yuu is evening, 夜 yoru is night. Each pins `daytime` to the
+    // value in the switch in dScnKy_env_light_c::setDaytime, chosen so the light schedule
+    // l_time_attribute lands on that one palette slot with no blend. daytime runs 0-360 over
+    // 24 hours, so 15 units is an hour.
+    // "Fixed at morning-0 time" (light 0; daytime 90 = 06:00)
     mctx->genComboBoxItem("朝0時間に固定", 1);
-    // "Fixed at 1 AM"
+    // "Fixed at morning-1 time" (light 1; daytime 105 = 07:00)
     mctx->genComboBoxItem("朝1時間に固定", 2);
-    // "Fixed at daytime"
+    // "Fixed at midday time" (light 2; daytime 165 = 11:00)
     mctx->genComboBoxItem("昼時間に固定", 3);
-    // "Fixed at noon"
+    // "Fixed at evening-0 time" (light 3; daytime 255 = 17:00)
     mctx->genComboBoxItem("夕0時間に固定", 4);
-    // "Fixed at 1 PM"
+    // "Fixed at evening-1 time" (light 4; daytime 285 = 19:00)
     mctx->genComboBoxItem("夕1時間に固定", 5);
-    // "Fixed at nighttime"
+    // "Fixed at night time" (light 5; daytime 345 = 23:00)
     mctx->genComboBoxItem("夜時間に固定", 6);
     // "Map settings ignored"
     mctx->genComboBoxItem("マップ設定無視経過", 7);
