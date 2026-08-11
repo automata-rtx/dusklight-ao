@@ -267,6 +267,24 @@ d_kankyo.cpp:6392  genLabel("● 奥かすみ")   over the kasumi_INNER sliders 
 descriptions, reported it as "description strings only, no behavioural change", and did
 not check whether a consumer had implemented the wrong premise. One had.
 
+**Re-verified 2026-08-11 against `Fixed-Function-dev` at `0402654`: still wrong, unchanged
+on both counts.** `dusklight_sky.comp.slang` still carries the comment *"one for the sun's
+side and one for away from it"* and still evaluates
+`lerp(cb.kasumiOuter, cb.kasumiInner, sunProximity)`.
+
+**This finding is why the worklist was rewritten.** Every prompt in
+`japanese-naming-worklist.md` used to forbid code changes, on the reasoning that
+verification and implementation are separate jobs. The result was a correction that
+reached three documents, was reported as complete, and left the shader implementing the
+premise the game contradicts — where it has now sat for a month while every document says
+it was fixed. As of 2026-08-11 the prompts implement their findings; P2 is tagged
+**[CODE, GATED]** and is first in the sequencing table.
+
+The general lesson, which is not about `kasumi`: **"I changed the descriptions" is not the
+same claim as "the system now behaves as described", and only the second one is worth
+anything to a reader.** Rule 5 already says to distinguish "compiles" from "is correct";
+this is the same rule one step earlier — distinguish *documented* from *done*.
+
 ### 4.3 Three shipped statements about bloom invert the code — **RECORD WRONG** [P3]
 
 - `rtx.bloom.dusklightThreshold`'s description is the inverse of its shader — and

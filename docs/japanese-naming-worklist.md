@@ -12,26 +12,75 @@ judged from one test.
 
 ## How these are written, and why it matters
 
+> **Changed 2026-08-11, by the owner's instruction.** These prompts used to forbid code
+> changes almost everywhere, on the theory that verification and implementation are
+> separate jobs and mixing them produces changes nobody can review. That theory is not
+> wrong, but the practice was: it made the owner the integration step for every finding,
+> and they do not have the time or the context to be one. Findings piled up as prose.
+>
+> **Every prompt now implements its finding.** Verification still comes first and the
+> stop clause is still absolute — but a session that verifies a finding and then leaves
+> the code alone has done half a job.
+>
+> §4.2 of the audit is what this rule is made of: a session corrected the `kasumi`
+> descriptions, reported "description strings only, no behavioural change", and never
+> checked whether a consumer had implemented the wrong premise. One had. The shader is
+> still wrong today, months of documents later, and every document says the correction
+> landed.
+
 Every prompt carries the same nine parts, in the same order:
 
 1. **Read first** — `CLAUDE.md` loads automatically; `docs/japanese-naming.md` does not.
-2. **The claim, as something to re-verify** — never as an instruction to implement.
-   File and line are given so checking is cheap.
+2. **The claim, as something to re-verify** — file and line are given so checking is
+   cheap. Verify it against the source before you build on it. **Then build it.**
 3. **A stop clause** — *"if it does not reproduce, stop and report; do not repair the
-   plan."* This is the most important line in every prompt. Without it a session will
-   find some way to do the work it was told to do.
-4. **In scope** — the exact files that may change.
-5. **Out of scope** — named explicitly, including the tempting adjacent work.
+   plan."* Still the most important line in every prompt, and authorising the code change
+   makes it **more** important rather than less: it is now the only thing standing between
+   a wrong finding and a wrong commit. A session that cannot reproduce a claim must not
+   implement it anyway on the grounds that it was told to.
+4. **In scope** — the code *and* the documents that change.
+5. **Out of scope** — named explicitly, including the tempting adjacent work. Scope limits
+   here are about **blast radius**, never about avoiding code.
 6. **Regression signature** — what it looks like if the change is wrong.
 7. **Protocol** — whether both sides must bump in the same commit.
 8. **Done means** — a checkable end state.
 9. **An escape hatch** — *"acceptable outcome: you conclude this is not worth doing."*
    Named as a success, not a failure. This is the main defence against the audit
-   generating work for its own sake.
+   generating work for its own sake, and it survives the change above: **authorised to
+   change code is not obliged to change code.**
 
-Tags: **[DOC ONLY]** no code changes · **[SAFE]** contained change, no protocol bump ·
-**[PROTOCOL]** touches the game↔DLL wire, both sides bump together ·
-**[RESEARCH FIRST]** investigate and report, not authorised to change behaviour.
+**And a tenth part that closes every session, which is not optional:**
+
+> ### 10. What this changes for you
+>
+> Three short paragraphs in plain English at the end of the session's reply — no jargon,
+> no file paths, no option names:
+>
+> - **What was wrong before** — in terms of what the game or the renderer actually did.
+> - **What is better now** — what the owner should expect to see or be able to do.
+> - **What is still owed** — anything untested, deferred, or waiting on a play session.
+>
+> If the session concluded the finding was **not** worth implementing, this section says
+> that instead, in the same three parts, with the reason in the same plain language.
+
+The owner is the one person on this project who cannot be replaced by a log, and their
+time is the scarce resource. A session that hands back a diff they cannot evaluate has
+moved the bottleneck rather than removed it — and "I'll read the code" is not available
+to them.
+
+### The tags
+
+| Tag | What the session is authorised to do |
+| :-- | :-- |
+| **[CODE]** | Verify, then change the code. No wire bump. **The default.** |
+| **[CODE, GATED]** | Same, but the new behaviour ships behind an option **defaulting to today's behaviour**, so it can be compared rather than argued about. Use where the change is a matter of look rather than correctness. |
+| **[PROTOCOL]** | Code change that crosses the game↔DLL wire. Both sides bump in the same commit. |
+| **[MEASURE FIRST]** | One log decides whether there is anything to build at all. Ask for it, then act on what it says — including acting on "nothing to do here". |
+| **[RECORD ONLY]** | **The code is correct and a document is wrong about it.** There is genuinely nothing to build. Rare, and named explicitly so it cannot be used as cover. |
+
+**[RECORD ONLY] is the one tag that forbids a code change, and it is a description rather
+than a preference.** If a session tagged [RECORD ONLY] finds something the *code* gets
+wrong, the tag was mis-assigned: say so, retag it, and fix the code.
 
 ### Two standing warnings that belong in every session
 
@@ -60,40 +109,70 @@ A completeness critic reviewed all twelve audits and returned a verdict worth qu
 That is the right call, and this file is organised by tier rather than by priority, so use
 the table below instead of working top to bottom.
 
+### ✅ DONE — with what actually landed in code
+
+Audited 2026-08-11 against `Fixed-Function-dev` at `0402654`. **The point of this table is
+the last column**, which is the question nobody was asking: *did the finding reach the
+code, or only the documents?*
+
+| | Landed | Code integrated? |
+| :-- | :-- | :-- |
+| **P0** | PR #10, effect-lights merged | **Yes.** `src/dusk/effect_lights.{cpp,hpp}`, protocol 7 → 11. |
+| **P17** | PR #11, water channels | **Yes.** `water_materials.hpp`, `remix_bridge`, `settings.{h,cpp}`, aurora's `Power` packing, and bidirectional side-channel checks in both invariants scripts. |
+| **P1** | PR #12, Lost Woods fog tag | **No — and correctly so.** There is no fork code that implements the `kytag01` blend; the game computes the fog range and pushes it. What is owed is a **measurement**, not a commit. See the item. |
+
 ### DO — schedule these
 
 | | Why it earns a session |
 | :-- | :-- |
-| **P17** | Prevents a clean merge silently breaking a tested feature. Nothing automated catches it. Has a deadline. |
-| **P0** | Merging effect-lights is what actually gets light creation into Remix. |
 | **P19** | The largest piece of game data we drop — and cheaper than it looked (see below). Instrument first. |
 | **P12** | The densest particle field in the game is unbatched. **Measure before changing anything.** |
 | **P8** | Turns on per-draw material identity, which is the door to name-keyed art assets. |
+| **P2** | **The one open case of a correction that reached the docs and not the code.** Now authorised to reach the code. |
 
-### FIX IN PASSING — do not schedule
+### FIX IN PASSING — cheap, but no longer free
 
-Everything else: **P1, P2 (step 1), P3, P5, P6, P7, P9, P10, P13, P14, P15, P16, P18.**
+**P3, P5, P6, P7, P9, P10, P13, P14, P15, P16, P18.**
 
-These are wrong sentences in documents. A wrong sentence only bites when someone reads it,
-and they read it when they are already in that file. Correct them opportunistically, when
-a session is in the area anyway. Scheduling them costs real time and buys almost nothing.
+The old note here said these were "wrong sentences in documents" and that a wrong sentence
+only bites when someone reads it. **That was true when the prompts were forbidden to touch
+code, and it stopped being true when they were not.** Re-read against the new tags, this
+set splits:
+
+- **Genuinely record-only** — P3, P10, P13, P18 and the documentation halves of P5 and
+  P15. The code is right; a document is wrong about it. Correct in passing.
+- **Carry a real code change** — P6, P7, P14, P16, P20, the shader half of P2, the overlay
+  half of P15, and the log line in P5. These were parked as "documentation" because the
+  prompt forbade the change, not because the change was not worth making. **P16 is one
+  line that has been sitting unmade since it was verified.**
+
+Correcting the first group opportunistically is still right. Treating the second group as
+prose is how the backlog got here.
 
 ### DROPPED — with reasons
 
-- **P4, item 1** (the dead-keyword guard). The live words already cover every effect the
-  dead ones would have, and at default settings the class cannot move a pixel. Items 2 and
-  3 of P4 — the single-romanization trap in the `Excluded` guidance, and the corrected
-  description of what `Class` does — are worth keeping as *fix in passing*.
+- **P4, item 1** (the dead-keyword guard). Dropped on merit and it stays dropped: the live
+  words already cover every effect the dead ones would have, and at default settings the
+  class cannot move a pixel. **It was never built** — confirmed 2026-08-11, there is no
+  keyword check in `scripts/check_invariants.py`. Items 2 and 3 of P4 — the
+  single-romanization trap in the `Excluded` guidance, and the corrected description of
+  what `Class` does — remain worth doing in passing.
 - **`dKy_get_schbit`, the seasons index, the calendar.** All three are inert or
   actionless. They are recorded in the audit's §6 so nobody re-investigates them; there is
   nothing to build.
 
 **Nothing in twelve audits justifies changing a shipping behaviour that is currently
-tested good.** If a session ever concludes otherwise, that is the signal to stop and ask.
+tested good** *without a way to compare it* — which is what [CODE, GATED] is for. A change
+that is worth making and cannot be judged from one test window should ship behind an
+option defaulting to today's behaviour, not be deferred until someone has time to argue
+about it.
 
 ---
 
 # Tier 0 — the two time-critical items, neither of which is a naming finding
+
+**Both are now done, and both reached the code.** Kept for the record because the shape of
+each failure recurs.
 
 ## P17 · ✅ DONE 2026-08-11 — Two branches wanted the same two material channels
 
@@ -190,7 +269,31 @@ the water branch has a stated, safe merge procedure. Aurora's invariants pass.
 Push only your session branch.
 ```
 
-## P0 · Merge the effect-lights branch — [PROTOCOL]
+## P0 · ✅ DONE — Merge the effect-lights branch — [PROTOCOL]
+
+> **Landed as PR #10**, merge commit `41835d8`, before `Fixed-Function-dev` reached
+> `0402654`. `origin/claude/remix-sphere-lights-system-0j781o` is fully contained
+> (`git rev-list --count` returns `0`).
+>
+> **Code integrated: yes.** `src/dusk/effect_lights.{cpp,hpp}` and `docs/effect-lights.md`
+> are on `Fixed-Function-dev`, and the protocol went **7 → 11** — which is where the
+> current number comes from. The three merge traps the prompt named (settings ordering,
+> the protocol double-bump, the backwards aurora pin) were all live and all resolved.
+>
+> **Nothing is owed here.** An earlier version of this entry claimed the merge left
+> `sphere.shaping_hasvalue = 0` in place and that forwarded lights therefore discard cone
+> shape. **Checked 2026-08-11: that is wrong.** Neither forwarded light type carries a cone
+> — `LIGHT_INFLUENCE` has no angle fields, and the effect-light path reads `BOSS_LIGHT` for
+> colour only, deliberately and under a comment saying so. Hardcoding shaping off is the
+> correct encoding of "this light has no cone". The cone question belongs entirely to P19;
+> see the note in the sequencing summary for the trap it contains.
+>
+> This entry was **stale for the whole of 2026-08-11**: the body below still described the
+> branch as unmerged, "27 commits ahead / 15 behind, protocol 11 vs 7", while the merge had
+> already happened. A worklist that does not mark its own items done sends the next session
+> to redo them. *Original prompt kept for the record.*
+
+**Superseded. Do not run this.**
 
 The system that turns the game's own fire and glow into Remix sphere lights is finished,
 reviewed, tested in game, and sitting unmerged behind three merge traps. Light creation
@@ -261,13 +364,13 @@ Push only your session branch.
 
 ---
 
-# Tier 1 — free, do first, cannot break anything
+# Tier 1 — cheap, do first, low blast radius
 
-These are documentation corrections. They lead not because they matter most, but because
-they cost nothing, cannot regress anything, and they remove the wrong information that
-produced the defects. None needs a test window.
+These lead not because they matter most, but because they are contained. Most are
+[RECORD ONLY] — the code is right and a document is wrong about it. **The two that are
+not** (P2's shader, P5's log line) are marked, and they are the ones worth a session.
 
-## P1 · ~~kytag01 is the Lost Woods, not Lake Hylia~~ — **DONE 2026-08-11** [DOC ONLY]
+## P1 · ~~kytag01 is the Lost Woods, not Lake Hylia~~ — **DONE 2026-08-11** [RECORD ONLY]
 
 **Landed.** The claim reproduced in full, including the blend direction, and **twelve**
 passages were corrected rather than five — `kankyo-fog.md` §3.3/§5/§6/§7 and
@@ -277,6 +380,24 @@ stage (`F_SP117`), so the header comment and the `OS_REPORT` never disagreed; an
 the fog *range* varies with position — the colpat blend, moya count and audio are uniform
 across the room. Whether Lake Hylia also carries a kytag01 remains **unprovable from
 source** (placement is `.dzs` data). Findings in `japanese-naming-audit.md` §4.1.
+
+> **Code integrated: no, and that is the right answer.** Checked 2026-08-11 — the merge
+> (PR #12) touched three files, all documentation. There is no fork code implementing the
+> `kytag01` blend to correct: the game computes the fog range itself and pushes the result,
+> so the finding lands on *where the owner stands*, not on a line of code.
+>
+> **What is still owed is a measurement, and it has not been taken.** `zHalfMin` and
+> `froxelRangeScale` are still carrying guessed values —
+> `DusklightAtmosphere.md:1428` reads *"`froxelRangeScale` (0.6) remains unchallenged
+> rather than validated"* — because the dense-fog regime has never been visited. The
+> correction says where to go. Nobody has gone.
+>
+> **One thing that *is* a code gap, and it is small:** the whole `kytag01` layer is
+> switch-gated (`d_a_kytag01.cpp:71`, `:124-144`), and nothing logs whether the gate is
+> open. So if the owner walks the Lost Woods and sees no fog, they cannot tell "the tag is
+> off" from "the fork is ignoring it" — which is exactly the ambiguity project rule 2
+> exists to delete. **A session going to the Lost Woods for any reason should add that log
+> line first**, or the trip produces an unusable answer.
 
 *Original prompt kept below for provenance.*
 
@@ -346,7 +467,7 @@ right. Say what you checked - note that actor placement lives in .dzs stage data
 Push only your session branch.
 ```
 
-## P2 · The kasumi correction never reached the shader — [SAFE + a gated look change]
+## P2 · The kasumi correction never reached the shader — [CODE, GATED]
 
 A correction landed in the option descriptions and the documents, and not in the code
 that consumes the values. The shader still implements the premise the game contradicts,
@@ -428,9 +549,18 @@ current behaviour, is visible in the Dusklight tab; CI green.
 Acceptable outcome: you conclude step 2 is not worth doing. Say why, plainly.
 
 Push only your session branch. No drive-by cleanups.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P3 · Three shipped statements about bloom say the opposite of the code — [DOC ONLY]
+## P3 · Three shipped statements about bloom say the opposite of the code — [RECORD ONLY]
 
 One of these would send a session to reimplement a feature that already exists; another
 aims a scarce test window at something that cannot show a result.
@@ -471,15 +601,29 @@ CLAIM 3 - wolf senses exercises neither the mono overlay nor the base weight. Th
   tree. Leave it, or mark it unverified.
 
 OUT OF SCOPE: the bloom shaders, the threshold value, the pyramid, tone mapping, any
-retuning. This session changes words, not pixels.
+retuning. This one is genuinely [RECORD ONLY] - the render is CORRECT and three documents
+are wrong about it, which is the rarer direction and why the tag exists.
+
+BUT THE TAG IS A DESCRIPTION, NOT A RESTRICTION. If you find something the CODE gets
+wrong here, the tag was mis-assigned: say so plainly and fix the code, rather than filing
+it as another wrong sentence. That is exactly the mistake this file is being corrected for.
 
 DONE MEANS: the three sites agree with the code; RtxOptions.md staleness is in its header
 note, not in edited rows; both invariants scripts pass.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P4 · Effect lights: guard the word lists, do not chase them — [SAFE, small]
+## P4 · Effect lights: guard the word lists, do not chase them — [CODE]
 
 Read the framing paragraph carefully — it is what keeps this session small.
 
@@ -534,9 +678,18 @@ DONE MEANS: the check exists and passes; the two documents are corrected; no
 classification behaviour changed.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P5 · Two planned features are aimed at mechanisms that do not exist — [DOC ONLY]
+## P5 · Two planned features are aimed at mechanisms that do not exist — [RECORD ONLY + one log line]
 
 ```
 Read japanese-naming.md first. export LC_ALL=C.UTF-8 for Japanese greps.
@@ -570,7 +723,14 @@ IN SCOPE: documentation, plus - for claim 2 only - a log line reporting the push
 and whether the 9-guard fired, so one play session settles it. That is project rule 4:
 instrument before deciding.
 
-OUT OF SCOPE: removing the guard, building heterogeneous fog, retuning anything.
+THEN ACT ON WHAT THE LOG SAYS - do not file the result and stop. If one play session shows
+the 9-guard firing on an outdoor stage, REMOVE IT in the same follow-up; that is a stage
+losing its physical sky for no reason. If it shows the guard never fires, delete it as dead
+code and say so. Either way it stops being a question.
+
+OUT OF SCOPE until that log exists: removing the guard on reasoning alone, building
+heterogeneous fog, retuning anything. "Probably inert" is the reasoning that produced three
+no-op fixes on this project - the log is what converts it into a decision.
 
 DONE MEANS: for claim 1, section 8.2 and row C6 either state that no work is owed or
 state precisely what is; for claim 2, the constant's provenance is written down, the log
@@ -580,6 +740,15 @@ Acceptable outcome: both claims refuted and the documents left alone. That is a 
 result - write it down so nobody re-opens it.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ---
@@ -666,6 +835,15 @@ are in none of the three checkouts, so this cannot be settled from source - and 
 against wiring them. Say what you checked.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ## P7 · The colpat blend arrives one third complete — [PROTOCOL]
@@ -723,13 +901,22 @@ Acceptable outcome: part A only, if part B's benefit looks unproven. The documen
 correction stands alone.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ---
 
 # Tier 3 — strategic; changes what this project can offer a remaster artist
 
-## P8 · Turn the material-identity hook back on — [SAFE, high value]
+## P8 · Turn the material-identity hook back on — [CODE, high value]
 
 This is the difference between a remaster artist identifying a surface by texture hash
 and identifying it by the name the game's own artists gave it.
@@ -836,9 +1023,18 @@ Acceptable outcome: you find the existing push unusable for a stated reason and 
 against it. Say what you checked.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P9 · Harvest the original developers' tuning panel — [RESEARCH FIRST]
+## P9 · Harvest the original developers' tuning panel — [CODE, after the harvest]
 
 ```
 Read /home/user/dusklight-ao/docs/japanese-naming.md first, especially section 6.
@@ -887,8 +1083,20 @@ bindings are readable statically, which is all a specification needs to be. And 
 propose exposing 3,903 controls; the deliverable is a curated reference, and the
 judgement about which few deserve to be in the Dusklight overlay is the point.
 
-OUT OF SCOPE: adding any option, changing the overlay, the bridge, or any game code.
-This session produces a document and a shortlist.
+THEN ACT ON THE SHORTLIST - do not stop at the document. Take the TOP THREE, no more, and
+expose them in the Dusklight tab: one option each, defaulting to the game's own value so
+nothing changes until the owner moves a slider. Choose them by "a tuner would reach for
+this first", not by what is easiest to wire. Three is the number because a tab full of
+controls nobody has a reason to touch is the same as no tab.
+
+CHECK THE PROTOCOL QUESTION EXPLICITLY before you wire them: whether these need a wire
+bump depends on which direction they travel. A fork-side control the game reads back is
+not the same as a readout the game pushes, and the answer decides whether both sides bump
+in one commit. Say which it is in the commit message.
+
+OUT OF SCOPE: the other ~3,900 sliders; consuming anything new in a shader; the grade
+pass. Exposing a control is not the same as building a feature behind it - stop at the
+control and let one play session say whether it earns more.
 
 DONE MEANS: docs/kankyo-tuning-surface.md exists; every row is mechanically derived and
 cited to file:line; the three flag categories are called out; it ends with a ranked
@@ -899,9 +1107,18 @@ Acceptable outcome: you conclude the rendering-relevant subset is small and most
 already covered. Say so with the numbers.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P10 · Give the bloom table a vocabulary, and record the four unreachable presets — [DOC ONLY]
+## P10 · Give the bloom table a vocabulary, and record the four unreachable presets — [RECORD ONLY]
 
 ```
 Read docs/japanese-naming.md first. *** export LC_ALL=C.UTF-8 or you will find none of
@@ -941,15 +1158,27 @@ only by d_a_kytag12). Note explicitly that it is NOT a light and should not be p
 Remix - none of the registering actors calls dKy_plight_set and the volumes gate on
 puzzle switch state, so treating them as light sources would be inventing intent.
 
-OUT OF SCOPE: any code change at all.
+OUT OF SCOPE: any BEHAVIOUR change. The one-line comment at d_kankyo.cpp:2540 IS in
+scope - a comment is record, not behaviour - and so is the `// ?` beside mOrigDensity in
+d_kankyo_data.h. Do NOT rename anything in that header; the member names are upstream's
+and the never-rename rule applies.
 
 DONE MEANS: the glossary has bloom vocabulary; the `// ?` is answered in prose; 32-35 are
 documented as unreachable; dalkmist is listed; invariants pass.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ---
 
-## P12 · Batch the Twilight fog — the densest particle field in the game — [SAFE]
+## P12 · Batch the Twilight fog — the densest particle field in the game — [MEASURE FIRST]
 
 The 2026-08-07 batching sweep left two systems, recorded as "bounded and situational
 rather than weather". One of them is 2,000 particles.
@@ -1018,9 +1247,18 @@ to say these are no longer outstanding and why the priority was inverted.
 Acceptable outcome: the measurement shows the area is fine and you recommend leaving it.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P13 · The same kasumi mistake, one file away — [DOC ONLY, + one measurement]
+## P13 · The same kasumi mistake, one file away — [RECORD ONLY + MEASURE FIRST]
 
 ```
 Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
@@ -1067,9 +1305,18 @@ Do NOT add a hideVrkumo switch - today, removing these billboards removes the cl
 DONE MEANS: the three descriptions match the game's labels; the recipe and the alpha note
 are written down; C3 is updated; the vrkumo measurement is either taken or explicitly
 requested. Invariants pass.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P14 · `hideSkyBillboards` deletes the star field — [RESEARCH FIRST]
+## P14 · `hideSkyBillboards` deletes the star field — [CODE]
 
 ```
 Read docs/japanese-naming.md first.
@@ -1104,9 +1351,18 @@ correct, and the test is written into docs/remix-test-playbook.md.
 
 Acceptable outcome: you find the stars do occlude and the single switch was right. Record
 it so nobody re-opens it.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P15 · Six time-slot comments in the game tree are wrong — [DOC ONLY + SAFE]
+## P15 · Six time-slot comments in the game tree are wrong — [CODE]
 
 ```
 Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
@@ -1149,9 +1405,18 @@ protocol bump and a separate, later item; note it as a follow-up rather than doi
 
 DONE MEANS: the six comments and the two docs are correct; the overlay reaches all six
 slots; invariants and CI green.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P16 · Turn on the texture dump that already exists — [FIX IN PASSING, one line]
+## P16 · Turn on the texture dump that already exists — [CODE, one line]
 
 **Demoted to fix-in-passing 2026-08-11, by the owner, on a fact no audit had.** The
 capability this item unlocks **is already available outside the game**, twice over:
@@ -1169,8 +1434,17 @@ capability this item unlocks **is already available outside the game**, twice ov
 
 That leaves the in-engine dump a convenience duplicate of a mature external tool. It is
 still correct, still one line, and still worth flipping — but **it does not earn a
-scheduled session.** Do it when a session is already editing `settings.{h,cpp}` or
-`m_Do_main.cpp`.
+scheduled session on its own.** Do it when a session is already editing `settings.{h,cpp}`
+or `m_Do_main.cpp`.
+
+> **⚠ Verified 2026-08-11, and still not done.** `src/m_Do/m_Do_main.cpp:646` reads
+> `config.allowTextureDumps = false;` on `Fixed-Function-dev` today. The verification the
+> owner ran confirmed the *external* route works; it did not make this line change itself,
+> and demoting the item quietly turned "one line, do it in passing" into "nobody did it".
+>
+> **This is the smallest example of the problem this whole file was rewritten for**, and
+> it should be the first thing folded into the next session that opens either file — which
+> P14 and P9 both do.
 
 **The one thing that would revive it:** a texture the emulator route does not cover. The
 in-engine dump is keyed the way the runtime keys by construction, so it would settle any
@@ -1231,9 +1505,18 @@ else changed.
 
 Acceptable outcome: you find the dumped filename does NOT match what a pack directory
 needs. Then say so - that is the one thing that would justify revisiting the join idea.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
-## P18 · Grass is also flowers, and blobShadows drops far more than we say — [DOC ONLY]
+## P18 · Grass is also flowers, and blobShadows drops far more than we say — [CODE]
 
 ```
 Read docs/japanese-naming.md first. export LC_ALL=C.UTF-8 before Japanese greps.
@@ -1251,13 +1534,18 @@ CLAIM 1 - perBladeGrass covers grass but not flowers.
   titled "Grass patches shade wrongly", so nothing signals that half the vegetation the
   same actor spawns is untouched. If flowers show the same symptom, toggling the switch
   will not move it - which reads as the diagnosis being wrong.
-  FIX - DOCUMENTATION ONLY. Do NOT silently widen perBladeGrass to cover flowers: its
-  description promises grass and its cost profile differs. State in
-  docs/remix-open-issues.md issue 7, and in the option text in
+  FIX - BOTH HALVES, record then code.
+  RECORD: state in docs/remix-open-issues.md issue 7, and in the option text in
   dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_game.h, that the switch covers
-  dGrass_packet_c only and that the flower packet still batches. A sibling switch is a
-  small mechanical port IF flowers turn out to matter - but that decision comes after the
-  grass switch has been tested in game even once, which it has not been.
+  dGrass_packet_c only and that the flower packet still batches.
+  CODE: add the sibling switch - perBladeFlowers, DEFAULTING OFF, a mechanical port of the
+  grass one over dFlower_packet_c.
+  Do NOT widen perBladeGrass itself to cover flowers. Its description promises grass and
+  its cost profile differs, so widening it silently changes what an already-shipped option
+  means - and the grass half has not been tested in game even once, so there is nothing to
+  widen from. A separate switch costs one option and lets the next test session answer
+  both questions in one trip rather than two, which is the whole point: the owner's play
+  windows are the scarce resource, not the options list.
 
 CLAIM 2 - blobShadows drops far more than four documents say.
   It is described as covering shadows "under rupees, hearts and pots". It reportedly drops
@@ -1289,6 +1577,15 @@ must NOT plan on a spare D3DMATERIAL9 channel: as of 2026-08-11 there is exactly
 
 DONE MEANS: issue 7, issue 11, the two option descriptions and the shadow prose all say
 what the code does; invariants and CI green. No behaviour changed.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ## P19 · The room's authored lights are live every frame and nothing reads them — [PROTOCOL, high value]
@@ -1377,6 +1674,15 @@ Acceptable outcome: you conclude the authored placements read wrong under a path
 and recommend against it, with the log to back it. That is a real result.
 
 Push only your session branch.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ## P20 · Three of four background-ambient layers never cross the wire — [PROTOCOL]
@@ -1427,6 +1733,15 @@ options are pushed and displayed but not consumed; invariants and CI green.
 
 Acceptable outcome: the routing shows one layer is enough. Say so with the citation -
 that closes a question §3 opened.
+
+FINALLY - DO NOT SKIP THIS. End your reply with a section headed "What this changes for
+you": three short paragraphs in plain English - no jargon, no file paths, no option names.
+  1. What was wrong before, in terms of what the game or the renderer actually did.
+  2. What is better now - what the owner should expect to see, or be able to do.
+  3. What is still owed - anything untested, deferred, or waiting on a play session.
+The owner does not read code, and this section is how they decide what happens next. If
+you concluded the change was NOT worth making, write those same three parts about that
+instead - that is a real result, not a failure.
 ```
 
 ---
@@ -1443,22 +1758,57 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 
 ## Sequencing summary
 
+**✅ Done:** P17 (channel collision), P0 (effect-lights merged, protocol 11), P1 (Lost
+Woods fog tag — record corrected; the measurement it points at is still owed).
+
 | When | Run | Needs a play-test? |
 | :-- | :-- | :-- |
-| **Before merging any branch** | **P17** (material channel collision) | no |
-| First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15, P18 | no |
-| Then — small guarded changes | P4, P2 step 1, P14 | no |
-| Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10 | no |
+| **Next** | **P2** — the shader half. The one open case of a correction that reached the docs and not the code | no, it ships gated |
+| Then — record corrections, in passing | P3, P10, P13, P18 (record half), P5 (record half) | no |
+| Then — contained code | P4, P14, P15, **P16 (one line, overdue)** | no |
+| Then — the strategic reads, each ending in a change | P8 (material identity), P9 (tuning panel → 3 controls) | no |
+| Measure, then act | P12 (Twilight fog), P13 (vrkumo half) | one log, then a change |
 | Then — retained game data | P19 (room lights, off by default), P20 (ambient layers) | yes, one window |
-| Measure, then act | P12 (Twilight fog draw count) | one log, then a change |
 | Together in one window | P6, P7 | yes, one window |
-| When ready for lights | P0 (the merge) | yes |
-| Last | P11 | yes, A/B |
+| Last | P11 (= P2 step 2) | yes, A/B |
 
-**P0 can be run at any time and depends on none of the others.** It is placed late in the
-table only because it is the one with a merge to resolve — for the goal of getting light
-creation into Remix it is the most important item in this file.
+**Three items are one log away from being decided rather than discussed** — P12 (a
+`dx9.draws` peak from the Palace of Twilight), P13's vrkumo half (the same, outdoors and
+cloudy), and P5's colpat-9 guard. Ask for those three samples in the *same* play session;
+they do not conflict and it collapses three test windows into one.
 
-**P12 is the one item where a single log settles whether there is anything to do at all.**
-Ask for a `dx9.draws` sample standing in the Palace of Twilight before spending a session
-on it.
+**P16 is one line and has been verified since 2026-08-11.** Fold it into whichever session
+opens `settings.{h,cpp}` or `m_Do_main.cpp` first — P14 and P9 both do.
+
+**P19 walks into a trap, and it is the approach the prompt recommends that walks into it.**
+Corrected 2026-08-11 — an earlier version of this paragraph called it "an unpaid debt from
+P0" and said every forwarded light discards its cone. **That was wrong**, and the real
+shape is worth stating precisely:
+
+- **Nothing is discarding a cone today.** `sphere.shaping_hasvalue = 0` appears at two
+  sites — `updateLocalLights` (`remix_bridge.cpp:1455`) and `updateEffectLights` (`:1702`)
+  — and it is **correct at both**, because neither path carries cone data to begin with.
+  `LIGHT_INFLUENCE` (`d_kankyo.h:17-23`) is position, colour, power, fluctuation, index:
+  **no angle fields at all.** The effect-light `Site` (`effect_lights.hpp:41-55`) likewise.
+- **The one cone-bearing source the effect lights touch, they read for colour only, on
+  purpose.** `gatherVanillaLights` harvests `BOSS_LIGHT` at `effect_lights.cpp:1441` and
+  passes `reach = 0, reachKnown = false` under a comment reading "COLOUR ONLY,
+  deliberately". `mCutoffAngle`, `mAngleX` and `mAngleY` are never read. The `spot` bool it
+  sets reaches the log and nothing else.
+- **The cone data exists only in `DUNGEON_LIGHT` and `BOSS_LIGHT`, and neither is
+  forwarded.** So P19 is not paying off a debt; it is the first thing that would ever have
+  a cone to send.
+
+**Here is the trap.** P19's prompt recommends re-deriving `mInfluence` from
+`DUNGEON_LIGHT`'s live fields and letting the existing forwarding loop carry it — which is
+good advice for the transport and fatal for the cone. `mInfluence` is a `LIGHT_INFLUENCE`
+embedded at offset `0x2C`, and **the cone fields sit outside it**, at `0x18`–`0x24`. So the
+recommended route drops the cone *structurally*, before it ever reaches the hardcoded
+`shaping_hasvalue = 0`. Both would have to be fixed, and neither failure is visible in a
+diff.
+
+Populating it is small — `remixapi_LightInfoLightShaping` is a normalized direction,
+`coneAngleDegrees`, `coneSoftness` and `focusExponent` — but mapping GX's
+`mAngleAttenuation` spot function onto those last two is an **approximation nobody has
+characterised**, not a transcription. Treat it as its own step with its own regression
+signature.
