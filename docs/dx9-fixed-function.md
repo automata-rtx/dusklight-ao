@@ -174,7 +174,7 @@ rtx.dusklight.game.hideSkyBillboards = True
 # in GX constants rather than being a bare texture pass-through, AND that colour
 # reads as a glow - saturated OR near-white-hot. Replayed over a measured Goron
 # Mines session that is 6 materials of 77, every lava and fire surface, nothing
-# else. Nothing here needs tuning; intensity is the one dial. colorSource picks
+# else. Nothing here needs tuning; brightness is the one dial. colorSource picks
 # what an emitter glows: 0 reconstructed albedo (default - the two-colour ramp,
 # so the texture drives the colour), 1 albedo texture through its own op,
 # 2 flat presented colour. All live in the F1 overlay, and every candidate is
@@ -185,6 +185,32 @@ rtx.dusklight.game.hideSkyBillboards = True
 # NOT "intensity" - that name was renamed to brightness, and the old one silently
 # does nothing. It is a target brightness rather than a multiplier; default 10.0.
 #rtx.dusklight.emissive.brightness  = 10.0
+
+# Water. The game recognises its own water by J3D material name
+# (dKy_bg_MAxx_proc) - GX carries nothing that says "water", and a texture-hash
+# rule would be wrong by construction because this game reuses water textures on
+# non-water draws. So the game marks each draw and aurora packs the three facts
+# (role, MAxx tag, layer) into D3DMATERIAL9::Power. A marked surface becomes a
+# translucent material instead of the opaque white sheet the legacy conversion
+# produced; the camera-projected fake reflection layer (MA02/MA10) is dropped,
+# because Remix traces that reflection for real and the painted one is a second
+# refracting interface just above the first.
+#
+# Transmittance Distance is the dial to reach for first - it decides how quickly
+# water reads as deep. UV Tiling is the second, on a large lake: a ripple texture
+# stretched once across Lake Hylia reads as a smear. The five hide*Layer switches
+# are all OFF by default; a body of water is several stacked draws and which one
+# should be the surface is a look decision. All live in the F1 overlay under
+# Dusklight Remix > Water, which is the better place to tune them.
+#
+# UNTESTED IN GAME on this transport (rebased 2026-08-11). If water still renders
+# as a white sheet, check power= on the dusklight.water log lines: zero there,
+# with dusk.matname lines present in the game log, means the mark did not survive.
+# Design: extern/aurora/docs/dx9/remix-material-interface.md §11.
+#rtx.dusklight.water.enable             = True
+#rtx.dusklight.water.transmittanceMeasurementDistance = 200.0
+#rtx.dusklight.water.uvTiling           = 1.0
+#rtx.dusklight.water.hideProjectedLayer = True
 
 # Material translation report (Remix half; aurora's half is always on). Turn it
 # on for any session where a surface is the wrong colour - it prints what each

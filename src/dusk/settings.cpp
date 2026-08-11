@@ -102,6 +102,10 @@ UserSettings g_userSettings = {
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
         .remixTextureReplacements {"game.remixTextureReplacements", true},
+        // False here, true on the Remix side: the bridge pushes Remix's value down every
+        // frame when it is running, so this is suppressed under Remix and left vanilla on
+        // every other backend, where a camera-relative effect composites correctly.
+        .remixHideDashEffect {"game.remixHideDashEffect", false},
         .remixBlobShadows {"game.remixBlobShadows", true},
         .remixLanternInfiniteOil {"game.remixLanternInfiniteOil", false},
         .freezeTime {"game.freezeTime", false},
@@ -351,6 +355,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
     Register(g_userSettings.game.remixTextureReplacements);
+    Register(g_userSettings.game.remixHideDashEffect);
     Register(g_userSettings.game.remixBlobShadows);
     Register(g_userSettings.game.remixLanternInfiniteOil);
     Register(g_userSettings.game.freezeTime);

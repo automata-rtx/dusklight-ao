@@ -377,7 +377,15 @@ reported as lost content — and documenting it in a design doc would have invit
 follow-on the finding floated (a bloom-table-id override): **scope on a working system,
 for four abandoned rows.**
 
-### 4.9 ⚠ A live merge hazard: two branches want the same two material channels — **NOT a naming finding** [P17]
+### 4.9 ✅ RESOLVED 2026-08-11 — two branches wanted the same two material channels — **NOT a naming finding** [P17]
+
+> **Resolved.** The water branch was rebased onto `Fixed-Function-dev` rather than
+> merged, and its channel assignment re-derived: all three water facts now share
+> `D3DMATERIAL9::Power`, packed, so HD texture packs keep `Ambient.g`/`.b` and
+> `Ambient.a` is left free. Both invariants scripts now check the side-channel map
+> in **both** directions, which is what would have caught this. The account below
+> is kept because the *shape* of the hazard recurs — see
+> `extern/aurora/docs/dx9/in-flight-allocation.md`.
 
 Found while checking whether a spare `D3DMATERIAL9` side channel existed for something
 else, and it is the most time-critical item in this document.

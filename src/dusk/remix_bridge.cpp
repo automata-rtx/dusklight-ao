@@ -66,6 +66,13 @@ EffectLightsDebug s_effectDebug = {};
 // point - the counters chain used to end "-> drawn 0" no matter what had been drawn.
 uint64_t s_effectDrawnLastFrame = 0;
 
+// Set by the horse on each frame it dashes, read and cleared when pushed. Declared with
+// the other debug state above the support guard, not with the Remix plumbing below it:
+// noteHorseDashing() is part of the unconditional interface - the horse calls it on every
+// platform - so the flag it writes has to exist on every platform too, whether or not
+// there is a bridge to push it through.
+bool s_horseDashing = false;
+
 #if DUSK_REMIX_BRIDGE_SUPPORTED
 aurora::Module BridgeLog("remix-bridge");
 
@@ -1802,6 +1809,14 @@ void pushKankyoState() {
     push("rtx.dusklight.env.texrepEntries", std::to_string(s_texRepQueue.size()));
     push("rtx.dusklight.env.texrepCreated", std::to_string(s_texRepCreated));
     push("rtx.dusklight.env.texrepSkipped", std::to_string(s_texRepSkipped));
+    // Diagnostic state. Neither drives any rendering; both exist so Remix's log can say
+    // when something happened, in the same file as the material report. Read and cleared
+    // rather than latched, so dismounting reads as not dashing instead of leaving the last
+    // value standing. push() only sends on change, so a stationary player costs nothing.
+    const bool dashing = s_horseDashing;
+    s_horseDashing = false;
+    push("rtx.dusklight.env.dash", formatBool(dashing));
+    push("rtx.dusklight.env.camInWater", formatBool(dKy_camera_water_in_status_check() != 0));
 
 
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
@@ -2059,6 +2074,15 @@ void tick() {
             game.remixPerBladeGrass.setValue(perBladeGrass);
         }
 
+        // Epona's dash speed effect, which the game positions relative to the camera rather
+        // than the world - so Remix captures a translucent quad that travels with the view.
+        // Suppressed at the emitter, so no draw call is issued. See daHorse_c::setDashEffect.
+        const bool hideDash = readOptionBool("rtx.dusklight.game.hideDashEffect",
+                                             game.remixHideDashEffect.getValue());
+        if (hideDash != game.remixHideDashEffect.getValue()) {
+            game.remixHideDashEffect.setValue(hideDash);
+        }
+
         // The game's own recording mode. Its settings screen is never drawn in this rendering
         // mode, so config.json was previously the only way to reach it - and a one way trip,
         // since nothing in the running game could turn it back off.
@@ -2145,6 +2169,10 @@ const EffectLightsDebug& effectLightsDebug() {
 
 const LocalLightsDebug& localLightsDebug() {
     return s_localDebug;
+}
+
+void noteHorseDashing() {
+    s_horseDashing = true;
 }
 
 }  // namespace remix
