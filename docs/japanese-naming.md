@@ -188,19 +188,39 @@ debug menu prints it.**
 > `vrbox_kasumi_inner_col` and `vrbox_kasumi_outer_col` are two horizon haze
 > bands. Nothing about "inner" and "outer" says which is nearer, and guessing
 > from the English is how this got recorded wrongly once (§10). The game answers
-> it in three independent places:
+> it in four independent places:
 >
-> 1. **The palette CSV exporter** (`d_kankyo.cpp:6582`) writes a Japanese header
+> 1. **The HIO debug sliders** (`d_kankyo.cpp:6369,6392`) — the most direct of
+>    the four, and the one the first pass missed. The panel puts
+>    `genLabel("● 前かすみ")` immediately above the four `kasumi_outer` sliders
+>    and `genLabel("● 奥かすみ")` immediately above the four `kasumi_inner` ones.
+>    **前** *mae* is front/near; **奥** *oku* is back/far. The authors are
+>    labelling their own sliders, so this is as close to a primary source as the
+>    tree has.
+>
+>    > ⚠ **Cite the Japanese, never the line above it.** The decomp carries an
+>    > English gloss over each label, and the one over `● 奥かすみ` reads
+>    > `// "● Inner kasumi"` — a later translator rendering 奥 as "inner"
+>    > because the member is called `inner`, which **reproduces the exact
+>    > misreading this whole entry exists to correct**. It is circular evidence:
+>    > it is derived from the reconstructed member name, not from the game.
+>    > (The gloss over `● 前かすみ` reads `// "● Near kasumi"` and happens to be
+>    > right, which makes the pair more dangerous, not less — one of them
+>    > agreeing with the Japanese is what makes the other look trustworthy.)
+>    > This is §8b's rule with the translation layer added: **a comment in the
+>    > decomp is not an authored string.**
+>
+> 2. **The palette CSV exporter** (`d_kankyo.cpp:6582`) writes a Japanese header
 >    row and then the fields in the same order. Aligning them column by column:
 >    `空色`→`sky_col`, `上雲色`(upper cloud)→`kumo_top`, `下雲色`(lower
 >    cloud)→`kumo_bottom`, `下雲影色`(lower cloud shadow)→`kumo_shadow`,
 >    then **`霞手前色` (*temae*, near/in-front) → `kasumi_outer`** and
 >    **`霞奥色` (*oku*, far/behind) → `kasumi_inner`**.
-> 2. **The debug view** (`d_kankyo_debug.cpp:301,306`) prints the same fields as
+> 3. **The debug view** (`d_kankyo_debug.cpp:301,306`) prints the same fields as
 >    **`kasumiF`** and **`kasumiB`** — Front and Back. Its neighbours use the
 >    same one-letter scheme (`CloudU`/`CloudD` for `kumo_top`/`kumo_bottom`), so
 >    the letters are positional, not incidental.
-> 3. **The dome actors**: `d_a_vrbox.cpp:121` paints `kasumi_inner` onto
+> 4. **The dome actors**: `d_a_vrbox.cpp:121` paints `kasumi_inner` onto
 >    `vrbox_sora.bmd` (*sora* = 空, sky), and `d_a_vrbox2.cpp:358` paints
 >    `kasumi_outer` onto the second dome. Two shells, front and back.
 >
@@ -314,12 +334,24 @@ is not about Japanese at all.
 > not.** The decompilation *reconstructs* member names, so a member name is a **hypothesis
 > until an authored string agrees with it** — an HIO slider label (§6), a `dDbVw_Report`
 > format, a CSV column header, an `OS_REPORT`.
+>
+> **A translator's comment is not an authored string either.** The decomp glosses the
+> Japanese labels in English, and those glosses were written by someone reading the same
+> reconstructed member names — so a gloss can launder a wrong member name back into
+> apparent evidence for itself. `d_kankyo.cpp:6391` renders `● 奥かすみ` as
+> `// "● Inner kasumi"`, which is exactly the misreading below. Cite the Japanese.
 
 The worked example is the one that started the audit. `vrbox_kasumi_inner_col` /
 `_outer_col` were described backwards for months, and **that was never a misread Japanese
 word** — it was a header name trusted like a function symbol, when the header name is the
 one artifact in the chain no Japanese developer wrote. The game's own labels
 (前 / 奥, `kasumiF` / `kasumiB`) settled it in minutes once anyone looked.
+
+**It is not finished, and that is the second lesson.** Correcting the *name* corrected the
+documents; the shader in `dxvk-remix` that consumes both bands went on implementing the old
+belief for another day, and by default still does — see §10. **Reading a name right and
+fixing everything built on reading it wrong are two separate jobs**, and the second one is
+the one that changes pixels.
 
 Names still carrying an unchecked semantic claim: `mFogDensity` (the label says 雲影の濃さ,
 cloud-shadow density), `mOrigDensity`, `kumo_top_col` / `kumo_bottom_col`, and
@@ -360,18 +392,51 @@ evidence that this lens pays, and because the correction is small:
 
 `rtx_dusklight_env.h` described `kasumiInner` as "the horizon haze colour **on
 the sun's side**" and `kasumiOuter` as "**away from the sun**". **No code path
-in the game relates either field to sun position**, and three independent
-game-authored labels say the split is front/back instead — the CSV exporter's
-`霞手前`/`霞奥`, the debug view's `kasumiF`/`kasumiB`, and the two dome actors
-painting one band each (§6). The descriptions were corrected to what the game
-says; `RtxOptions.md` is generated, so it carries the old wording until someone
-regenerates it on Windows.
+in the game relates either field to sun position**, and four independent
+game-authored labels say the split is front/back instead — the HIO sliders'
+前/奥, the CSV exporter's `霞手前`/`霞奥`, the debug view's `kasumiF`/`kasumiB`,
+and the two dome actors painting one band each (§6).
 
 **Corrected to "front/near" and "back/far", not to a claim about what they look
 like.** Whether the near band is *also* the one that visibly carries sunrise —
 which is what the old description was probably reaching for — is a question
 about palette content, and nobody has checked it. It stays open rather than
 being restated in nicer words.
+
+#### The correction reached the prose and stopped there — for a day
+
+**This is the part worth remembering, and it was found on 2026-08-11.** The
+2026-08-10 pass corrected the option descriptions and the `.md` files. It did
+not correct **the code that consumes both bands**, which sat one directory away
+still implementing the old premise:
+
+```
+dxvk-remix/src/dxvk/shaders/rtx/pass/dusklight/dusklight_sky.comp.slang
+  comment: "The game keeps two horizon colours, one for the sun's side and one
+            for away from it, and this is what chooses between them."
+  code:    horizonColor = lerp(kasumiOuter, kasumiInner, sunProximity)
+dxvk-remix/src/dxvk/shaders/rtx/pass/dusklight/dusklight_atmosphere.h
+  "// Horizon haze on the sun's side." / "// Horizon haze away from the sun."
+```
+
+So for a day both repos' documents said front/back while the shader that reads
+the two fields still rotated them around the sun — and because that one image
+is also the sky light and the fog target colour, the rotation reached the
+lighting too.
+
+Fixed 2026-08-11: **the comments, and the header comments, and the imgui
+readout's labels.** The **blend itself is still the old one by default**, now
+behind `rtx.dusklight.atmosphere.kasumiBlendMode` so the two can be compared in
+game before either is called correct. Nothing has been A/B'd yet.
+`dxvk-remix/documentation/DusklightAtmosphere.md` §12.2 carries the full site
+list and the reasoning.
+
+**The general lesson, which is not about kasumi:** *a correction is finished
+when the code that acted on the wrong belief has been found, not when the
+sentence that stated it has been rewritten.* Grep for the **wrong claim's
+words** across all three repos — here, "sun's side" — not just for the symbol.
+`RtxOptions.md` is generated on Windows and still carries the old wording; that
+one is expected and is not the gap.
 
 ### And it suggests three things nobody has done
 
