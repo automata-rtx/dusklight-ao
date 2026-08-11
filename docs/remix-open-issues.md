@@ -60,12 +60,18 @@ in the file:
 **Two earlier revisions of this entry were wrong and the corrections are worth
 keeping.** One said 30 / 19 / 9 / eight, from a reconciliation run against two
 of the six headers it named. The other — this branch's, before this merge — said
-**35 missing and 10 stale**, counting nine `texrep` rows as describing options
+**35 missing and 10 stale**, counting the `texrep` rows as describing options
 that did not exist, on the grounds that the HD texture pack branch was unmerged.
-**It is merged now**, in both this repo and the fork, so those nine rows are
-accurate and only the `emissive.intensity` rename remains. The seven that
-"predate this work and were already absent" are documented too; `RtxOptions.md`
-was regenerated on 2026-08-05 and picked them up.
+**It is merged now**, in both this repo and the fork, so those rows are accurate
+and only the `emissive.intensity` rename remains. That revision also called them
+**nine**; the file carries **eight** — `rtx.dusklight.texrep.enable`,
+`rtx.dusklight.texrep.applyToRaster`, `rtx.dusklight.texrep.forceFullMips`,
+`rtx.dusklight.texrep.report`, `rtx.dusklight.env.texrepEnabled`,
+`rtx.dusklight.env.texrepEntries`, `rtx.dusklight.env.texrepCreated` and
+`rtx.dusklight.env.texrepSkipped` — which is what `Fixed-Function-dev`'s side of
+this conflict said, and it was right. The seven that "predate this work and were
+already absent" are documented too; `RtxOptions.md` was regenerated on
+2026-08-05 and picked them up.
 
 One thing in the file *is* still wrong and cannot be fixed by hand: its line 15
 carries a caveat saying the `texrep` rows came from a build with an unmerged
