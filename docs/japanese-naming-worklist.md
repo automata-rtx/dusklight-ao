@@ -39,10 +39,13 @@ Tags: **[DOC ONLY]** no code changes · **[SAFE]** contained change, no protocol
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 7 on `Fixed-Function-dev` and 11 on the effect-lights branch.** Any
-prompt tagged [PROTOCOL] must check the other live `claude/*` branches before taking a
-number. Two branches claiming one number is a trap this project has already hit, and the
-merge conflict resolves *cleanly* into a wrong answer.
+**Protocol is at 11.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
+branch until those merged on 2026-08-11; 11 is the merged number. Any prompt tagged
+[PROTOCOL] must check the other live `claude/*` branches before taking a number. Two
+branches claiming one number is a trap this project has already hit, and the merge
+conflict resolves *cleanly* into a wrong answer — **it hit again here**: the effect
+lights and the HD texture pack readouts both landed at 7, independently, so a build
+reporting 7 may carry either or both. `DusklightOverlay.md`'s protocol ladder says so.
 
 ---
 
@@ -65,12 +68,11 @@ the table below instead of working top to bottom.
 | **P0** | Merging effect-lights is what actually gets light creation into Remix. |
 | **P19** | The largest piece of game data we drop — and cheaper than it looked (see below). Instrument first. |
 | **P12** | The densest particle field in the game is unbatched. **Measure before changing anything.** |
-| **P16** | One hardcoded line stands between a pack author and knowing which texture a file is. |
 | **P8** | Turns on per-draw material identity, which is the door to name-keyed art assets. |
 
 ### FIX IN PASSING — do not schedule
 
-Everything else: **P1, P2 (step 1), P3, P5, P6, P7, P9, P10, P13, P14, P15, P18.**
+Everything else: **P1, P2 (step 1), P3, P5, P6, P7, P9, P10, P13, P14, P15, P16, P18.**
 
 These are wrong sentences in documents. A wrong sentence only bites when someone reads it,
 and they read it when they are already in that file. Correct them opportunistically, when
@@ -1138,11 +1140,35 @@ DONE MEANS: the six comments and the two docs are correct; the overlay reaches a
 slots; invariants and CI green.
 ```
 
-## P16 · Turn on the texture dump that already exists — [SAFE, one line]
+## P16 · Turn on the texture dump that already exists — [FIX IN PASSING, one line]
 
-**Rewritten after verification.** An earlier draft of this item asked for a tool to join
-pack filenames to game texture names. That was refused on review, correctly: **aurora
-already writes exactly that**, and it is off because of one hardcoded line.
+**Demoted to fix-in-passing 2026-08-11, by the owner, on a fact no audit had.** The
+capability this item unlocks **is already available outside the game**, twice over:
+
+- **A GameCube emulator dumping from the same ISO produces the filenames this path
+  expects — VERIFIED 2026-08-11 by the owner**, who ran it and confirmed the output was
+  exactly as expected. Aurora's `format_replacement_filename` emits Dolphin's convention
+  on purpose (`aurora-ao/docs/dx9/texture-replacements.md` opens by saying
+  "Dolphin-format replacement packs"; pack compatibility is why the format was chosen).
+  So the emulator's own dump, with its browser and preview tooling, already answers
+  "which texture is this" for a pack author.
+- **Remix scene captures already pull every texture present at the moment of capture** —
+  under Remix's hash naming rather than the pack key, so they identify the *image* but not
+  the pack filename.
+
+That leaves the in-engine dump a convenience duplicate of a mature external tool. It is
+still correct, still one line, and still worth flipping — but **it does not earn a
+scheduled session.** Do it when a session is already editing `settings.{h,cpp}` or
+`m_Do_main.cpp`.
+
+**The one thing that would revive it:** a texture the emulator route does not cover. The
+in-engine dump is keyed the way the runtime keys by construction, so it would settle any
+such case. None has been found.
+
+**Earlier correction, kept because it is the audit's best example of verification paying
+off.** The first draft of this item asked for a tool to join pack filenames to game
+texture names. That was refused on review, correctly: **aurora already writes exactly
+that**, and it is off because of one hardcoded line.
 
 ```
 THE SITUATION, verified.
@@ -1411,7 +1437,7 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 | **Before merging any branch** | **P17** (material channel collision) | no |
 | First — pure documentation, cannot regress anything | P1, P3, P5, P13, P15, P18 | no |
 | Then — small guarded changes | P4, P2 step 1, P14 | no |
-| Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10, P16 | no |
+| Then — the strategic reads | P8 (material identity), P9 (tuning panel), P10 | no |
 | Then — retained game data | P19 (room lights, off by default), P20 (ambient layers) | yes, one window |
 | Measure, then act | P12 (Twilight fog draw count) | one log, then a change |
 | Together in one window | P6, P7 | yes, one window |

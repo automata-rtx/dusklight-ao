@@ -565,7 +565,19 @@ Consequence for the overlay: its four time presets reach only **four of the game
 palette slots**, and the game ships the two missing numbers. Every per-slot colour, fog
 and sky comparison made through that overlay has been made against four of six.
 
-### 4.17 A pack author cannot identify a texture — **and the fix is one hardcoded line** [P16]
+### 4.17 A pack author cannot identify a texture — **and mostly, they already can** [P16, demoted]
+
+> **Superseded 2026-08-11 by the owner, on a fact no audit pass had.** The premise below —
+> that a pack author has no way to see which texture a filename refers to — **is wrong
+> outside the game.** A GameCube emulator dumping from the same ISO writes the filenames
+> this path expects, because aurora's format *is* Dolphin's format by design
+> (`aurora-ao/docs/dx9/texture-replacements.md` line 7, "Dolphin-format replacement
+> packs"). **The owner ran it and confirmed the output was exactly as expected — tested,
+> not deduced.** Remix scene captures also already pull every texture present at capture
+> time, though under Remix's hash rather than the pack key. The in-engine dump is
+> therefore a convenience duplicate of a working external tool, not an unblocker. **Moved
+> to fix in passing.** Everything below remains factually verified; only its priority
+> changed.
 
 The HD-pack feature is content-keyed end to end and the naming lens finds **nothing wrong
 with it**. But the stated end state is that most remastering work becomes *creating art
@@ -836,13 +848,17 @@ recorded where it applies rather than quietly fixed. Two of them corrected *me*:
 §6. One collapsed a whole work item — P16 — from a session of tool-building to a
 one-line settings change.
 
+**And one was collapsed further by the owner, after all of that** — P16 again, to fix in
+passing, on the fact that an emulator reading the same ISO already dumps the identical
+filenames (§4.17). Worth recording as the limit of this method: twelve audits and twelve
+verifiers all reasoned correctly *inside the three repos* and still over-valued the item,
+because the thing that made it unnecessary was a tool outside them. **A finding that
+survives verification has been checked for being wrong, not for being redundant.**
+
 **What remains outstanding:**
 
-- **The completeness critic had not returned** — the pass whose job is to say what the
-  twelve areas collectively missed, and which surviving findings are still not worth
-  acting on. Until it lands, treat §5 as the best available answer to the second question
-  rather than a complete one.
-- **Nothing here has been tested in game.** Every proposal is a reading.
+- **Nothing here has been tested in game.** Every proposal is a reading. The completeness
+  critic has since returned; its verdict is §4b, and its triage governs the worklist.
 
 The findings carry file:line citations precisely so each prompt can re-verify before
 acting — which is why every prompt in the worklist opens by asking the session to

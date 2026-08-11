@@ -13,6 +13,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "dolphin/pad.h"
 #include "d/d_com_inf_game.h"
+#include "f_op/f_op_camera_mng.h"
 #include "dusk/map_loader_definitions.h"
 #include "dusk/action_bindings.h"
 
@@ -58,6 +59,12 @@ bool s_celestialFlip = false;
 bool s_celestialLock = false;
 
 LocalLightsDebug s_localDebug = {};
+EffectLightsDebug s_effectDebug = {};
+
+// The draw count from the frame just completed. The report is emitted from inside collect(),
+// which runs before this frame's draw loop, so this frame's counter is still zero at that
+// point - the counters chain used to end "-> drawn 0" no matter what had been drawn.
+uint64_t s_effectDrawnLastFrame = 0;
 
 // Set by the horse on each frame it dashes, read and cleared when pushed. Declared with
 // the other debug state above the support guard, not with the Remix plumbing below it:
@@ -330,7 +337,11 @@ void* s_registeredDevice = nullptr;
 // Set when the D3D9 device is replaced (aurora recreates it on resize). Every
 // light handle belongs to the old device's scene, so they must be re-created
 // rather than destroyed - the object that owned them is already gone.
-bool s_lightsNeedRecreate = false;
+// One per consumer. These are cleared by whoever reads them, and there is more than one
+// reader: a single flag meant whichever light system ran first in tick() swallowed the
+// notification and the other kept handles bound to a device that no longer exists.
+bool s_lightsNeedRecreate = false;        // the local light mirror
+bool s_effectLightsNeedRecreate = false;  // the effect lights
 bool s_celestialLightExists = false;
 remixapi_LightHandle s_celestialHandle = nullptr;
 float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
@@ -365,6 +376,7 @@ bool ensureDeviceRegistered() {
         // against the new device.
         s_celestialLightExists = false;
         s_lightsNeedRecreate = true;
+        s_effectLightsNeedRecreate = true;
         BridgeLog.info("registered D3D9 device with the Remix API");
     }
 
@@ -857,6 +869,53 @@ bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float sc
     }
 
     return true;
+}
+
+// --- Effect lights -----------------------------------------------------------
+//
+// The replacement for the mirror above, and the reason it now defaults off. Instead of copying
+// the game's registered lights - which reproduces every faked placement the original shading
+// model got away with, because a GameCube point light casts no shadow and could sit anywhere -
+// this puts a sphere light at the origin of the effect that actually draws the fire, and takes
+// only the game's colour and reach from whatever light was authored nearby.
+//
+// The decision is dusk::effect_lights; this half only owns the Remix API calls. Design,
+// citations and the exclusion policy: docs/effect-lights.md.
+
+constexpr uint64_t kEffectLightHashBase = 0xE55C114E00000000ull;
+
+struct TrackedEffectLight {
+    uint32_t siteId;
+    remixapi_LightHandle handle;
+    float position[3];
+    float radiance[3];
+    float radius;
+    bool seen;
+};
+
+std::vector<TrackedEffectLight> s_effectLights;
+
+uint64_t effectLightHash(uint32_t siteId) {
+    return kEffectLightHashBase | static_cast<uint64_t>(siteId);
+}
+
+void destroyEffectLight(TrackedEffectLight& light) {
+    if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
+        s_interface.DestroyLight(light.handle);
+        s_effectDebug.destroys++;
+    }
+
+    light.handle = nullptr;
+}
+
+void releaseEffectLights() {
+    for (TrackedEffectLight& light : s_effectLights) {
+        destroyEffectLight(light);
+    }
+
+    s_effectLights.clear();
+    s_effectDebug.tracked = 0;
+    s_effectDebug.drawn = 0;
 }
 
 void destroyLocalLight(TrackedLocalLight& light) {
@@ -1439,6 +1498,259 @@ void updateLocalLights() {
     s_localDebug.tracked = static_cast<int>(s_localLights.size());
 }
 
+void updateEffectLights() {
+    s_effectDebug.enabled = false;
+    // Carries the completed frame's draw count across to the next frame's report. See the
+    // note at setBridgeCounters below for why the report cannot use this frame's.
+    s_effectDebug.drawn = 0;
+
+    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
+        s_interface.dxvk_RegisterD3D9Device == nullptr) {
+        return;
+    }
+
+    const auto& game = getSettings().game;
+
+    if (!dusk::IsGameLaunched ||
+        !readOptionBool("rtx.dusklight.game.effectLights", game.effectLights.getValue())) {
+        releaseEffectLights();
+        dusk::effect_lights::reset();
+        dusk::effect_lights::Params off;
+        off.enable = false;
+        dusk::effect_lights::collect(off);
+        s_effectDebug.stats = dusk::effect_lights::stats();
+        return;
+    }
+
+    if (!ensureDeviceRegistered()) {
+        return;
+    }
+
+    s_effectDebug.enabled = true;
+
+    if (s_effectLightsNeedRecreate) {
+        // Drop the handles without destroying them: they refer to a device that no longer
+        // exists, and its light manager went with it. The sites go too - holding them would
+        // carry a grace period across a discontinuity it was never meant to span.
+        s_effectLights.clear();
+        dusk::effect_lights::reset();
+        s_effectLightsNeedRecreate = false;
+    }
+
+    dusk::effect_lights::Params params;
+    params.enable = true;
+    params.intensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightIntensity",
+                        game.effectLightIntensity.getValue()), 0.0f);
+    params.massExponent = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightMassExponent",
+                        game.effectLightMassExponent.getValue()), 0.0f);
+    params.derivedIntensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedIntensity",
+                        game.effectLightDerivedIntensity.getValue()), 0.0f);
+    params.derivedReach = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedReach",
+                        game.effectLightDerivedReach.getValue()), 0.0f);
+    params.derivedRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightDerivedRadius",
+                        game.effectLightDerivedRadius.getValue()), 0.01f);
+    params.undeterminedIntensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedIntensity",
+                        game.effectLightUndeterminedIntensity.getValue()), 0.0f);
+    params.undeterminedReach = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedReach",
+                        game.effectLightUndeterminedReach.getValue()), 0.0f);
+    params.undeterminedRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightUndeterminedRadius",
+                        game.effectLightUndeterminedRadius.getValue()), 0.01f);
+    params.fireOffset = readOptionFloat("rtx.dusklight.game.effectLightFireOffset",
+                                        game.effectLightFireOffset.getValue());
+    params.glowOffset = readOptionFloat("rtx.dusklight.game.effectLightGlowOffset",
+                                        game.effectLightGlowOffset.getValue());
+    params.mergeRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightMergeRadius",
+                        game.effectLightMergeRadius.getValue()), 0.0f);
+    params.adoptRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightAdoptRadius",
+                        game.effectLightAdoptRadius.getValue()), 0.0f);
+    params.maxLights = readOptionInt("rtx.dusklight.game.effectLightMaxLights",
+                                     game.effectLightMaxLights.getValue());
+    params.maxDistance = readOptionFloat("rtx.dusklight.game.effectLightMaxDistance",
+                                         game.effectLightMaxDistance.getValue());
+    params.bursts = readOptionBool("rtx.dusklight.game.effectLightBursts",
+                                   game.effectLightBursts.getValue());
+    params.minChroma = readOptionFloat("rtx.dusklight.game.effectLightMinChroma",
+                                       game.effectLightMinChroma.getValue());
+    params.minLuma = readOptionFloat("rtx.dusklight.game.effectLightMinLuma",
+                                     game.effectLightMinLuma.getValue());
+
+    // Not part of the decision, so it never reaches effect_lights: it is a per light multiplier
+    // Remix applies in the volumetrics passes only, so above 1 a flame hazes the air around it
+    // without getting any brighter on surfaces.
+    const float volumetric = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightVolumetric",
+                        game.effectLightVolumetric.getValue()), 0.0f);
+
+    const camera_class* camera = dComIfGp_getCamera(0);
+    if (camera != nullptr) {
+        params.cameraPos[0] = camera->view.lookat.eye.x;
+        params.cameraPos[1] = camera->view.lookat.eye.y;
+        params.cameraPos[2] = camera->view.lookat.eye.z;
+        params.cameraValid = isFinite3(params.cameraPos);
+    }
+
+    // The report is an action, so act on the counter changing and latch the first value seen
+    // without acting - otherwise connecting to a Remix that outlived a game restart dumps a
+    // report nobody asked for. Same shape as the warp and clock commits.
+    {
+        static int s_reportCommit = 0;
+        static bool s_reportLatched = false;
+        const int commit = readOptionInt("rtx.dusklight.game.effectLightReportCommit", 0);
+        if (!s_reportLatched) {
+            s_reportCommit = commit;
+            s_reportLatched = true;
+        } else if (commit != s_reportCommit) {
+            s_reportCommit = commit;
+            dusk::effect_lights::requestReport();
+        }
+    }
+
+    // Hand over the counters this side owns, so one report can answer cost questions too.
+    // These have been counted since the system landed and printed nowhere - `creates` in
+    // particular is the number that says whether an animating light is expensive, because the
+    // bridge re-creates a light every time its radiance moves more than 2%.
+    //
+    // `drawn` is handed over from the PREVIOUS frame, deliberately. This frame's value is
+    // zeroed at the top of this function and not incremented until the draw loop below, which
+    // runs after collect() has already emitted any report - so passing this frame's counter
+    // made the last link of the counters chain read 0 unconditionally, whatever had been
+    // drawn. A one-frame-old true number beats a fresh number that is always zero; the report
+    // labels it as such.
+    dusk::effect_lights::setBridgeCounters(s_effectDebug.creates, s_effectDebug.destroys,
+                                           s_effectDrawnLastFrame);
+
+    const std::vector<dusk::effect_lights::Site>& sites = dusk::effect_lights::collect(params);
+    s_effectDebug.stats = dusk::effect_lights::stats();
+
+    for (TrackedEffectLight& tracked : s_effectLights) {
+        tracked.seen = false;
+    }
+
+    for (const dusk::effect_lights::Site& site : sites) {
+        if (!isFinite3(site.position) || !isFinite3(site.radiance)) {
+            continue;
+        }
+
+        const uint64_t hash = effectLightHash(site.id);
+
+        TrackedEffectLight* tracked = nullptr;
+        for (TrackedEffectLight& candidate : s_effectLights) {
+            if (candidate.siteId == site.id) {
+                tracked = &candidate;
+                break;
+            }
+        }
+
+        if (tracked == nullptr) {
+            s_effectLights.push_back(TrackedEffectLight {site.id, nullptr, {}, {}, 0.0f, false});
+            tracked = &s_effectLights.back();
+        }
+
+        tracked->seen = true;
+
+        // Re-create on a real change but not on float noise. Each re-create crosses the API lock
+        // and re-enters the light manager, so this is worth doing on cost alone.
+        //
+        // It used to be worth much more than that: re-creating a light reset its entry in Remix's
+        // light manager and with it its place in the RTXDI index map, costing one frame of
+        // temporal reuse for every pixel the light touched - so a fire whose radiance was re-sent
+        // every tick never accumulated any and was visibly noisier than a static one. Our fork
+        // fixes that at the source: LightManager::addExternalLight carries the buffer index across
+        // the overwrite (rtx_light_manager.cpp), the way the game-light path already did. Against
+        // a STOCK Remix runtime the old cost is back, and this epsilon is the only thing between
+        // an animating flame and permanent temporal noise.
+        //
+        // The radiance test is RELATIVE, unlike the local light mirror's. Radiance here is solved
+        // from a reach and a radius and routinely lands in the hundreds, so a fixed 0.01 would
+        // trip on the colour animation of every flame, every frame.
+        constexpr float kPositionEpsilon = 0.5f;   // world units
+        // static, because std::max binds its arguments by const reference and MSVC will not
+        // let a capture-less lambda odr-use a function-local constexpr.
+        static constexpr float kRadianceRelative = 0.02f; // 2 percent
+        static constexpr float kRadianceFloor = 0.01f;
+
+        const auto radianceChanged = [](float now, float before) {
+            const float scale = std::max(std::fabs(now), std::fabs(before));
+            return std::fabs(now - before) > std::max(kRadianceFloor, scale * kRadianceRelative);
+        };
+
+        const bool changed =
+            tracked->handle == nullptr ||
+            std::fabs(site.position[0] - tracked->position[0]) > kPositionEpsilon ||
+            std::fabs(site.position[1] - tracked->position[1]) > kPositionEpsilon ||
+            std::fabs(site.position[2] - tracked->position[2]) > kPositionEpsilon ||
+            radianceChanged(site.radiance[0], tracked->radiance[0]) ||
+            radianceChanged(site.radiance[1], tracked->radiance[1]) ||
+            radianceChanged(site.radiance[2], tracked->radiance[2]) ||
+            std::fabs(site.radius - tracked->radius) > 0.001f;
+
+        if (changed) {
+            remixapi_LightInfoSphereEXT sphere = {};
+            sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+            sphere.position = {site.position[0], site.position[1], site.position[2]};
+            sphere.radius = site.radius;
+            sphere.shaping_hasvalue = 0;
+            sphere.volumetricRadianceScale = volumetric;
+
+            remixapi_LightInfo info = {};
+            info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+            info.pNext = &sphere;
+            info.hash = hash;
+            info.radiance = {site.radiance[0], site.radiance[1], site.radiance[2]};
+
+            remixapi_LightHandle handle = nullptr;
+            if (s_interface.CreateLight(&info, &handle) != REMIXAPI_ERROR_CODE_SUCCESS) {
+                tracked->handle = nullptr;
+                continue;
+            }
+
+            // No DestroyLight here, even though this is an update rather than a first create.
+            // The handle Remix returns is the hash itself (rtx_remix_api.cpp: the handle is a
+            // reinterpret_cast of info.hash), and our hash is stable per site - so the "old"
+            // handle and the new one are the same value, and destroying it would erase the light
+            // that was just written. The failure that causes is nasty and invisible in the
+            // counters: DrawLightInstance still returns success, so "drawn" keeps incrementing
+            // while the light is gone for every frame in which it changed.
+            tracked->handle = handle;
+            for (int i = 0; i < 3; i++) {
+                tracked->position[i] = site.position[i];
+                tracked->radiance[i] = site.radiance[i];
+            }
+            tracked->radius = site.radius;
+            s_effectDebug.creates++;
+        }
+
+        if (s_interface.DrawLightInstance(tracked->handle) == REMIXAPI_ERROR_CODE_SUCCESS) {
+            s_effectDebug.drawn++;
+        }
+    }
+
+    // Sites that ended. Remix keeps an entry per created handle until it is destroyed, so
+    // dropping them here is what stops the light manager's map growing for the whole session
+    // as rooms load and unload.
+    for (size_t i = s_effectLights.size(); i-- > 0;) {
+        if (!s_effectLights[i].seen) {
+            destroyEffectLight(s_effectLights[i]);
+            s_effectLights.erase(
+                s_effectLights.begin() +
+                static_cast<std::vector<TrackedEffectLight>::difference_type>(i));
+        }
+    }
+
+    s_effectDebug.tracked = static_cast<int>(s_effectLights.size());
+    s_effectDrawnLastFrame = s_effectDebug.drawn;
+}
+
 // The bridge's diff cache assumed nothing else ever touched rtx.dusklight.env.*.
 // That is wrong: those options are NoSave, so anything that rebuilds Remix's user
 // layer - saving settings from its UI, a config reload - drops them back to their
@@ -1488,7 +1800,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "7");
+    push("rtx.dusklight.env.protocol", "11");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -1505,6 +1817,7 @@ void pushKankyoState() {
     s_horseDashing = false;
     push("rtx.dusklight.env.dash", formatBool(dashing));
     push("rtx.dusklight.env.camInWater", formatBool(dKy_camera_water_in_status_check() != 0));
+
 
     push("rtx.dusklight.env.bloomEnable", formatBool(bloom->getEnable() != 0));
     push("rtx.dusklight.env.bloomThreshold", formatFloat(bloom->getPoint() / 255.0f));
@@ -1604,6 +1917,34 @@ void pushLightStatus() {
     push("rtx.dusklight.env.localLightsDrawn", buffer);
     std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
     push("rtx.dusklight.env.localLightsTracked", buffer);
+
+    // Effect lights. Every one of these exists because the alternative was asking the owner to
+    // describe what they saw; docs/effect-lights.md section 7 says which question each answers.
+    // In particular "orphans" is what decides whether refusing to forward a vanilla light that
+    // no effect corroborates is the right default - it counts exactly the lights that policy
+    // is throwing away.
+    push("rtx.dusklight.env.effLightsRunning", formatBool(s_effectDebug.enabled));
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.emitters);
+    push("rtx.dusklight.env.effLightsEmitters", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.considered);
+    push("rtx.dusklight.env.effLightsConsidered", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.candidates);
+    push("rtx.dusklight.env.effLightsCandidates", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.sites);
+    push("rtx.dusklight.env.effLightsSites", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.drawn);
+    push("rtx.dusklight.env.effLightsDrawn", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.derived);
+    push("rtx.dusklight.env.effLightsDerived", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.orphans);
+    push("rtx.dusklight.env.effLightsOrphans", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.culled);
+    push("rtx.dusklight.env.effLightsCulled", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_effectDebug.stats.excluded);
+    push("rtx.dusklight.env.effLightsExcluded", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d/%d", s_effectDebug.stats.vanillaPoint,
+                  s_effectDebug.stats.vanillaSpot);
+    push("rtx.dusklight.env.effLightsVanilla", buffer);
 }
 #endif  // DUSK_REMIX_BRIDGE_SUPPORTED
 
@@ -1715,6 +2056,16 @@ void tick() {
             game.remixBlobShadows.setValue(blobShadows);
         }
 
+        // Keep Link's lantern fuelled. A gameplay change rather than a rendering one, and it
+        // lives here for the same reason the rest do: the game's own menus are never drawn in
+        // this mode, so the overlay is the only place a setting can be reached while running.
+        // Consumed in daAlink_c::setLight.
+        const bool lanternOil = readOptionBool("rtx.dusklight.game.lanternInfiniteOil",
+                                               game.remixLanternInfiniteOil.getValue());
+        if (lanternOil != game.remixLanternInfiniteOil.getValue()) {
+            game.remixLanternInfiniteOil.setValue(lanternOil);
+        }
+
         // Grass: one draw per blade instead of one batch per room. Costs draw calls, and buys
         // Remix a stable hash for each blade - see dGrass_packet_c::draw.
         const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",
@@ -1785,6 +2136,7 @@ void tick() {
     pushKankyoState();
     updateCelestialLight();
     updateLocalLights();
+    updateEffectLights();
     updateWarp();
     updateControls();
     pushLightStatus();
@@ -1809,6 +2161,10 @@ bool& celestialFlipDirection() {
 
 bool& celestialLockDirection() {
     return s_celestialLock;
+}
+
+const EffectLightsDebug& effectLightsDebug() {
+    return s_effectDebug;
 }
 
 const LocalLightsDebug& localLightsDebug() {

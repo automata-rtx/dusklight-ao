@@ -74,6 +74,28 @@ UserSettings g_userSettings = {
         .remixLocalLights {"game.remixLocalLights", false},
         .remixLocalLightIntensity {"game.remixLocalLightIntensity", 19.0f},
         .remixLocalLightRadius {"game.remixLocalLightRadius", 10.0f},
+        // Effect lights. Every default below except the two inherited from the local light
+        // mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
+        // docs/effect-lights.md section 10 says so plainly.
+        .effectLights {"game.effectLights", true},
+        .effectLightIntensity {"game.effectLightIntensity", 1.0f},
+        .effectLightMassExponent {"game.effectLightMassExponent", 0.5f},
+        .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
+        .effectLightDerivedReach {"game.effectLightDerivedReach", 1.0f},
+        .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
+        .effectLightUndeterminedIntensity {"game.effectLightUndeterminedIntensity", 1.0f},
+        .effectLightUndeterminedReach {"game.effectLightUndeterminedReach", 400.0f},
+        .effectLightUndeterminedRadius {"game.effectLightUndeterminedRadius", 8.0f},
+        .effectLightFireOffset {"game.effectLightFireOffset", 15.0f},
+        .effectLightGlowOffset {"game.effectLightGlowOffset", 0.0f},
+        .effectLightMergeRadius {"game.effectLightMergeRadius", 60.0f},
+        .effectLightAdoptRadius {"game.effectLightAdoptRadius", 250.0f},
+        .effectLightMaxLights {"game.effectLightMaxLights", 32},
+        .effectLightMaxDistance {"game.effectLightMaxDistance", 12000.0f},
+        .effectLightBursts {"game.effectLightBursts", false},
+        .effectLightMinChroma {"game.effectLightMinChroma", 0.50f},
+        .effectLightMinLuma {"game.effectLightMinLuma", 0.70f},
+        .effectLightVolumetric {"game.effectLightVolumetric", 1.0f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
@@ -85,6 +107,7 @@ UserSettings g_userSettings = {
         // every other backend, where a camera-relative effect composites correctly.
         .remixHideDashEffect {"game.remixHideDashEffect", false},
         .remixBlobShadows {"game.remixBlobShadows", true},
+        .remixLanternInfiniteOil {"game.remixLanternInfiniteOil", false},
         .freezeTime {"game.freezeTime", false},
         // Where the clock would go if asked; timeCommit is what asks. Splitting the two means a
         // value sitting in a config file is inert, and that requesting the same time twice works
@@ -307,6 +330,25 @@ void registerSettings() {
     Register(g_userSettings.game.remixLocalLights);
     Register(g_userSettings.game.remixLocalLightIntensity);
     Register(g_userSettings.game.remixLocalLightRadius);
+    Register(g_userSettings.game.effectLights);
+    Register(g_userSettings.game.effectLightIntensity);
+    Register(g_userSettings.game.effectLightMassExponent);
+    Register(g_userSettings.game.effectLightDerivedIntensity);
+    Register(g_userSettings.game.effectLightDerivedReach);
+    Register(g_userSettings.game.effectLightDerivedRadius);
+    Register(g_userSettings.game.effectLightUndeterminedIntensity);
+    Register(g_userSettings.game.effectLightUndeterminedReach);
+    Register(g_userSettings.game.effectLightUndeterminedRadius);
+    Register(g_userSettings.game.effectLightFireOffset);
+    Register(g_userSettings.game.effectLightGlowOffset);
+    Register(g_userSettings.game.effectLightMergeRadius);
+    Register(g_userSettings.game.effectLightAdoptRadius);
+    Register(g_userSettings.game.effectLightMaxLights);
+    Register(g_userSettings.game.effectLightMaxDistance);
+    Register(g_userSettings.game.effectLightBursts);
+    Register(g_userSettings.game.effectLightMinChroma);
+    Register(g_userSettings.game.effectLightMinLuma);
+    Register(g_userSettings.game.effectLightVolumetric);
     Register(g_userSettings.game.disableFrustumCulling);
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
@@ -315,6 +357,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixTextureReplacements);
     Register(g_userSettings.game.remixHideDashEffect);
     Register(g_userSettings.game.remixBlobShadows);
+    Register(g_userSettings.game.remixLanternInfiniteOil);
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
     Register(g_userSettings.game.timeCommit);

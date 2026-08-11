@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "dusk/effect_lights.hpp"
+
 // Pushes the game's environment (kankyo) state into RTX Remix through the Remix API, so the
 // path tracer's Dusklight features track time of day, weather and area palettes. Design and
 // rationale: docs/kankyo-remix.md.
@@ -82,6 +84,20 @@ struct LocalLightsDebug {
 };
 
 const LocalLightsDebug& localLightsDebug();
+
+// State of the effect light system: sphere lights placed at the origin of the game's own fire
+// and glow effects rather than at the positions of the game's registered lights. This is what
+// replaced the mirror above; see docs/effect-lights.md.
+struct EffectLightsDebug {
+    bool enabled;
+    int tracked;         // sites with a live Remix handle
+    int drawn;           // drawn into the scene this frame
+    uint64_t creates;    // cumulative CreateLight calls
+    uint64_t destroys;   // cumulative DestroyLight calls
+    effect_lights::Stats stats;  // the decision side's own counters
+};
+
+const EffectLightsDebug& effectLightsDebug();
 
 // Session-only debug toggle: negates the pushed light direction, for quickly
 // diagnosing a handedness mismatch between game and Remix world space.

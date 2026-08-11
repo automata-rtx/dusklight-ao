@@ -1,6 +1,13 @@
 name: Build
 
 on:
+  # Manual trigger. GitHub occasionally drops push events entirely during an
+  # Actions backlog rather than merely delaying them - on 2026-08-06 three
+  # consecutive pushes to a claude/** branch produced no run at all, hours
+  # apart, while other repos in the org were scheduling normally. Without a
+  # dispatch there is no way to recover from that except pushing again and
+  # hoping, and the artifact this workflow produces is how the game gets tested.
+  workflow_dispatch:
   push:
     paths-ignore:
       - '*.md'

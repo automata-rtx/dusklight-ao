@@ -25,6 +25,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 | Run a test session | [`remix-test-playbook.md`](remix-test-playbook.md) |
 | Check whether something was already investigated (last resort — unmaintained archive) | [`remix-history.md`](remix-history.md) |
 | Understand the fog specifically | [`kankyo-fog.md`](kankyo-fog.md) (game side) + `dxvk-remix/documentation/DusklightAtmosphere.md` (renderer) |
+| Understand where fire and glow get their lights | [`effect-lights.md`](effect-lights.md) |
 | Set the game up under Remix | [`dx9-fixed-function.md`](dx9-fixed-function.md) |
 | Understand why a material's colour went wrong | `extern/aurora/docs/dx9/remix-material-interface.md` |
 | Read a log | `extern/aurora/docs/dx9/material-report.md` |
@@ -40,7 +41,7 @@ on branch rules** — this file deliberately does not restate them.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **7**; skew in either direction has cost an
+   commit point. Protocol is at **11**; skew in either direction has cost an
    evening twice. The Dusklight tab reports which side is old — read it before
    debugging anything else.
 2. **Interactive approval prompts do not work in the owner's environment.**
@@ -611,12 +612,21 @@ bullet says so.
   only one sky. Tested good 2026-07-28. Probing the vrbox raster draws was
   dropped rather than investigated to a conclusion: a generated dome is exact
   and is a light source, which a captured LDR probe is not.
-- **Local point lights** (implemented — see
-  [`remix-open-issues.md`](remix-open-issues.md)). The design
-  originally scoped this to the dungeon lights; the right list turned out
-  to be `g_env_light.pointlight[100]`, which the dungeon lights register
-  into along with every torch, brazier, lantern, campfire, Midna glow and
-  bomb flash in the game (`dKy_plight_set`).
+- **Effect lights** — a sphere light at the **origin of the effect that draws
+  the fire**, rather than at the position of any light the game registered.
+  This is what lights interiors and night, and it is the only fine-grained
+  light source indoors: the sun/moon is gated off there, and Remix has no dome
+  light type so a sky is never NEE-sampled at all. Design, and the reasons the
+  anchor is the JPA emitter rather than the actor or the particle:
+  [`effect-lights.md`](effect-lights.md). **Tested in game 2026-08-07.**
+- **Local point lights** — the *previous* system, now off by default and kept
+  only as the comparison path. It mirrored `g_env_light.pointlight[100]`
+  (`dKy_plight_set`) — every torch, brazier, lantern, campfire, Midna glow and
+  bomb flash — at the position the game put the light. That works under a
+  rasterizer, where a point light casts no shadow and can sit anywhere the
+  shading looks best, and reads as wrong under a path tracer, which casts a
+  real shadow from the exact point the light occupies. Do not run both: every
+  fire gets two lights, one of them in the old place.
 
 ---
 

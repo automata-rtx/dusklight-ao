@@ -36,6 +36,7 @@ what it needs:
 | `docs/remix-open-issues.md` | what is broken, what is untested | every session |
 | `docs/remix-test-playbook.md` | how to run a test session | a test is added |
 | `docs/remix-history.md` | **unmaintained archive.** Last resort only — stale status, superseded plans, one wrong diagnosis | never |
+| `docs/effect-lights.md` | the effect-light system: how fire and glow get real lights in the path tracer, and why the placement no longer comes from the game's own light registry | the design changes |
 | `docs/kankyo-fog.md` | fog, game side | rarely |
 | `docs/dx9-fixed-function.md` | how to set the game up under Remix, and the `rtx.conf` | settings change |
 | `docs/sun-elevation.md` | the sun/moon orbit | rarely |
@@ -240,7 +241,7 @@ implying it was tested.
 
 **The game and the Remix DLL are a single protocol.** The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol` in
-`showDusklightRemixTab`. **Protocol is at 7.** Build both sides from the same
+`showDusklightRemixTab`. **Protocol is at 11.** Build both sides from the same
 commit point, and when you bump one, bump the other in the same commit. Skew in
 either direction has already cost an evening twice — the Dusklight tab reports
 which side is old, so read it before debugging anything else.
@@ -339,6 +340,19 @@ recall does not surface.
   artifact. Keep CI green on the dev branch. Dusklight's workflow has path
   filters, so a docs-only commit correctly produces no run — that is not a
   failure.
+- **Two CI states that look like failures and are not.** Both cost time on
+  2026-08-06 and neither is a code problem:
+  - **A *cancelled* job makes the whole run read "failure".** The scarce
+    runner is **Windows MSVC arm64**: on 2026-08-06 it sat 15 minutes with no
+    runner assigned, executed **zero steps**, and was killed — while every
+    other config, x86_64 included, passed and uploaded its artifact. Before
+    treating a red run as broken code, list its jobs: `conclusion: cancelled`
+    with an empty `runner_name` and no steps is capacity, not a compile error,
+    and the x86_64 artifact from that same run is real and testable.
+  - **GitHub sometimes drops push events entirely.** Three consecutive pushes
+    touching `src/` produced *no run at all*, hours apart, while the fork
+    scheduled normally. That is why `build.yml` now has `workflow_dispatch` —
+    when it happens again, dispatch a run rather than pushing again and hoping.
 - The game's own UI is **never drawn** in the fixed-function D3D9 mode. Any
   setting that needs to be reachable while running has to be hosted in the
   Remix overlay (`rtx.dusklight.game.*`) — see `documentation/DusklightOverlay.md`
@@ -354,3 +368,19 @@ recall does not surface.
 - Verify D3D9 code with the MinGW syntax harness described in
   `extern/aurora/docs/dx9/progress.md` §"How to resume"; full builds happen on
   the owner's Windows machine and in CI.
+- **Verify Remix-facing game code with `tools/syntax-check-remix.sh`** before
+  pushing. It cross-compiles `remix_bridge.cpp`, `effect_lights.cpp` and
+  `d_particle.cpp` with MinGW. **A native Linux `g++` is worse than useless
+  here:** the bridge is inside `#if defined(_WIN32)`, so Linux preprocesses the
+  entire thing away and then reports success. On 2026-08-06 four compile errors
+  reached CI that way. Needs `g++-mingw-w64-x86-64` and `libfmt-dev`.
+  It also runs `tools/check-remix-protocol.py`, which cross-checks every
+  `rtx.dusklight.*` name the game reads or pushes against the fork's
+  `RTX_OPTION` declarations. **No compiler can see that class of mistake** — a
+  mistyped name silently falls back to `config.json` forever, and a readout
+  nothing pushes silently reads as its default.
+  It also checks **the protocol number**: that the game's push matches the
+  fork's `kRequiredProtocol`, and that every doc across both repos stating the
+  *current* number agrees with it (statements like "landed at protocol 5" are
+  history and are left alone). Two docs had drifted to 6 while the wire was at
+  7, which is exactly how someone ends up debugging a skew that is not there.
