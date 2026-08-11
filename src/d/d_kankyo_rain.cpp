@@ -5994,8 +5994,167 @@ void dKyr_mud_move() {
     }
 }
 
+#if TARGET_PC
+// Included here rather than beside "dusk/frame_interpolation.h" at the top of the file on
+// purpose: another in-flight branch adds a counter of the same shape and needs the same
+// header, and putting both includes in the same four lines turns a clean union merge into a
+// conflict. The header is #pragma once, so a duplicate costs nothing.
+#include "dusk/logging.h"
+
+// Dusk: how many quads the three still-unbatched kankyo particle systems actually put on
+// screen, per game tick - see the unit caveat below before reading the number as per-frame.
+//
+// The 2026-08-07 sweep hoisted GXBegin/GXEnd out of the per-quad loops in dKyr_drawRain,
+// dKyr_drawSnow, dKyr_drawSibuki and dKyr_odour_draw, because aurora submits each GXBegin
+// block as its own D3D9 draw and Remix charges per draw rather than per pixel. Three loops
+// were deliberately left emitting one GXBegin per quad, and they are the three counted
+// here:
+//
+//   dKyr_evil_draw   the Palace of Twilight fog - kytag12 is what creates and sizes it
+//   dKyr_evil_draw2  the second, counter-rotating layer of the same fog; this is the one
+//                    that names D_MN08 outright, culling i >= 1600 in its room 1
+//   dKyr_mud_draw    the mud/haze ground layer; D_MN05A (Diababa's arena) gets its own
+//                    colour path, but kytag00's effect type 15 (wether_tag_efect_move in
+//                    d_a_kytag00.cpp) can enable it anywhere, up to 100 effects
+//
+// "evil" and "mud" are English words, not romanized Japanese, so do not gloss them with a
+// kanji reading - nothing in this tree connects either symbol to one, and inventing one is
+// the failure docs/japanese-naming.md exists to stop. What IS established: dKyr_mud_init and
+// dKyr_evil_init both take dComIfG_getObjectRes("Always", 0x53), so the two systems draw the
+// same texture. The member that holds it is called mpMoyaRes (靄 moya, mist/haze), but a
+// struct member name is reconstructed rather than authored - a hypothesis, not evidence.
+// The naming lens says as much by ruling a reading out as by supplying one.
+//
+// Whether they cost anything is a MEASUREMENT, and nobody has taken it. The array bound is
+// 2000 evil effects, but the trip count is g_env_light.field_0x1054, which daKytag12_Execute
+// sets per room (2000 in rooms 0 and 1, 1000 in 11/0x33/0x34, 500 otherwise), and every
+// particle must still clear mStatus, a field_0x38 > 9000 reject, a screen-space reject and a
+// near-zero alpha reject before it draws. So the bound says nothing about the cost, and
+// reading the cost off aurora's dx9.draws cannot work either: that is a TOTAL for the whole
+// frame, so a high number while standing in the Palace of Twilight cannot tell the fog apart
+// from the room around it. Answering it from that line would mean asking whoever is playing
+// to judge the difference - which is the project's rule 2 exactly, a question we would have
+// to ask is a defect in the logging. So count the three directly instead. They play, they
+// send a log, we know.
+//
+// Same period of 600 as dx9.draws and vrkumo.draws on purpose, so the lines land near each
+// other and read side by side. Bounded and self-describing: one line per period,
+// nothing per draw, and silent whenever none of the three is drawing - which is almost the
+// whole game, because the packets these run from are only allocated while their area is
+// loaded (wether_move_evil / wether_move_mud in d_kankyo_wether.cpp). Nothing here can
+// overflow: at most 2000 + 1000 + 100 quads a pass, a few passes a frame, over 600 frames,
+// is orders of magnitude under 2^32.
+//
+// ONE UNIT CAVEAT, REPORTED RATHER THAN ASSUMED AWAY. The roll keys on g_Counter.mCounter0,
+// which cCt_Counter advances once per game tick in fapGm_Execute - not once per presented
+// frame. These draws run from J3D packets walked at render time, so under frame
+// interpolation, or any second view, one tick can contain several draw passes and the
+// per-frame figures below would silently sum them. Rather than guess which it is, the line
+// also reports `passes`, the number of entries into these draw functions over the same
+// period: passes == frames means one pass a tick and the figures are already per presented
+// frame; passes == 2 * frames means halve them. Do not delete that field without replacing
+// what it answers.
+//
+// Behaviour is unchanged. The counters increment and nothing reads them, deliberately -
+// whether to batch these loops is what the number decides, and batching first would be the
+// blind change the "charges per draw, not per pixel" work exists to prevent.
+namespace {
+
+const u32 kKyrUnbatchedStatsPeriod = 600;
+
+struct KyrUnbatchedDrawStats {
+    u32 lastFrame;
+    u32 frameEvil;
+    u32 frameEvil2;
+    u32 frameMud;
+    u32 periodFrames;
+    u32 periodPasses;
+    u32 periodEvil;
+    u32 periodEvilPeak;
+    u32 periodEvil2;
+    u32 periodEvil2Peak;
+    u32 periodMud;
+    u32 periodMudPeak;
+    bool started;
+};
+
+KyrUnbatchedDrawStats s_kyrUnbatchedStats;
+
+// Folds the finished tick's counts into the period and emits the line when the period is up.
+// Only called when the tick has actually changed, so the flush below always describes a
+// complete tick.
+void kyrUnbatchedRollTick(u32 frame) {
+    if (s_kyrUnbatchedStats.started) {
+        s_kyrUnbatchedStats.periodEvil += s_kyrUnbatchedStats.frameEvil;
+        if (s_kyrUnbatchedStats.frameEvil > s_kyrUnbatchedStats.periodEvilPeak) {
+            s_kyrUnbatchedStats.periodEvilPeak = s_kyrUnbatchedStats.frameEvil;
+        }
+
+        s_kyrUnbatchedStats.periodEvil2 += s_kyrUnbatchedStats.frameEvil2;
+        if (s_kyrUnbatchedStats.frameEvil2 > s_kyrUnbatchedStats.periodEvil2Peak) {
+            s_kyrUnbatchedStats.periodEvil2Peak = s_kyrUnbatchedStats.frameEvil2;
+        }
+
+        s_kyrUnbatchedStats.periodMud += s_kyrUnbatchedStats.frameMud;
+        if (s_kyrUnbatchedStats.frameMud > s_kyrUnbatchedStats.periodMudPeak) {
+            s_kyrUnbatchedStats.periodMudPeak = s_kyrUnbatchedStats.frameMud;
+        }
+
+        s_kyrUnbatchedStats.periodFrames++;
+
+        if (s_kyrUnbatchedStats.periodFrames >= kKyrUnbatchedStatsPeriod) {
+            DuskLog.info(
+                "kankyo.unbatched frames={} passes={} evilMean={} evilPeak={} evil2Mean={} "
+                "evil2Peak={} mudMean={} mudPeak={} - quads per game tick that survived every "
+                "cull and drew, one D3D9 draw each: evil = the Palace of Twilight fog, evil2 = "
+                "its second layer, mud = the bog surface. passes counts entries into these draw "
+                "functions over the same period, so divide by passes/frames for a per-presented-"
+                "frame figure. All three are a subset of dx9.draws; compare against it",
+                s_kyrUnbatchedStats.periodFrames, s_kyrUnbatchedStats.periodPasses,
+                s_kyrUnbatchedStats.periodEvil / s_kyrUnbatchedStats.periodFrames,
+                s_kyrUnbatchedStats.periodEvilPeak,
+                s_kyrUnbatchedStats.periodEvil2 / s_kyrUnbatchedStats.periodFrames,
+                s_kyrUnbatchedStats.periodEvil2Peak,
+                s_kyrUnbatchedStats.periodMud / s_kyrUnbatchedStats.periodFrames,
+                s_kyrUnbatchedStats.periodMudPeak);
+            s_kyrUnbatchedStats.periodFrames = 0;
+            s_kyrUnbatchedStats.periodPasses = 0;
+            s_kyrUnbatchedStats.periodEvil = 0;
+            s_kyrUnbatchedStats.periodEvilPeak = 0;
+            s_kyrUnbatchedStats.periodEvil2 = 0;
+            s_kyrUnbatchedStats.periodEvil2Peak = 0;
+            s_kyrUnbatchedStats.periodMud = 0;
+            s_kyrUnbatchedStats.periodMudPeak = 0;
+        }
+    }
+
+    s_kyrUnbatchedStats.frameEvil = 0;
+    s_kyrUnbatchedStats.frameEvil2 = 0;
+    s_kyrUnbatchedStats.frameMud = 0;
+    s_kyrUnbatchedStats.lastFrame = frame;
+    s_kyrUnbatchedStats.started = true;
+}
+
+// Records that another pass over one of the counted loops has begun, rolling the tick first
+// if this is the first pass of a new one. Called from the top of dKyr_mud_draw and
+// dKyr_evil_draw; dKyr_evil_draw2 is only ever reached from the tail of dKyr_evil_draw, so it
+// belongs to its caller's pass and does not call this itself.
+void kyrUnbatchedBeginPass() {
+    const u32 frame = g_Counter.mCounter0;
+    if (!s_kyrUnbatchedStats.started || frame != s_kyrUnbatchedStats.lastFrame) {
+        kyrUnbatchedRollTick(frame);
+    }
+    s_kyrUnbatchedStats.periodPasses++;
+}
+
+} // namespace
+#endif
+
 void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
     ZoneScoped;
+#if TARGET_PC
+    kyrUnbatchedBeginPass();
+#endif
     dKankyo_mud_Packet* mud_packet = g_env_light.mpMudPacket;
     dKankyo_sun_Packet* sun_packet = g_env_light.mpSunPacket;
 
@@ -6179,6 +6338,9 @@ void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
                     pos[3].y = sp70.y + sp64.y;
                     pos[3].z = sp70.z + sp64.z;
 
+#if TARGET_PC
+                    s_kyrUnbatchedStats.frameMud++;
+#endif
                     GXBegin(GX_QUADS, GX_VTXFMT0, 4);
                     GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                     GXTexCoord2s16(0, 0);
@@ -6429,6 +6591,9 @@ static void dKyr_evil_draw2(Mtx drawMtx, u8** tex) {
                         pos[3].z = spA0.z + sp88.z;
 
                         for (int j = 0; j < 1; j++) {
+#if TARGET_PC
+                            s_kyrUnbatchedStats.frameEvil2++;
+#endif
                             GXBegin(GX_QUADS, GX_VTXFMT0, 4);
                             GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                             GXTexCoord2s16(0, 0);
@@ -6469,6 +6634,11 @@ static f32 dKyr_near_bosslight_check(cXyz pos) {
 
 void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
     ZoneScoped;
+#if TARGET_PC
+    // Opens the pass for dKyr_evil_draw2 as well, which is only ever reached from the tail of
+    // this function and so has none of its own.
+    kyrUnbatchedBeginPass();
+#endif
     dScnKy_env_light_c* envlight = dKy_getEnvlight();
     dKankyo_evil_Packet* evil_packet = envlight->mpEvilPacket;
     camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
@@ -6716,6 +6886,9 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
                         pos[3].y = spC8.y + spB0.y;
                         pos[3].z = spC8.z + spB0.z;
 
+#if TARGET_PC
+                        s_kyrUnbatchedStats.frameEvil++;
+#endif
                         GXBegin(GX_QUADS, GX_VTXFMT0, 4);
                         GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                         IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));

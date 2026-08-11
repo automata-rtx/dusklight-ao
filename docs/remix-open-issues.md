@@ -1028,7 +1028,9 @@ Added **2026-08-07**:
   file rather than here, because they are open questions and this list is for
   settled ones.
 
-13. **CLOSED 2026-08-08 — dense weather particles were a draw-call problem.**
+13. **CLOSED 2026-08-08 for rain and snow — dense weather particles were a
+    draw-call problem.** Three loops that sweep deliberately left are still open
+    and, since 2026-08-11, **measurement-blocked**; see the end of this entry.
     Reported 2026-08-07: rain in Hyrule Field and snow in the Snowpeak
     exteriors and Snowpeak Ruins ran at unusable frame rates. **Fixed and
     tested in game 2026-08-08 — the owner reports particle performance "far
@@ -1123,13 +1125,116 @@ Added **2026-08-07**:
     texture hash rather than the geometry hash. **The question is never "does
     this batch?" but "is there a stable identity here to destroy?"**
 
-    **Still open, and deliberately:** `dKyr_mud_draw` and `dKyr_evil_draw2`
-    still emit per-quad and still set `GX_TEVREG0` per particle, so they need
-    the same TEV→vertex-colour rework rain got. They are bounded (mud is 100
-    effects) and situational rather than weather, so they were left rather than
-    changed blind alongside a change that was untested at the time. Now that
-    the pattern is tested, they are safe to do when someone wants them —
-    `dKyr_drawRain` is the worked example.
+    **Still open, and since 2026-08-11 MEASUREMENT-BLOCKED rather than merely
+    deferred.** Three loops the sweep left still emit one `GXBegin`/`GXEnd` per
+    quad. Read in source on 2026-08-11, in `src/d/d_kankyo_rain.cpp`:
+
+    | Function | What it draws | Where | Per-quad `GXBegin` |
+    | :-- | :-- | :-- | :-- |
+    | `dKyr_evil_draw` (`:6624`) | the Palace of Twilight fog that forces wolf form, `mEffect[2000]` | wherever `kytag12` is placed — that actor creates the packet and sets the trip count | `:6881` |
+    | `dKyr_evil_draw2` (`:6377`) | the second, counter-rotating layer of the same fog | reached only from the tail of `dKyr_evil_draw`, guarded by `!daPy_py_c::checkNowWolfPowerUp()`; this is the one that names `D_MN08` outright, culling `i >= 1600` in its room 1 | `:6586` |
+    | `dKyr_mud_draw` (`:6142`) | the mud/haze ground layer, `mEffect[100]` | `D_MN05A` (Diababa's arena) gets its own colour path, but `kytag00`'s effect type 15 (`wether_tag_efect_move`, `d_a_kytag00.cpp:339-341`) can enable it anywhere | `:6333` |
+
+    **A naming note, because it points the other way for once.** `evil` and
+    `mud` are **English** words, not romanized Japanese, and nothing in this
+    tree ties either symbol to a Japanese one — so they get no kanji gloss here,
+    and an earlier draft of this paragraph that supplied one was wrong.
+    ([`japanese-naming.md`](japanese-naming.md) rule 2: never assert a meaning
+    you have not established; ruling a reading *out* is as much a use of the
+    lens as supplying one.) What is established is that `dKyr_mud_init` and
+    `dKyr_evil_init` both take `dComIfG_getObjectRes("Always", 0x53)`, so the
+    two systems draw the same texture. The member holding it is called
+    `mpMoyaRes` (靄 *moya*, mist/haze) — but that is a **reconstructed struct
+    member name**, a hypothesis rather than an authored one, per
+    `japanese-naming.md` §8b.
+
+    **The earlier version of this paragraph named only `dKyr_evil_draw2` and
+    `dKyr_mud_draw`, and that was incomplete.** `dKyr_evil_draw` emits per quad
+    too. What it does *not* need is the `GX_TEVREG0`→vertex-colour rework rain
+    got: that half already landed (the `// move color_reg0 to vtx for perf`
+    block at `:6710-6721`, in the tree since before 2026-06-15, with the
+    per-particle `GXSetTevColor(GX_TEVREG0, …)` already demoted to
+    `IF_NOT_DUSK`). Its one remaining blocker is a per-particle
+    `GXSetTevColor(GX_TEVREG1, …)` at `:6842` — a state change inside what would
+    be the batched primitive. `dKyr_evil_draw2` still sets *both* TEV registers
+    per particle (`:6545-6546`), so it needs the full rework.
+
+    **The 2,000 in the header is an array bound, not a frame cost — and the
+    priority was inverted on exactly that mistake.** `EF_EVIL_EFF mEffect[2000]`
+    (`include/d/d_kankyo_wether.h:355`) sizes the pool. The loop trip count is
+    `g_env_light.field_0x1054`, which `daKytag12_Execute`
+    (`src/d/actor/d_a_kytag12.cpp:978-994`) sets **per room** — 2000 in rooms 0
+    and 1, 1000 in rooms 11/0x33/0x34, 500 otherwise, 0 when the tag is not
+    there. Every particle must then clear `mStatus != 0`, a `field_0x38 > 9000`
+    reject, a screen-space reject that runs whenever `fovy > 40` (i.e. normally),
+    and a near-zero alpha reject before it draws; `dKyr_evil_draw2`
+    additionally skips even indices and culls `i >= 1600` in D_MN08 room 1.
+    **So the pre-cull bound is 2000 + 1000 and the actual per-frame draw count
+    is unknown.** An earlier draft of this work said "three times the rain
+    case"; that was withdrawn on review and must not be repeated.
+
+    **Why one `dx9.draws` log cannot settle it, and what was added instead.**
+    `dx9.draws` is a *total* for the frame. Standing in the Palace of Twilight
+    and seeing a high peak cannot separate the fog from the room around it, so
+    the single scarce play window would produce an ambiguous answer — which is
+    rule 2, a question we would have to ask is a defect in the logging. So on
+    2026-08-11 the three loops were given a counter of their own, matching the
+    shape of aurora's, in `d_kankyo_rain.cpp`. Once every 600 game ticks it
+    emits **one** line:
+
+    ```
+    kankyo.unbatched frames=600 passes=600 evilMean=… evilPeak=… evil2Mean=… evil2Peak=… mudMean=… mudPeak=… - …
+    ```
+
+    Counts are quads that survived **every** cull and reached a `GXBegin`, so
+    each one is a real D3D9 draw. The line is silent unless one of the three is
+    drawing — their packets only exist while their area is loaded — so it costs
+    nothing everywhere else. `passes` is there because the roll keys on the
+    game's tick counter rather than on presented frames: `passes == frames`
+    means the figures are already per presented frame, `passes == 2 × frames`
+    means halve them. **Behaviour is unchanged — the counters increment and
+    nothing reads them.**
+
+    **THE MEASUREMENT REQUEST. One play session, roughly a minute.**
+
+    1. Warp to **Palace of Twilight** (`D_MN08`), room **0** or room **1** —
+       those are the two rooms `daKytag12_Execute` gives the full 2,000-particle
+       trip count.
+    2. Stand still in the fog, camera pointed the way you would normally play,
+       for **at least 30 seconds**. The line prints once per 600 game ticks *in
+       which the fog is drawing*, so leaving the area early means no line at
+       all.
+    3. Send the game log — `<CachePath>/logs/<timestamp>.log`. Nothing else is
+       needed; the Remix log is not part of this.
+
+    **What the number decides.** Read `evilPeak + evil2Peak` (halving first if
+    `passes` is a multiple of `frames` greater than one):
+
+    - **In the high hundreds or thousands** — the fog is a draw-call problem of
+      the same order rain was, and batching it is worth doing. The same line is
+      then the before/after measure.
+    - **In the low tens** — the culls are doing their job, the pre-cull bound
+      never materialises, and this should be closed as not worth doing.
+    - **In between** — also read `dx9.draws peak` from the same log. If the fog
+      is not a large fraction of the frame's total draws, it is not the thing to
+      fix next.
+    - **No `kankyo.unbatched` line at all** after 30 seconds standing in the
+      fog — that is also an answer: the packet is not drawing there and the
+      diagnosis is wrong.
+
+    The high/low thresholds above are **chosen by analogy with the rain case
+    (~1000 draws a frame, unusable), not measured.** They are a reading aid, not
+    a finding.
+
+    **Until that log exists, do not batch these.** The fix is well understood —
+    hoist one `GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO)` above each loop with the
+    per-quad one demoted to `IF_NOT_DUSK`, move `color_reg1` into the second GX
+    colour channel or fold it into `CLR0`, exactly as `dKyr_drawRain` at
+    `:3264` shows — and it is *cheap*, which is precisely why it keeps getting
+    proposed ahead of the measurement that would say whether it is worth
+    anything. Regression signature if it is ever done: the Twilight fog
+    vanishing, drawing in one flat colour, losing its per-particle fade, or a
+    `GX_AURORA_DRAW_SIZED` / vertex-count-mismatch assertion in the log.
 
     **Also unexercised:** Remix's billboard/intersection-primitive path, which
     only now has batched instances to work with. It is gated on the Particle
