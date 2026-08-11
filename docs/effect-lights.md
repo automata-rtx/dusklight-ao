@@ -353,30 +353,74 @@ inputs and verdict for every distinct effect it sees, so one play session
 produces the ground truth for the whole game and the rule can be corrected
 from data rather than from argument.
 
-### 3.1 Class, offset and defaults come from the name
+### 3.1 Class comes from the name — and what Class is actually for
 
-The rule above decides **whether**. The effect's own name decides **what kind**,
-which drives the vertical offset and the fallback radius/reach — and, for one
-value only, whether a light exists at all:
+The rule above decides **whether**. The effect's own name decides **what kind**:
 
 | Class | Name evidence | Why it is a separate class |
 | :-- | :-- | :-- |
 | `Lava` | `lava`, `magma`, `youdo`, **`yogan`, `yougan`** | large, dim, wide |
 | `Excluded` | `yoda`, `taieki` | **refused outright.** The game names it as a substance that is never a light source |
 | `Burst` | `bakuha`, `explo`, `bomb`, `baku` | one-shot; **off by default**, because a two-frame light reads as a flicker |
-| `Fire` | `fire`, `honoo`, `kaen`, `taimatsu`, `maki`, `kantera`, `torch`, `flame`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
-| `Glow` | `hikari`, `light`, `kira`, `pika`, `aura`, `shine`, `glow`, `spark` | no offset; usually smaller and cooler |
+| `Fire` | `fire`, `honoo`, `hono`, `kaen`, `flame`, `taimatsu`, `maki`, `kantera`, `torch`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
+| `Glow` | `hikari`, `light`, `kira`, `pika`, `glow`, `aura`, `shine`, `spark` | no offset; usually smaller and cooler |
 | `Other` | anything else that passed §3 | global defaults |
 
-**Two corrections to what this table said before 2026-08-07**, both of which
-mattered:
+**Class feeds exactly four things.** This list was wrong here and in
+`effect_lights.hpp` until 2026-08-11, and the wrong entry was the one that
+sounded most consequential:
 
-- It said class "never decides whether a light exists". That is no longer true —
-  `Excluded` decides. Nothing else does.
-- `lava`/`magma`/`youdo` match **zero** of the game's 3,205 effect names. This
-  game spells it **yogan/yougan**, so `Class::Lava` was unreachable dead code
-  and every lava column was classified `Other`. It also listed `hit` as Burst
-  evidence, which the code never had.
+1. **Two gates.** `Excluded` refuses a candidate outright; `Burst` is skipped
+   unless `effectLightBursts` is on. Nothing else about the class decides
+   whether a light exists.
+2. **The vertical offset** (`classOffset`). `Fire` and `Burst` take
+   `effectLightFireOffset`, `Glow` takes `effectLightGlowOffset`, and `Lava`,
+   `Other` and `Excluded` take nothing.
+3. **The merge tie-break** (`classWeight`, §6). The highest-weight member of a
+   site donates its position, colour and effect id: `Fire` 4 > `Lava` 3 >
+   `Glow` 2 > `Burst` 1.5 > `Other` 1.
+4. **Site identity across frames.** A site only matches last frame's site if the
+   class agrees (`effect_lights.cpp:1844`), so a name that changed class would
+   start a new site — and a new Remix light hash, losing that light's temporal
+   history.
+
+**It does not select the fallback radius or reach.** That keys on whether a
+vanilla light was adopted (`effect_lights.cpp:1788`): `derivedReach` /
+`derivedRadius` when one was, `undeterminedReach` / `undeterminedRadius` when
+none was, §5. Neither branch reads the class.
+
+**And `effectLightGlowOffset` defaults to 0.0, the same as what `Other` gets**,
+so `Glow` and `Other` currently behave identically in all four. Worth knowing
+before spending time on which of the two a name lands in: at stock settings that
+question cannot move a pixel. It becomes a real question only if the glow offset
+is turned up.
+
+**Ten of the thirty keywords match none of the game's 3,205 effect names** —
+`lava`, `magma`, `youdo`, `bakuha`, `honoo`, `hono`, `taimatsu`, `kagarib`,
+`pika`, `shine` — and are deliberately left in the source. An earlier version of
+this section said three; that was the `Lava` row alone.
+`scripts/check_invariants.py` (`effect-light-keywords`) now owns the list,
+replays every keyword over `d_particle_name.cpp` on each push, and fails **in
+both directions** — a new keyword that matches nothing, and one of these ten
+starting to match.
+
+**They are not romanization misses, so do not "fix" them by adding spellings**
+([`japanese-naming.md` §3](japanese-naming.md#3-romanization-is-inconsistent--this-is-the-grep-trap)).
+Each was re-checked in kunrei-shiki, in Hepburn and in the obvious variants, and
+every spelling is zero: `taimatsu`/`taimatu`, `kagarib`/`kagari`/`kagaribi`,
+`honoo`/`honou`/`homura`, `pika`/`pikari`/`pikapika`,
+`bakuha`/`bakuhatsu`/`bakuhatu`, `youdo`/`yodo`. The game used English (`fire`
+181, `bomb` 171, `glow` 59, `spark` 33, `torch` 1) or a different Japanese word
+(`kira` 9, 薪 `maki` 8, カンテラ `kantera` 5, 火炎 `kaen` 4).
+
+Removing them is not worth doing either. A keyword that matches nothing
+classifies nothing, so deleting all ten would change not one effect's class —
+it would be a diff against a shipping classifier that buys a shorter list, and
+the check is what actually stops the next one going unnoticed.
+
+**One further correction, from 2026-08-07.** This section used to say class
+"never decides whether a light exists" — `Excluded` does, and nothing else. It
+also listed `hit` as `Burst` evidence, which the code never had.
 
 **The table is in precedence order, and that order is load-bearing**, because a
 great many names carry two of these words. Each step was derived by replaying
@@ -439,11 +483,44 @@ Five exclusions are structural and should stay:
    weaker evidence of emission than §3 claims.
 
    Kept deliberately narrow for that reason. The plausible next words are much
-   bigger hammers — `smoke` alone is 161 names, `sand` 121, `shibuki` 69 — and
-   widening this is a decision to take with a classification report in hand, not
-   from a list of words that sound like substances. `effLightsExcluded` counts
-   what this refuses each frame; a non-zero count in a room that reads under-lit
-   is the signal it is too wide.
+   bigger hammers, and widening this is a decision to take with a classification
+   report in hand, not from a list of words that sound like substances.
+   `effLightsExcluded` counts what this refuses each frame; a non-zero count in a
+   room that reads under-lit is the signal it is too wide.
+
+   > **⚠ Size any candidate in BOTH romanizations before you add it.** This is
+   > the one list where a name puts a light *out*, so a word counted in one
+   > spelling excludes half its effects and leaves the rest still lighting the
+   > room — and the failure is invisible, because what you get is a partial
+   > result rather than an error. The tree mixes kunrei-shiki and Hepburn for the
+   > same word;
+   > [`japanese-naming.md` §3](japanese-naming.md#3-romanization-is-inconsistent--this-is-the-grep-trap)
+   > is the rule and `si↔shi`, `tu↔tsu`, `ti↔chi`, `sya↔sha`, `zi↔ji` is the
+   > substitution.
+   >
+   > Counts over all 3,205 names, re-checked 2026-08-11, both spellings each:
+   >
+   > | Candidate | The obvious spelling | The one that gets missed | Together |
+   > | :-- | --: | --: | --: |
+   > | 飛沫 *shibuki*, spray | `shibuki` 69 | `sibuki` 0 | 69 |
+   > | 雫 *shizuku*, droplet | `shizuku` 29 | `sizuku` 26 | **55** |
+   > | smoke | `smoke` 161 | 煙 `kemuri` 0 | 161 |
+   > | sand | `sand` 121 | 砂 `suna` 1 | 122 |
+   >
+   > The first two are the kunrei/Hepburn split; the last two are the other half
+   > of the same trap, an English word where the Japanese one may also be in use.
+   > Each pair here is disjoint, so the totals are sums.
+   >
+   > **Droplet is the case to remember.** The two sets are disjoint — neither
+   > spelling is a substring of the other — so a session that added `shizuku`
+   > alone would put out 29 effects and leave 26 doing exactly what it was
+   > trying to stop. Spray happens to be safe (the effect IDs spell it Hepburn
+   > throughout) but that is luck, not a rule: `dKyr_drawSibuki`, the C function
+   > that draws them, is spelled the other way.
+
+   The current list is safe under this rule: `yoda` (45) and `taieki` (3) have
+   no kunrei/Hepburn alternative — `yodare` is 31 of the 45, and both words are
+   spelled one way throughout.
 5. **Distance and budget.** Beyond `maxDistance` from the camera, or past
    `maxLights` this frame, ordered by weight. A light that contributes nothing
    still costs a light-manager entry and an RTXDI slot. Both settings treat
@@ -516,8 +593,10 @@ a near-black environment colour is ignored. This is the case the fire arrow
 lands in — enemy fire arrows register no `LIGHT_INFLUENCE` at all, so the
 orange comes from `IT_JN_arwFir_fire00`'s own palette.
 
-Radius and reach come from the per-class settings, scaled by
-`undeterminedIntensity`. **Both multipliers exist and are separate on
+Radius and reach come from the `undetermined*` settings, scaled by
+`undeterminedIntensity`. **They are per-*path*, not per-class** — this branch is
+chosen by "no vanilla light was adopted", and the site's class is not consulted
+here or in the derived branch (§3.1). **Both multipliers exist and are separate on
 purpose**: the derived path's job is to map the game's units onto Remix's
 scale, and the undetermined path's job is to pick a size out of nothing. They
 will not want the same number, and tying them together guarantees that tuning
@@ -525,11 +604,17 @@ one breaks the other.
 
 ### 5.3 Vertical offset
 
-`position.y += verticalOffset(class)`. The emitter sits where the effect is
+`position.y += classOffset(class)`. The emitter sits where the effect is
 *generated* — for a totem that is the top of the pole, at the base of the
-flame — and the light belongs a little way up inside the flame. One setting
-per class, in world units, applied after adoption so it applies to derived and
-undetermined sites alike.
+flame — and the light belongs a little way up inside the flame. In world units,
+applied after adoption so it applies to derived and undetermined sites alike.
+
+**Two settings cover five classes, not one each.** `Fire` and `Burst` share
+`effectLightFireOffset` (15.0); `Glow` takes `effectLightGlowOffset`, which is
+**0.0** by default; `Lava`, `Other` and `Excluded` are not offset at all. So at
+stock settings this is the only class distinction that changes anything, and it
+separates fire from everything else — `Glow` and `Other` land on the same number
+(§3.1).
 
 ---
 
@@ -702,8 +787,8 @@ Remix. The overlay hosts them in the Dusklight tab.
 | `effectLightUndeterminedIntensity` | 1.0 | multiplier for sites with no vanilla light |
 | `effectLightUndeterminedReach` | 400.0 | how far an undetermined light should reach, world units |
 | `effectLightUndeterminedRadius` | 8.0 | emitter radius for those |
-| `effectLightFireOffset` | 15.0 | upward offset for `Fire` sites |
-| `effectLightGlowOffset` | 0.0 | upward offset for `Glow` sites |
+| `effectLightFireOffset` | 15.0 | upward offset for `Fire` **and `Burst`** sites |
+| `effectLightGlowOffset` | 0.0 | upward offset for `Glow` sites — at the default, `Glow` and `Other` are indistinguishable (§3.1) |
 | `effectLightMergeRadius` | 60.0 | how close two emitters must be to become one site |
 | `effectLightAdoptRadius` | 250.0 | how close a vanilla light must be to be adopted |
 | `effectLightMaxLights` | 32 | per-frame budget |
@@ -855,6 +940,15 @@ registries, their contents, the authored torch values, and the per-frame
 liveness flag on the spot list. `mPow` being a real radius. That `dPa_RM`'s
 `0x8000` bit selects a bank rather than a namespace. The two spawn paths and
 the fact that the simple one shares an emitter. The blend-mode accessors.
+
+**Counted mechanically, and now checked on every push (2026-08-11).** The
+classifier's 30 keywords replayed over all 3,205 names in
+`d_particle_name.cpp`: **10 match nothing** and 20 do, the `Excluded` list is 48
+names, and `classKeyword`'s copy of the lists agrees with `classifyByName`'s in
+content and order. `scripts/check_invariants.py` (`effect-light-keywords`) holds
+all three, and each of its arms was proved to fire by breaking the inputs
+deliberately. It changes no behaviour: **no keyword was added, removed or
+respelled.** §3.1 says why the dead ten stay.
 
 **CI-green on both sides** at the matching protocol-7 pair — dusklight
 `bf87551c`, dxvk-remix `70a6d482`. (dusklight's run reads "failure" because its

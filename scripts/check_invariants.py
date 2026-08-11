@@ -17,6 +17,11 @@ whose resolution looked obvious, left two places disagreeing:
     says up front that every symbol it names was checked to exist. A glossary
     is exactly the kind of document nobody re-reads, so that promise is only
     worth anything if something enforces it.
+  * The effect-light classifier matches words against the game's own effect
+    names, which are romanized Japanese. A keyword spelled the way the reader
+    expects rather than the way the game spelled it matches nothing, silently,
+    forever - which is what Class::Lava did. Ten such words exist today, and the
+    fact that they are dead is invisible unless something states it.
 
 Run with no arguments. Exit 0 = consistent. CI runs it on every push with no
 path filter, because doc-only changes are exactly when these drift.
@@ -236,6 +241,215 @@ def check_aurora_pin_is_real() -> None:
         )
 
 
+# --- the effect-light classifier's word lists ------------------------------------------
+#
+# src/dusk/effect_lights.cpp classifies each particle effect by looking for words in the
+# effect's own name, and the names are romanized Japanese (docs/japanese-naming.md). A
+# keyword that matches none of the game's 3205 effect names is inert: it costs nothing and
+# it is invisible, so nobody finds out until they build on it. Class::Lava was exactly that
+# for however long - lava/magma/youdo match nothing, the game spells it yogan/yougan, and
+# every lava column was classified Other until 2026-08-07.
+#
+# This check replays the lists over src/d/d_particle_name.cpp and pins the result in BOTH
+# directions, which is the shape CLAUDE.md's side-channel checks settled on:
+#
+#   * a keyword matching zero names that is not recorded below is a NEW dead word - either
+#     a typo, or a word from a different game;
+#   * a word recorded below that starts matching means the negative is stale and the
+#     comments in effect_lights.cpp and docs/effect-lights.md that rest on it are wrong.
+#
+# It also holds classifyByName and classKeyword together. classKeyword is a second copy of
+# the same lists in the same order, used to print which word claimed a name in the
+# classification report; effect_lights.cpp says it "must match classifyByName exactly - if
+# it drifts, the report lies about the class it is printing beside", and nothing enforced
+# that.
+#
+# THIS CHECK CHANGES NO BEHAVIOUR AND ASKS FOR NONE. The ten dead words below are
+# deliberately still in the source: at stock settings effectLightGlowOffset is 0.0, the
+# same as Other's offset, so most of what these words would decide cannot move a pixel,
+# and removing a word is a change to a shipping classifier for no gain.
+#
+# READ THIS BEFORE "FIXING" ANY OF THEM: they are NOT romanization misses
+# (docs/japanese-naming.md section 3). Every one was re-checked in both kunrei-shiki and
+# Hepburn, and in the obvious alternatives, and every spelling matches zero. The game
+# simply used English, or a different Japanese word. Adding spellings would not help.
+EFFECT_LIGHT_DEAD_KEYWORDS: dict[str, str] = {
+    "lava": "English. The game spells 溶岩 yogan (18) and yougan (3), disjoint sets - "
+            "which is why both are in the list",
+    "magma": "English, and the game never uses it. Same substitution as 'lava'",
+    "youdo": "no spelling the game uses; 'yodo' is zero too. Same substitution as 'lava'",
+    "bakuha": "爆発 bakuhatsu, explosion. bakuhatsu/bakuhatu are zero as well; the game "
+              "names these bomb (171), explo (7) and baku (2, 爆炎 bakuen)",
+    "honoo": "炎, flame. honou and homura are zero too; the game uses fire (181), "
+             "火炎 kaen (4) and flame (2)",
+    "hono": "the same word clipped, and zero for the same reason - no name contains "
+            "those four letters anywhere",
+    "taimatsu": "松明, torch. taimatu is zero as well; the game uses torch (1), "
+                "カンテラ kantera (5) and 薪 maki (8)",
+    "kagarib": "篝火 kagaribi, brazier. kagari and kagaribi are both zero; the game uses "
+               "the same three words as 'taimatsu'",
+    "pika": "ぴか, sparkle. pikari and pikapika are zero too; the game uses kira (9), "
+            "spark (33) and glow (59)",
+    "shine": "English. shain and shiny are zero as well; kira, spark and glow cover it",
+}
+
+
+def _strip_line_comments(text: str) -> str:
+    """Remove // comments, leaving string literals alone.
+
+    Both files this check parses need it, for different reasons.
+    d_particle_name.cpp:1732 is `"\\x81\\x60\\x00",  // "~"` - a shift-JIS glyph quoted in
+    a comment - so a naive scan for quoted strings counts 3206 names instead of 3205, and
+    the extra one is not an effect. effect_lights.cpp's comments name Class:: values and
+    quote keywords while explaining them.
+    """
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        i = 0
+        in_str = False
+        while i < len(line):
+            c = line[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "/" and line[i + 1 : i + 2] == "/":
+                break
+            i += 1
+        # Line numbers have to survive: a comment is replaced by nothing, never by
+        # nothing-plus-a-newline, or every offset reported from here on is wrong.
+        out.append(line if i >= len(line) else line[:i] + ("\n" if line.endswith("\n") else ""))
+    return "".join(out)
+
+
+def _effect_names(src: str) -> list[str]:
+    """Every name in dPa_name::jpaName - the whole space classifyByName can see.
+
+    effectName() masks the id with kIdMask and getName bounds-checks against
+    ID_PARTICLE_MAX, so this table is exactly the set of names, no more.
+    """
+    m = re.search(r"jpaName\[\]\s*=\s*\{(.*?)\n\};", src, re.S)
+    if not m:
+        return []
+    body = _strip_line_comments(m.group(1))
+    return [n.lower() for n in re.findall(r'"((?:[^"\\]|\\.)*)"', body)]
+
+
+def _parse_keyword_lists(body: str) -> list[tuple[str, list[str]]]:
+    """[(class, words)] from classifyByName's if-chain, in precedence order."""
+    lists: list[tuple[str, list[str]]] = []
+    pending: list[str] = []
+    for m in re.finditer(
+        r'nameHas\(\s*name\s*,\s*"([^"]+)"\s*\)|return\s+Class::(\w+)\s*;', body
+    ):
+        if m.group(1) is not None:
+            pending.append(m.group(1))
+        elif pending:
+            lists.append((m.group(2), pending))
+            pending = []
+    return lists
+
+
+def _parse_report_lists(src: str) -> list[tuple[str, list[str]]]:
+    """[(class, words)] from classKeyword's static arrays, in kLists order."""
+    arrays = {
+        m.group(1): [w for w in re.findall(r'"([^"]+)"', m.group(2))]
+        for m in re.finditer(
+            r"static const char\* const k(\w+)\[\]\s*=\s*\{(.*?)\};", src, re.S
+        )
+    }
+    order = re.search(r"const\* const kLists\[\]\s*=\s*\{(.*?)\};", src, re.S)
+    if not order:
+        return []
+    return [
+        (n, arrays[n]) for n in re.findall(r"\bk(\w+)\b", order.group(1)) if n in arrays
+    ]
+
+
+def check_effect_light_keywords() -> None:
+    """No classifier keyword may silently match nothing."""
+    global checks_run
+    checks_run += 1
+
+    cpp = read("src/dusk/effect_lights.cpp")
+    table = read("src/d/d_particle_name.cpp")
+    if cpp is None or table is None:
+        fail("effect-light-keywords", "src/dusk/effect_lights.cpp or src/d/d_particle_name.cpp missing")
+        return
+
+    names = _effect_names(table)
+    if len(names) < 3000:
+        # The table is game data and does not change; a short read means the parse broke,
+        # and reporting 30 dead keywords would be a confident lie.
+        fail(
+            "effect-light-keywords",
+            f"parsed only {len(names)} names out of dPa_name::jpaName - expected ~3205. "
+            f"Fix this parse before trusting anything below it",
+        )
+        return
+
+    stripped = _strip_line_comments(cpp)
+    fn = re.search(r"\nClass classifyByName\([^)]*\)\s*\{(.*?)\n\}", stripped, re.S)
+    if not fn:
+        fail("effect-light-keywords", "could not find classifyByName in src/dusk/effect_lights.cpp")
+        return
+
+    lists = _parse_keyword_lists(fn.group(1))
+    if not lists:
+        fail("effect-light-keywords", "parsed no keyword lists out of classifyByName")
+        return
+
+    live: set[str] = set()
+    for cls, words in lists:
+        for word in words:
+            live.add(word)
+            hits = sum(1 for n in names if word in n)
+            if hits == 0 and word not in EFFECT_LIGHT_DEAD_KEYWORDS:
+                fail(
+                    "effect-light-keywords",
+                    f"classifyByName's Class::{cls} list contains \"{word}\", which matches "
+                    f"none of the {len(names)} effect names in d_particle_name.cpp. Before "
+                    f"changing the spelling, try the other romanization "
+                    f"(docs/japanese-naming.md section 3) and the English word - the ten "
+                    f"already-dead keywords are dead in every spelling. If it is meant to "
+                    f"stay inert, record it in EFFECT_LIGHT_DEAD_KEYWORDS with the reason",
+                )
+            elif hits > 0 and word in EFFECT_LIGHT_DEAD_KEYWORDS:
+                fail(
+                    "effect-light-keywords",
+                    f"\"{word}\" is recorded as matching zero effect names, and now matches "
+                    f"{hits}. The negative is stale: fix EFFECT_LIGHT_DEAD_KEYWORDS, the "
+                    f"comment above the Class::{cls} branch in effect_lights.cpp, and "
+                    f"docs/effect-lights.md section 3.1, which all rest on it",
+                )
+
+    for word in EFFECT_LIGHT_DEAD_KEYWORDS:
+        if word not in live:
+            fail(
+                "effect-light-keywords",
+                f"EFFECT_LIGHT_DEAD_KEYWORDS records \"{word}\", which classifyByName no "
+                f"longer uses. Drop the row - a stale exemption is how a real dead keyword "
+                f"gets waved through later",
+            )
+
+    report = _parse_report_lists(stripped)
+    if report and report != lists:
+        first = next(
+            (f"{a} {a_w} vs {b} {b_w}" for (a, a_w), (b, b_w) in zip(lists, report) if a_w != b_w or a != b),
+            f"{len(lists)} lists in classifyByName, {len(report)} in classKeyword",
+        )
+        fail(
+            "effect-light-keywords",
+            f"classKeyword's lists no longer match classifyByName's, in content or in order, "
+            f"so the classification report names the wrong word beside a class. First "
+            f"divergence: {first}",
+        )
+
+
 # Backticked tokens in japanese-naming.md that are prose, not game symbols.
 # Kept short and explicit: a token silently exempted is a glossary entry that
 # stops being checked.
@@ -323,6 +537,7 @@ def main() -> int:
     check_settings_consistency()
     check_protocol()
     check_aurora_pin_is_real()
+    check_effect_light_keywords()
     check_japanese_naming_symbols()
 
     for s_ in skipped:

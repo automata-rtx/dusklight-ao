@@ -353,9 +353,13 @@ bool nameHas(const char* haystack, const char* needle) {
     return false;
 }
 
-// The name decides what KIND of thing this is - which sets the vertical offset and which
-// fallback size applies. It never decides whether a light exists; that is the rule in
-// classify() below. Reading the effect's own name is not "tagging" in the sense the project's
+// The name decides what KIND of thing this is. Class feeds four things and no others - two
+// gates, the vertical offset, the merge tie-break and cross-frame site identity; it does NOT
+// pick the fallback radius or reach, which keys on whether a vanilla light was adopted. The
+// full statement is on the enum in effect_lights.hpp. Apart from the Excluded gate it never
+// decides whether a light exists; that is the rule in classify() below.
+//
+// Reading the effect's own name is not "tagging" in the sense the project's
 // rules forbid: the name is the game's own identity for the effect, shipped in the game's own
 // table, at the granularity the game itself uses.
 Class classifyByName(uint16_t id) {
@@ -384,10 +388,28 @@ Class classifyByName(uint16_t id) {
     //
     // The negative list collides with Lava, Fire and Glow zero times today. If that ever stops
     // being true the order has to be revisited - re-run the collision scan, do not guess.
+    //
+    // TEN OF THESE THIRTY KEYWORDS MATCH NOTHING, and are deliberately left in place. Counted
+    // over all 3205 names on 2026-08-11: lava, magma, youdo, bakuha, honoo, hono, taimatsu,
+    // kagarib, pika and shine. An earlier version of this comment said three, which was the
+    // Lava row only. scripts/check_invariants.py (check_effect_light_keywords) now owns the
+    // list, replays every keyword over d_particle_name.cpp on each push, and fails in BOTH
+    // directions - a new keyword that matches nothing, and one of these ten starting to match.
+    //
+    // THEY ARE NOT ROMANIZATION MISSES, so do not "fix" them by adding spellings. Each was
+    // re-checked in kunrei-shiki and Hepburn and in the obvious variants, and every spelling
+    // is zero: taimatsu/taimatu, kagarib/kagari/kagaribi, honoo/honou/homura, pika/pikari/
+    // pikapika, bakuha/bakuhatsu/bakuhatu, youdo/yodo. The game used English (fire 181, torch
+    // 1, glow 59, spark 33, bomb 171) or a different Japanese word (maki 8, kantera 5, kaen 4,
+    // kira 9) - see docs/japanese-naming.md section 3. Removing them is not worth doing
+    // either: a keyword that matches nothing classifies nothing, so deleting all ten would
+    // change not one effect's class - a diff against a shipping classifier that buys a
+    // shorter list. The check is what stops the next dead word going unnoticed.
 
-    // "lava"/"magma"/"youdo" match ZERO of the 3205 names - this game spells it yogan/yougan,
-    // so Class::Lava was unreachable dead code until 2026-08-07 and every lava column was
-    // classified Other. "yogan" is not a substring of "yougan"; both are needed.
+    // "lava"/"magma"/"youdo" match ZERO of the 3205 names - this game spells it yogan (18
+    // names) and yougan (3), so Class::Lava was unreachable dead code until 2026-08-07 and
+    // every lava column was classified Other. The two spellings are disjoint sets, not one
+    // containing the other; both are needed.
     if (nameHas(name, "lava") || nameHas(name, "magma") || nameHas(name, "youdo") ||
         nameHas(name, "yogan") || nameHas(name, "yougan")) {
         return Class::Lava;
@@ -399,6 +421,12 @@ Class classifyByName(uint16_t id) {
     // blending alone does not mean "emits light" - a wet surface is authored additively too,
     // to read as glossy. Widening this is a decision to take with the classification report in
     // hand, not from a list of plausible words: "smoke" alone would be 161 names.
+    //
+    // AND SIZE ANY CANDIDATE IN BOTH ROMANIZATIONS BEFORE ADDING IT. This is the one list
+    // where a name puts a light out, so a word counted in one spelling excludes half its
+    // effects and silently leaves the rest lighting the room. Droplet is the live example:
+    // shizuku matches 29 names, sizuku 26, and the two sets are disjoint - 55 together.
+    // docs/japanese-naming.md section 3, and docs/effect-lights.md section 4.
     if (nameHas(name, "yoda") || nameHas(name, "taieki")) {
         return Class::Excluded;
     }

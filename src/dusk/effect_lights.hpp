@@ -17,9 +17,31 @@
 namespace dusk {
 namespace effect_lights {
 
-// What kind of thing the effect is. Decides only the vertical offset and which fallback
-// radius/reach applies when the game has no light of its own to copy - never whether a light
-// is made at all. See docs/effect-lights.md section 3.1.
+// What kind of thing the effect is, read out of the effect's own name. See
+// docs/effect-lights.md section 3.1.
+//
+// WHAT THIS ACTUALLY FEEDS, corrected 2026-08-11 - the four readers are the whole list:
+//
+//   1. two gates. Excluded refuses a candidate outright, and Burst is skipped unless
+//      Params::bursts is on. Nothing else here decides whether a light exists; that is the
+//      blend-mode-and-colour rule in classify().
+//   2. the vertical offset (classOffset). Fire and Burst take fireOffset, Glow takes
+//      glowOffset, and Lava, Other and Excluded take nothing.
+//   3. the merge tie-break (classWeight). Within one site, the highest-weight member donates
+//      the position, the colour and the effect id: Fire 4 > Lava 3 > Glow 2 > Burst 1.5 >
+//      Other 1.
+//   4. site identity across frames. A pending site only matches last frame's site if the
+//      class agrees, so a class that changed would start a new site - and a new Remix light
+//      hash, losing that light's temporal history.
+//
+// IT DOES NOT SELECT THE FALLBACK RADIUS OR REACH, which this comment claimed until
+// 2026-08-11. That keys on whether a vanilla light was adopted - derivedReach/derivedRadius
+// when one was, undeterminedReach/undeterminedRadius when none was - and neither branch reads
+// the class at all.
+//
+// At stock settings glowOffset is 0.0, the same as the offset Other gets, so Glow and Other
+// currently behave identically in every one of the four. Worth knowing before spending time
+// on which of the two a name lands in: today that question cannot move a pixel.
 enum class Class : uint8_t {
     Other = 0,
     Fire,
