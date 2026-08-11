@@ -244,6 +244,12 @@ struct UserSettings {
         // go to dFlower_packet_c (d_a_grass.cpp:322), whose draw batches identically and
         // has no switch. Driven from Remix's overlay via rtx.dusklight.game.perBladeGrass.
         ConfigVar<bool> remixPerBladeGrass;
+        // The same thing for dFlower_packet_c - the hana (flower) half of the same actor,
+        // kinds 2 and 3. A separate switch rather than a widening of the one above: a flower
+        // is a bigger template than a blade so the cost profile differs, and neither half has
+        // been tested in game, so one test session can answer both questions independently.
+        // Driven from Remix's overlay via rtx.dusklight.game.perBladeFlowers.
+        ConfigVar<bool> remixPerBladeFlowers;
         // Hand the texture_replacements pack to Remix on the D3D9 backend. Separate from
         // enableTextureReplacements so the pack can be registered for the WebGPU backends
         // without also being handed over, and so a pack problem can be isolated without

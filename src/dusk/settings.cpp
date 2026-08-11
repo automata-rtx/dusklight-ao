@@ -105,6 +105,7 @@ UserSettings g_userSettings = {
         .remixHideStarBillboards {"game.remixHideStarBillboards", true},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
+        .remixPerBladeFlowers {"game.remixPerBladeFlowers", false},
         .remixTextureReplacements {"game.remixTextureReplacements", true},
         // False here, true on the Remix side: the bridge pushes Remix's value down every
         // frame when it is running, so this is suppressed under Remix and left vanilla on
@@ -370,6 +371,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideStarBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
+    Register(g_userSettings.game.remixPerBladeFlowers);
     Register(g_userSettings.game.remixTextureReplacements);
     Register(g_userSettings.game.remixHideDashEffect);
     Register(g_userSettings.game.remixBlobShadows);

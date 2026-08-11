@@ -326,8 +326,10 @@ exactly like the colours beside them, and all three feed material colour — whi
 [`kankyo-remix.md`](kankyo-remix.md) Part II says *does* travel to Remix.
 
 **A readout the game pushes needs a protocol bump on both sides in one commit.**
-Protocol is 11 here and 12 is taken. **Not wired. Sequence with the protocol
-wave.** The natural shape is one more `push` beside `bgAmbient`, using the same
+Protocol is 13 here; 12 is taken by the unmerged
+`claude/kasumi-naming-correction-w3e204` and 13 by the per-flower switch, so the
+next number is **14**. **Not wired. Sequence with the protocol wave.** The
+natural shape is one more `push` beside `bgAmbient`, using the same
 `-1 means the game has not said` convention the unmerged branch established.
 
 The other 27 uncovered bindings are the room light registry (§2.2, deliberately

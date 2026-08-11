@@ -88,8 +88,10 @@ wrong, the tag was mis-assigned: say so, retag it, and fix the code.
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 11.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
-branch until those merged on 2026-08-11; 11 is the merged number. Any prompt tagged
+**Protocol is at 13.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
+branch until those merged on 2026-08-11; 11 was the merged number, 12 is taken by the
+unmerged `claude/kasumi-naming-correction-w3e204`, and this worklist's P18 took 13
+beside it rather than on top of it — so the next free number is **14**. Any prompt tagged
 [PROTOCOL] must check the other live `claude/*` branches before taking a number. Two
 branches claiming one number is a trap this project has already hit, and the merge
 conflict resolves *cleanly* into a wrong answer — **it hit again here**: the effect

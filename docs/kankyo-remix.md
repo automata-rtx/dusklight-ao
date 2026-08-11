@@ -42,7 +42,7 @@ on branch rules** — this file deliberately does not restate them.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **11**; skew in either direction has cost an
+   commit point. Protocol is at **13**; skew in either direction has cost an
    evening twice. The Dusklight tab reports which side is old — read it before
    debugging anything else.
 2. **Interactive approval prompts do not work in the owner's environment.**
@@ -139,10 +139,10 @@ Global tables in `src/d/d_kankyo_data.cpp`:
 
 ### I.2 Selection: time × weather × room
 
-Per frame (`drawKankyo`, `src/d/d_kankyo.cpp:8132` → `setSunpos`,
-`SetBaseLight`, `setLight`):
+Per frame (`drawKankyo`, `src/d/d_kankyo.cpp:8192` → `setSunpos`,
+`SetBaseLight`, `setLight` at `:2340`):
 
-`setLight_palno_get` (`d_kankyo.cpp:1793`) resolves **four palettes**:
+`setLight_palno_get` (`d_kankyo.cpp:1848`) resolves **four palettes**:
 
 ```
 prev_envr = stage_envr_info[PrevCol]         (PrevCol = previous room/envr id)
@@ -156,14 +156,29 @@ schedule slot for daytime → (start_slot, end_slot, color_ratio)
 - `color_ratio` = position inside the schedule window (time-of-day blend).
 - `pat_ratio` = 0→1 ramp between the *prev* and *next* selections (room
   change, weather change, event colpat change), advanced at the pselect's
-  `change_rate` (scaled by our `timeScale` on PC).
-- Weather → colpat via `dKy_change_colpat` (`d_kankyo.cpp:9468`) and
-  `dKy_custom_colset` (events force both endpoints + blend directly).
+  `change_rate` (`:2188-2199`, scaled by our `timeScale` on PC). On reaching
+  1.0 the pair collapses — `wether_pat0 = wether_pat1`, ratio clamped
+  (`:2212-2216`) — so **the steady state is `wether_pat0 == wether_pat1` with
+  `pat_ratio == 1.0`**, and these two fields say nothing new outside a
+  transition.
+- Weather → colpat via `dKy_change_colpat` (`d_kankyo.cpp:9528`) and
+  `dKy_custom_colset` (`:9535`, events force both endpoints + blend directly).
+  Both write the **`*Gather` staging fields, never the live ones**;
+  `exeKankyo` copies the staging area onto `wether_pat0` / `wether_pat1` /
+  `pat_ratio` once a frame and clears it back to sentinels (`:4788-4828`), and
+  the kankyo tags use the same port. There is one blend, not two — an earlier
+  wording called the gather fields "a second, independent palette blend" and
+  `kankyo-fog.md` §2 records what that cost.
+- Note `dKy_change_colpat` sets the ratio to `0.0f` and leaves `wether_pat0`
+  alone, so on the frame a weather change lands the palette is **entirely the
+  outgoing pattern**. Anything downstream that reads the incoming index alone
+  is at its most wrong precisely then; the Remix bridge did exactly that until
+  protocol 13.
 - Underwater camera forces pselect 8/9.
 
 ### I.3 The blend: one formula for everything
 
-`kankyo_color_ratio_set` (`d_kankyo.cpp:711`):
+`kankyo_color_ratio_set` (`d_kankyo.cpp:714`):
 
 ```
 a     = lerp(prev_start, prev_end, color_ratio)     // time within prev pattern

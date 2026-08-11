@@ -147,11 +147,13 @@ problem**, and `dx9.draws` is where you look.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 11.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 13.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit. (This line has been stale twice — it
 said 6 until 2026-08-09 and 7 until 2026-08-11 — which is exactly the skew the
 coupling warning exists to prevent. The fork's `CLAUDE.md` and the tab's readout
-are the authorities, not this file.)
+are the authorities, not this file.) **12 is skipped, not free:** it belongs to
+the unmerged `claude/kasumi-naming-correction-w3e204`, so the next branch to
+need a number takes **14**.
 
 **HD texture replacement packs work on the D3D9 backend — tested good
 2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each
@@ -732,43 +734,81 @@ Added **2026-08-08**:
    agree: `l_M_kusa05_RGBATEX` for the blades, `l_J_Ohana00_64TEX` and
    `l_J_hana00DL` for the flowers.
 
-   `dFlower_packet_c::draw` (`src/d/actor/d_flower.inc:772`, the `TARGET_PC`
-   path) has **the identical churning batch**: `GXLoadPosMtxImm(identity,
+   `dFlower_packet_c::draw` (the `TARGET_PC` path in `src/d/actor/d_flower.inc`)
+   had **the identical churning batch**: `GXLoadPosMtxImm(identity,
    GX_PNMTX0)`, every flower's positions pushed through `transform_positions`
    into world space, and one immediate-mode `GXBegin(GX_TRIANGLES, GX_VTXFMT1,
    GX_AUTO)` stream per bucket — two buckets for hana00, three for hana01. Same
-   shape, same reason, same unstable hash. It has **no switch**, and until
+   shape, same reason, same unstable hash. It had **no switch**, and until
    2026-08-11 it appeared in no document in any of the three repos.
 
-   **Why this matters more than a missing feature:** the option is named for the
+   **Why that mattered more than a missing feature:** the option is named for the
    English word "grass" and this issue is titled "Grass patches shade wrongly",
-   so nothing signals that half the vegetation the same actor spawns is
-   untouched. If flowers show the same symptom, toggling `perBladeGrass` will
-   not move them — which reads as *the diagnosis being wrong* rather than as the
-   coverage being partial. Check what is actually in frame before concluding the
-   switch did nothing.
+   so nothing signalled that half the vegetation the same actor spawns was
+   untouched. A flower showing the same symptom would not have moved for
+   `perBladeGrass` — which reads as *the diagnosis being wrong* rather than as
+   the coverage being partial.
 
-   **The sibling switch is designed but NOT BUILT — it needs a protocol number
-   and this branch may not take one.** `perBladeFlowers`, defaulting off, is a
-   mechanical port of the grass path over `dFlower_packet_c`: the non-batched
-   per-flower loop it needs already exists in the same file as the non-`TARGET_PC`
-   draw (`d_flower.inc:977`), and the ambient helpers the batch path factored out
-   (`hana00_amb_color`, `hana01_amb_color`) are reusable as-is. What blocks it is
-   not the code. A fork-declared option **the game reads** is exactly the case the
-   protocol number exists to report: commit `558fb14`, which shipped
-   `perBladeGrass` itself, took protocol 4 → 5 and said why — *"A Remix build with
-   the checkbox against a game build that does not read it is exactly the silent
-   no-op the protocol exists to report."* `lanternInfiniteOil` (`9e1acf8`,
-   protocol 9 → 10) is the same shape and did the same. Without a bump, an older
-   game paired with a newer `d3d9.dll` reports a matching protocol, the tab says
-   "Connected" with no caveat, and the new checkbox silently does nothing — the
-   precise failure the 2026-08-11 both-directions skew notice was written to
-   prevent. **Do not build it without bumping both sides in the same commit.**
+   **BUILT 2026-08-11 — `rtx.dusklight.game.perBladeFlowers`, protocol 13. Off
+   by default.** Verification, stated precisely: the game side including
+   `d_a_grass.cpp` (which is where both `.inc` files land) is **MinGW
+   `-fsyntax-only` clean**, and the protocol and invariants checks in all three
+   repos pass. The **fork side has been compiled by nothing** — this repo's
+   harness does not reach it and dxvk-remix has no local one, so CI is its first
+   compiler. **Untested in game, both halves.** The sibling switch, a
+   mechanical port of the grass path over `dFlower_packet_c`. With it on, each
+   room's flowers are drawn from their display lists with a per-flower
+   `GXLoadPosMtxImm(get_model_mtx(...))` and a per-flower
+   `GXSetChanAmbColor(GX_COLOR0A0, …)`, exactly as the pre-batch code did — the
+   loop shape was taken from the non-`TARGET_PC` draw still in the same file, and
+   the ambient helpers the batch path had already factored out
+   (`hana00_amb_color`, `hana01_amb_color`) are reused unchanged, so **the two
+   branches feed identical ambient numbers and only the draw count differs.**
+   That is deliberate: it keeps the A/B honest.
 
-   Do **not** widen `perBladeGrass` to cover flowers instead. Its description
+   Three details that are easy to get wrong and are worth knowing before touching
+   this code:
+
+   - **`GXSetVtxDescv` does not clear the attributes it is not given** (aurora,
+     `lib/dolphin/gx/GXGeometry.cpp`, `SETVCDATTR`). The flower batch descriptor
+     turns `GX_VA_CLR1` on as `GX_DIRECT` to carry the per-flower ambient; the
+     per-flower descriptor therefore lists `{GX_VA_CLR1, GX_NONE}` explicitly.
+     Without that row a display list replay would expect a per-vertex colour that
+     is not in the stream. Grass does not have this problem because grass never
+     uses CLR1.
+   - **`batch_setup_tev` is deliberately not called on the per-flower branch.**
+     Its whole job is to rewrite the channel control so the ambient arrives as
+     vertex colour instead of as a register; the material display list called
+     just above already leaves the register-ambient setup the per-flower path
+     wants.
+   - **hana01's ambient is a seven-way cycle on list position**, so its index
+     counts every node in the room list, drawn or skipped. The batch loop counts
+     the same way (restarting at 0 per bucket), which is what makes the two
+     branches agree flower for flower. Incrementing only for drawn flowers would
+     recolour the whole room.
+
+   **Why a game-read bool needed the protocol bump**, since it carries no wire
+   payload: commit `558fb14`, which shipped `perBladeGrass` itself, took protocol
+   4 → 5 and said why — *"A Remix build with the checkbox against a game build
+   that does not read it is exactly the silent no-op the protocol exists to
+   report."* `lanternInfiniteOil` (`9e1acf8`, protocol 9 → 10) is the same shape
+   and did the same. Without a bump, an older game paired with a newer
+   `d3d9.dll` reports a matching protocol, the tab says "Connected" with no
+   caveat, and the new checkbox silently does nothing.
+
+   `perBladeGrass` was **not** widened to cover flowers instead. Its description
    promises grass, its cost profile differs (a flower is a bigger template than a
-   blade and the counts differ), and the grass half **has not been tested in game
-   even once** — there is nothing to widen from.
+   blade and the counts differ), and **neither half has been tested in game even
+   once** — there was nothing to widen from, and two switches let one test
+   session answer both questions in one trip.
+
+   **Regression signature for `perBladeFlowers`.** With it on, flower patches
+   should stop churning their asset hash and stop shading the way this issue
+   describes for grass. A frame-rate drop with it on is the per-flower path
+   costing what the batching saved — expected, and the reason it defaults off. If
+   the flowers **vanish or draw untextured**, the vertex descriptor or the
+   ambient reuse is wrong, not the idea. Nothing else in the frame should move:
+   with it off the batch path runs byte-identically to before.
 
    **The other two symptoms are separate and worth testing independently:**
 

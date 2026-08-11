@@ -1864,7 +1864,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "11");
+    push("rtx.dusklight.env.protocol", "13");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -1938,9 +1938,43 @@ void pushKankyoState() {
     push("rtx.dusklight.env.kumoBottom", formatColorS10(env->vrbox_kumo_bottom_col));
     push("rtx.dusklight.env.kumoShadow", formatColorS10(env->vrbox_kumo_shadow_col));
 
+    // The colour pattern, in all three of its parts. The game does not hold one pattern index; it
+    // holds a crossfade - an outgoing pattern, an incoming pattern, and a 0..1 ratio between them -
+    // and every palette value it produces is that lerp (d_kankyo.cpp:2406-2409 hands all three to
+    // setLight_palno_get, and kankyo_color_ratio_set blends on pat_ratio). Pushing wether_pat1
+    // alone therefore says "the weather is X" from the first frame of a transition, while the
+    // colours it is being read alongside are still the old pattern's and take up to a second to
+    // arrive.
+    //
+    // Worth knowing about the individual fields, because they read backwards otherwise:
+    //   - wether_pat0 is the OUTGOING pattern and wether_pat1 the INCOMING one, so pat_ratio 0
+    //     means "entirely wether_pat0" and 1 means "entirely wether_pat1".
+    //   - the steady state is wether_pat0 == wether_pat1 with pat_ratio pinned at 1.0
+    //     (d_kankyo.cpp:2212-2216 collapses the pair and clamps the ratio when the fade
+    //     completes), so outside a transition these two say nothing new.
+    //   - dKy_change_colpat (d_kankyo.cpp:9528-9533) resets the ratio to 0.0 without touching
+    //     wether_pat0, which is what makes the change frame 100% the OLD pattern.
+    //   - the kankyo tags drive the ratio directly and continuously: kytag01, the Lost Woods mist
+    //     tag, ramps it with cLib_addCalc over ~50 frames (d_a_kytag01.cpp:95-99, :129-148) and
+    //     that ramp *is* the mist's strength. A consumer reading the index alone sees full mist
+    //     the instant the tag is in range.
+    //
+    // The "*Gather" fields are not a second blend - they are the staging area tags and events
+    // write into, which exeKankyo copies onto these three (d_kankyo.cpp:4788-4828) and clears back
+    // to sentinels. There is one blend, and this is it.
     char sceneBuffer[16];
     std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->wether_pat1));
     push("rtx.dusklight.env.colpat", sceneBuffer);
+    std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->wether_pat0));
+    push("rtx.dusklight.env.colpatPrev", sceneBuffer);
+    // Quantized to a hundredth for the same reason daytime is quantized to a quarter degree: it
+    // moves every frame while a transition runs and every push that gets through takes the Remix
+    // API's global lock. A hundredth of a blend weight is far below anything visible, and outside
+    // a transition the value is a constant 1.0 that the diff cache drops entirely.
+    //
+    // Pushed unclamped on purpose - a ratio outside 0..1 would mean the reading is wrong, and
+    // clamping here would hide that. The consumer clamps.
+    push("rtx.dusklight.env.colpatBlend", formatFloatQ(env->pat_ratio, 0.01f));
     std::snprintf(sceneBuffer, sizeof(sceneBuffer), "%d", static_cast<int>(env->mMoyaMode));
     push("rtx.dusklight.env.moyaMode", sceneBuffer);
     // The haze counter is decremented past zero as it winds down, which would read as a negative
@@ -2144,13 +2178,23 @@ void tick() {
         // GRASS ONLY. daGrass_c is a grass AND flower actor: kind 0 spawns kusa (grass) into
         // dGrass_packet_c, kinds 2 and 3 spawn hana (flower) into dFlower_packet_c
         // (d_a_grass.cpp:250 and :322). dFlower_packet_c::draw batches identically - the same
-        // GXLoadPosMtxImm(identity) plus world-space GXBegin stream, d_flower.inc:772 - and
-        // has no switch, so flowers keep churning their hash with this on. If a symptom is
-        // present on flowers, this control will not move it.
+        // GXLoadPosMtxImm(identity) plus world-space GXBegin stream - so flowers keep
+        // churning their hash with this on. The flower half is the SEPARATE switch below; if
+        // a symptom is present on flowers, this control will not move it and that one will.
         const bool perBladeGrass = readOptionBool("rtx.dusklight.game.perBladeGrass",
                                                   game.remixPerBladeGrass.getValue());
         if (perBladeGrass != game.remixPerBladeGrass.getValue()) {
             game.remixPerBladeGrass.setValue(perBladeGrass);
+        }
+
+        // Flowers: the sibling of the switch above over dFlower_packet_c::draw, same reason
+        // and same cost shape. Deliberately not folded into perBladeGrass - a flower is a
+        // bigger template than a blade so the draw-call cost differs, and neither half has
+        // been tested in game, so keeping them apart lets one test session answer both.
+        const bool perBladeFlowers = readOptionBool("rtx.dusklight.game.perBladeFlowers",
+                                                    game.remixPerBladeFlowers.getValue());
+        if (perBladeFlowers != game.remixPerBladeFlowers.getValue()) {
+            game.remixPerBladeFlowers.setValue(perBladeFlowers);
         }
 
         // Epona's dash speed effect, which the game positions relative to the camera rather

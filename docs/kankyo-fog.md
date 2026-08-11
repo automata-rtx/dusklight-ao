@@ -52,25 +52,75 @@ Applied at `src/d/d_kankyo.cpp:9423` (global) and `:9458` (per-tevstr).
 
 ---
 
-## 2. Five layers modify fog before it reaches the screen
+## 2. Four layers modify fog before it reaches the screen
 
 This is why the bridge must read the **outputs** (`fog_col`, `mFogNear`,
 `mFogFar`) and never re-derive from the palette tables.
 
 | # | Layer | Where | Effect |
 | :-- | :-- | :-- | :-- |
-| 1 | Palette 4-way blend | `d_kankyo.cpp:2469` | time-of-day × colpat transition |
+| 1 | Palette 4-way blend | `d_kankyo.cpp:2469` | time-of-day × colpat transition. The colpat half is a **crossfade**: `wether_pat0` (outgoing) → `wether_pat1` (incoming) on `pat_ratio`. The `*Gather` fields are how tags and events *inject into* it — see below |
 | 2 | `addcol_fog` | `dKy_addcol_fog_set` | additive colour offset |
 | 3 | `now_fogcol_ratio` | `d_kankyo.cpp:4802`, `:9606` | scales fog colour; lightning pulses it (`d_kankyo_rain.cpp:362`) |
 | 4 | `dKy_fog_startendz_set` | `d_kankyo.cpp:9324` → `field_0x11ec/f0/f4` | start/end override with a blend ratio |
-| 5 | Gather colpat blend | `mColpatPrevGather` / `mColpatCurrGather` / `mColPatBlendGather` / `mColPatModeGather` | a **second**, independent palette blend layered on layer 1 |
 
 ("kytag" = *kankyo tag*: `d_a_kytag00`…`d_a_kytag17`, invisible actors that
 override environment state for the area they sit in.)
 
-Reading the final values inherits all five for free and keeps working if the
-game changes. Re-deriving would mean reimplementing all five and keeping them
+Reading the final values inherits all four for free and keeps working if the
+game changes. Re-deriving would mean reimplementing all four and keeping them
 in sync forever.
+
+> ### There was a layer 5 here, and it was the same blend counted twice
+>
+> **Corrected 2026-08-11.** This table used to carry a fifth row, "Gather colpat
+> blend — a **second**, independent palette blend layered on layer 1". There is
+> no second blend. `mColpatPrevGather` / `mColpatCurrGather` /
+> `mColPatBlendGather` are a **staging area**, and `exeKankyo` empties it into
+> layer 1 once per frame (`d_kankyo.cpp:4788-4828`):
+>
+> ```cpp
+> if (mColpatPrevGather != 0xFF) { wether_pat0 = mColpatPrevGather; ... }
+> if (mColpatCurrGather != 0xFF) { wether_pat1 = mColpatCurrGather; ... }
+> if (mColPatBlendGather >= 0.0f) { pat_ratio  = mColPatBlendGather; ... }
+> ```
+>
+> — clearing each back to its sentinel (`0xFF`, `0xFF`, `-1.0f`) as it goes, the
+> same sentinels `envcolor_init` (`:1243`) writes at `:1373-1375`. `mColPatMode`
+> selects which of the two arms runs: with it set the staged values are applied
+> every frame and *held*, which is also what stops `setLight_palno_get`
+> advancing `pat_ratio` itself (`:2192`); without it they are applied only once
+> the previous fade has finished (`wether_pat0 == wether_pat1`, `:4812`), so a
+> tag cannot interrupt a transition already in flight.
+>
+> There is exactly one `pat_ratio` and exactly one blend on it — the four
+> palettes and that single ratio go into `setLight_palno_get` together at
+> `:2406-2409`, and every colour, fog distance and bloom parameter below it
+> lerps on the same number (`:2435`-`:2639`).
+>
+> **What the gather fields really are: the write port.** The API for changing
+> the palette writes *there* rather than to the live fields —
+> `dKy_change_colpat` (`:9528-9533`), `dKy_custom_colset` for events
+> (`:9535-9553`), and the kankyo tags (`d_a_kytag00.cpp:93-123`,
+> `d_a_kytag01.cpp:96-99`, `d_a_kytag06.cpp:244-252`).
+>
+> **It is not the only route, and that is worth knowing before anyone builds on
+> it.** A handful of actors assign `wether_pat0`/`wether_pat1` directly and skip
+> the staging area entirely — `d_a_kytag06.cpp:1106-1107` and `:1172-1173`,
+> `d_a_kytag01.cpp:182-183`, and several bosses and enemies (`d_a_e_vt.cpp`,
+> `d_a_b_mgn.cpp`, `d_a_b_bq.cpp`, `d_a_b_yo.cpp`, `d_a_e_fm.cpp`). Those
+> writes set both endpoints at once, so they are a hard cut rather than a fade.
+> Either way the *outputs* carry the result, which is the whole reason the
+> bridge reads outputs.
+>
+> **The consequence that the wrong wording hid.** Because it read as a separate
+> system, the Remix bridge pushed `wether_pat1` alone and nothing pushed the
+> other two thirds — so Remix knew *which* pattern but never *how far through*.
+> `dKy_change_colpat` sets the ratio to `0.0f` without touching `wether_pat0`,
+> so on the frame the index changes the palette is still **100% the old
+> pattern**, and a consumer cutting on the index alone is at its most wrong
+> exactly then. Fixed at protocol 13; `dxvk-remix/documentation/DusklightAtmosphere.md`
+> §4 carries the renderer half.
 
 > ### There was a sixth row here, and it was wrong
 >
@@ -197,8 +247,16 @@ if (g_env_light.mColPatBlendGather > 0.5f) mDoAud_startFogSe();
 1. **Fog range override** with `start = -2000`, `end = 200` — note `start` is
    negative and below `end`, so the ramp is already ~90% opaque at `z = 0`. A
    near-whiteout, by design.
-2. **A second colpat blend** ("gather") pulling in a different palette — so the
-   sky and fog *colour* change too, not just the range.
+2. **A colpat crossfade driven directly**, staged through the "gather" fields —
+   so the sky and fog *colour* change too, not just the range. This is not a
+   second blend (§2): the tag is writing the *one* palette crossfade's two
+   endpoints and its ratio, pattern 0 → pattern 1, and `exeKankyo` copies all
+   three onto `wether_pat0` / `wether_pat1` / `pat_ratio` next frame. Because
+   `mColPatModeGather = 1`, the game stops advancing the ratio itself
+   (`d_kankyo.cpp:2192`) and the tag owns it outright — so `field_0x594`, a
+   `cLib_addCalc` ramp taking ~50 frames to travel 0 → 1 (`:129-148`), **is**
+   the mist's strength. A consumer that reads only "the pattern is 1" sees full
+   mist from the first frame the tag is in range.
 3. **Moya particles** (`mMoyaMode = 3`) — billboard haze on top.
 4. **Audio.**
 
@@ -333,8 +391,9 @@ Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
 All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
-protocol **2**; the wire has since advanced to **11** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
-6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout) and gained more keys. The authoritative list is
+protocol **2**; the wire has since advanced to **13** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
+6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout, 13 = per-flower blossoms) and gained more keys.
+The full ladder, including why 12 is skipped, is `dxvk-remix/documentation/DusklightOverlay.md`; the authoritative key list is
 `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 
 | Key | Source |
@@ -347,18 +406,24 @@ protocol **2**; the wire has since advanced to **11** (3 = overlay + warp, 4 = t
 | `skyColor` | `vrbox_sky_col` |
 | `kasumiInner`, `kasumiOuter` | `vrbox_kasumi_inner_col` / `vrbox_kasumi_outer_col`. **`outer` is the *near* band and `inner` the *far* one** — the reverse of the English reading; the game labels them 霞手前/霞奥 in its palette exporter and `kasumiF`/`kasumiB` in its debug view ([`japanese-naming.md`](japanese-naming.md) §6) |
 | `kumoTop`, `kumoBottom`, `kumoShadow` | cloud colours; pushed but not consumed yet (Phase D) |
-| `colpat` | `g_env_light.wether_pat1` |
+| `colpat` | `g_env_light.wether_pat1` — the pattern being faded **in** to |
+| `colpatPrev` | `g_env_light.wether_pat0` — the pattern being faded **out** of (protocol 13) |
+| `colpatBlend` | `g_env_light.pat_ratio`, quantized to 0.01 — how far through, 0 = all `colpatPrev`, 1 = all `colpat` (protocol 13) |
 | `moyaMode`, `moyaCount` | `g_env_light.mMoyaMode` / `mMoyaCount`, clamped at 0 |
 
-Two of these are not the obvious field, and both matter:
+Three of these are not the obvious field, and all three matter:
 
 **`skyHidden` recomputes the colour-sum test rather than reading `g_env_light.hide_vrbox`.** That flag is written by
 `daVrbox_color_set` in the sky dome *actor* (`d_a_vrbox.cpp:69-79`), so in any stage with no such actor — which is every
 interior, exactly where the question matters — it is never updated and still holds whatever the last outdoor area left
 there. Recomputing the same test is correct everywhere and one frame fresher.
 
-**`colpat` is `wether_pat1`.** There is no `mColpatPrev`/`mColpatCurr`; the only similarly named fields are the `*Gather`
-pair, which hold a sentinel most of the time because they belong to the secondary blend the fog bank tags drive.
+**`colpat` is `wether_pat1`, and it is only one third of the answer.** There is no `mColpatPrev`/`mColpatCurr`; the
+similarly named `*Gather` fields hold a sentinel most of the time because they are the *staging area* tags and events
+write into, not a blend of their own (§2). The live blend is the trio above — `wether_pat0` → `wether_pat1` on
+`pat_ratio` — and until protocol 13 only `wether_pat1` crossed. Outside a transition `colpatPrev == colpat` and
+`colpatBlend == 1.0`, which is exactly why the old single push looked complete: **the missing two thirds are constant
+except in the moments they decide something.**
 
 **`fogActive`** is computed, because the game has no fog-enable flag at all and leaves the distances entirely unclamped:
 `isfinite(near) && isfinite(far) && far > near && far > 0`. Note a *negative* `mFogNear` is normal rather than broken —
