@@ -86,12 +86,45 @@ enforces this, so it goes stale silently; regenerate it at checkpoints.
 **Blob shadows are suppressed under Remix, and it is TESTED (2026-08-06):** the
 flat quads under dropped items are gone. Landed 2026-08-05 (`rtx.dusklight.game.blobShadows`,
 default off, live in the overlay under Geometry). The flat discs the game paints
-under rupees, hearts and pots approximate a shadow Remix traces for real from the
+on the ground under an actor approximate a shadow Remix traces for real from the
 same geometry, so drawing them puts a painted shadow on top of a correct one.
 Dropped at registration in `dDlst_shadowControl_c::setSimple`, so no draw call is
 issued rather than one being hidden downstream. **The game's projected shadows
 (`dDlst_shadowReal_c` — Link, major actors) are a separate system and are
-untouched.** The reasoning that made the blob suppression correct — a painted
+untouched.**
+
+**Its reach is far wider than "rupees, hearts and pots", which is what four
+documents said until 2026-08-11.** `setSimple` is the single funnel behind
+**50 `dComIfGd_setSimpleShadow` call sites** — counted 2026-08-11: 48 in
+`src/d/actor/*.cpp|.inc` across 45 files, plus two more in the inline draws in
+`include/d/actor/d_a_obj_kamakiri.h` and `d_a_obj_katatsumuri.h`. (The other 4
+of the 54 textual matches are the wrapper's own declaration and definition in
+`d_com_inf_game.{h,cpp}` and are not registrations.) Two of those sites are
+**shared base classes** and carry most of the reach:
+`daNpcT_c::draw` (`d_a_npc.cpp:1432`), which **51 classes derive from**, and
+`daItemBase_c::setShadow` (`d_a_itembase.cpp:160`), which covers every
+collectable. `daDemo00_c::draw` (`d_a_demo00.cpp:1520`) covers cutscene actors.
+So the switch drops **the simple ground shadow of every actor that registers
+one** — items, objects, insects, enemies, NPCs, cutscene actors.
+
+**This is a prose defect, not a behaviour defect.** The reasoning still holds for
+anything whose caster geometry reaches Remix, and nothing about the code changed.
+But the **2026-08-06 tested-good claim is much narrower than what shipped**: what
+was looked at was dropped items. A session reading the old wording would not
+predict that an NPC's ground shadow is affected, and would file it as a new bug.
+
+**Naming, verified 2026-08-11.** The game has a word for the *projected* class
+and uses it throughout its own debug UI: リアル影 *riaru kage*, "real shadow" —
+`d_bg_s.cpp:743` (`OSReport("リアル影 %d回\n")`), the two debug checkboxes at
+`d_bg_s.cpp:48,57`, and the `real_shadow_size` HIO sliders in `d_a_npc.cpp:150`,
+`d_a_npc4.cpp:2032`, `d_a_obj_gadget.cpp:118` and six more. It has **no name at
+all for the simple class**: the only Japanese label attached to one is the plain
+影サイズ *kage saizu*, "shadow size", on movebox's HIO slider
+(`d_a_obj_movebox.cpp:78`). **"Blob shadow" is our coinage, not the game's word**
+— worth knowing before grepping for it. (Beware シンプルモデル *shinpuru moderu*,
+"simple model": ~15 hits, and an unrelated system — `dComIfGp_getSimpleModel`.)
+
+The reasoning that made the blob suppression correct — a painted
 shadow drawn on top of a traced one — transfers to them word for word, and it is
 now a confirmed reading rather than a prediction. Not done because nobody has
 asked and Link's shadow is a far more visible change than a rupee's; it is the
@@ -691,6 +724,52 @@ Added **2026-08-08**:
    batch loop, which owns their TEVREG2 alpha ramp; the new path skips them
    rather than duplicating it. **Untested in game.**
 
+   **`perBladeGrass` covers `dGrass_packet_c` ONLY, and the flowers from the
+   same actor still batch.** Verified 2026-08-11. `daGrass_c` plants both:
+   `d_a_grass.cpp:250` sends kind 0 — 草 *kusa*, grass — to `createGrass()` /
+   `dGrass_packet_c`, and `d_a_grass.cpp:322` sends kinds **2 and 3** — 花
+   *hana*, flower — to `createFlower()` / `dFlower_packet_c`. The asset names
+   agree: `l_M_kusa05_RGBATEX` for the blades, `l_J_Ohana00_64TEX` and
+   `l_J_hana00DL` for the flowers.
+
+   `dFlower_packet_c::draw` (`src/d/actor/d_flower.inc:772`, the `TARGET_PC`
+   path) has **the identical churning batch**: `GXLoadPosMtxImm(identity,
+   GX_PNMTX0)`, every flower's positions pushed through `transform_positions`
+   into world space, and one immediate-mode `GXBegin(GX_TRIANGLES, GX_VTXFMT1,
+   GX_AUTO)` stream per bucket — two buckets for hana00, three for hana01. Same
+   shape, same reason, same unstable hash. It has **no switch**, and until
+   2026-08-11 it appeared in no document in any of the three repos.
+
+   **Why this matters more than a missing feature:** the option is named for the
+   English word "grass" and this issue is titled "Grass patches shade wrongly",
+   so nothing signals that half the vegetation the same actor spawns is
+   untouched. If flowers show the same symptom, toggling `perBladeGrass` will
+   not move them — which reads as *the diagnosis being wrong* rather than as the
+   coverage being partial. Check what is actually in frame before concluding the
+   switch did nothing.
+
+   **The sibling switch is designed but NOT BUILT — it needs a protocol number
+   and this branch may not take one.** `perBladeFlowers`, defaulting off, is a
+   mechanical port of the grass path over `dFlower_packet_c`: the non-batched
+   per-flower loop it needs already exists in the same file as the non-`TARGET_PC`
+   draw (`d_flower.inc:977`), and the ambient helpers the batch path factored out
+   (`hana00_amb_color`, `hana01_amb_color`) are reusable as-is. What blocks it is
+   not the code. A fork-declared option **the game reads** is exactly the case the
+   protocol number exists to report: commit `558fb14`, which shipped
+   `perBladeGrass` itself, took protocol 4 → 5 and said why — *"A Remix build with
+   the checkbox against a game build that does not read it is exactly the silent
+   no-op the protocol exists to report."* `lanternInfiniteOil` (`9e1acf8`,
+   protocol 9 → 10) is the same shape and did the same. Without a bump, an older
+   game paired with a newer `d3d9.dll` reports a matching protocol, the tab says
+   "Connected" with no caveat, and the new checkbox silently does nothing — the
+   precise failure the 2026-08-11 both-directions skew notice was written to
+   prevent. **Do not build it without bumping both sides in the same commit.**
+
+   Do **not** widen `perBladeGrass` to cover flowers instead. Its description
+   promises grass, its cost profile differs (a flower is a bigger template than a
+   blade and the counts differ), and the grass half **has not been tested in game
+   even once** — there is nothing to widen from.
+
    **The other two symptoms are separate and worth testing independently:**
 
    - **Glow in the dark.** First suspect is emissive blend translation.
@@ -973,29 +1052,76 @@ Added **2026-08-08**:
 11. **Item drop-shadows render as a black quad under Remix.** Long-standing;
     reported again 2026-08-04, and it cannot be tagged away in the dev menu.
 
-    **Inference, not yet verified.** The game draws those round shadows as a
-    *projected* texture, and stock Remix does not support projected texture
-    transforms — `unsupported-effects.md` R6, which logs
-    `Use of projected texture transform detected`. With the projection dropped
-    the quad samples flat, so the whole rectangle takes one dark value. That
-    fits every reported property, including why no texture tag reaches it: the
-    defect is in the transform, not the texture.
+    **REWRITTEN 2026-08-11 — the stated mechanism does not survive a read of the
+    source, and the fix it proposed has already shipped.** The old entry blamed
+    a projected texture transform. The shadows it names are **the class that
+    does not use one.** Both halves below are read out of the tree, not inferred.
 
-    **Cheap confirmation:** the `matrep.gx` line for the shadow material will
-    show a `GX_TG_MTX3x4` texgen, and aurora already emits
-    `texgen: camera-space source without invertible world` for the related case.
-    Confirm before building anything.
+    **Which class this is about: the SIMPLE one.** An item's drop-shadow comes
+    from `daItemBase_c::setShadow` (`d_a_itembase.cpp:160`) →
+    `dComIfGd_setSimpleShadow` → `dDlst_shadowControl_c::setSimple` →
+    `dDlst_shadowSimple_c`. The two shadow classes are drawn back to back in one
+    function, `dDlst_shadowControl_c::draw` (`src/d/d_drawlist.cpp:1627`), each
+    behind its own texgen set immediately before its loop:
 
-    **Likely fix, once confirmed:** stop drawing them under Remix, which is the
-    policy already applied to moya cloud shadows and sky billboards — the path
-    tracer casts real shadows, so the projected fake is redundant as well as
-    broken. That is a game-side switch alongside `hideVrbox` /
-    `hideSkyBillboards`. Note this is *not* a case of accepting a Remix
-    limitation: teaching the fork the projected transform is available and the
-    ramp work shows it is a reasonable move. It is not worth doing here because
-    the effect being emulated is one the path tracer produces for real — if some
-    other projected-texture effect turns out to be wanted, the fork is the
-    place to put it (`remix-material-interface.md` §0).
+    - `d_drawlist.cpp:1637`, before the **real** loop:
+      `GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX3x4, GX_TG_POS, GX_TEXMTX0)` —
+      a projected transform, position-sourced.
+    - `d_drawlist.cpp:1678`, before the **simple** loop:
+      `GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY)` —
+      an ordinary 2×4 texgen from TEX0 through the identity matrix. **Not
+      projected.** `dDlst_shadowSimple_c::draw` (`:1364`) never changes it.
+
+    So the projected transform belongs to the **real** class only, and the old
+    diagnosis was attached to the wrong half of the same function.
+
+    **And the fix it proposed has shipped for this class.** "Stop drawing them
+    under Remix… a game-side switch alongside `hideVrbox` / `hideSkyBillboards`"
+    is `rtx.dusklight.game.blobShadows`, landed 2026-08-05 — after this entry was
+    last written on 2026-08-04 — and tested good 2026-08-06 on exactly these item
+    shadows. **If the black quad is still visible with that switch at its default
+    (off = suppressed), it is not this class and this entry is the wrong place
+    for it.** That is the first thing to check, and it costs nothing.
+
+    **The requested confirmation now DISCRIMINATES rather than confirms** —
+    keep it, but read it the other way round. A texgen of `GX_TG_MTX3x4` means
+    the **real**-shadow class and the projection diagnosis stands; `GX_TG_MTX2x4`
+    from `GX_TG_TEX0` means the **simple** class and it does not.
+
+    **⚠ But `matrep.gx` cannot answer it, contrary to what this entry said.**
+    Checked 2026-08-11 against the emitter at `aurora-ao/lib/dx9/dx9_tev.cpp:1824`:
+    its fields are `mk st map coord tex fmt cc cop scale out ca aop kc ka ind`.
+    **There is no texgen type in any `matrep.*` line** — not `.gx`, `.sum`, `.k`
+    or `.d3d`. Aurora *does* branch on `GX_TG_MTX3x4` (`dx9_tev.cpp:859`) and
+    warns `texgen: camera-space source without invertible world` at `:882`, but
+    that fires only for the camera-space case and is not a report of the type.
+    **Getting this answer from a log needs a log line that does not exist yet**
+    (rule 2: that is a defect in the instrumentation, not a question for the
+    owner). Adding the texgen type to `matrep.gx` is the cheap version.
+
+    **Two further corrections to the old text, both verified:**
+
+    - The log string it quoted, `Use of projected texture transform detected`,
+      **is not in the fork.** The nearest is
+      `d3d9_rtx_utils.cpp:118`, `"Use of non-projected texture transform element
+      counts beyond 2 is not supported in Remix (extra elements are ignored)"` —
+      which fires on the *non*-projected case.
+    - **The fork now supports projected texcoords**, so the premise that Remix
+      cannot carry them is stale: `d3d9_rtx_utils.cpp:128` sets
+      `transformData.texcoordProjected`, and it reaches the surface as
+      `isTexcoordProjected` (`rtx_instance_manager.cpp:1247`). Aurora's
+      `unsupported-effects.md` **R6 still says "Open, not attempted"** and needs
+      re-checking against this — **not done here, out of this item's file list.**
+
+    **One observation, offered as a lead and NOT as a diagnosis.** The simple
+    shadow is not a single textured quad. `dDlst_shadowSimple_c::draw` runs a
+    five-pass **shadow-volume** sequence — `l_frontMat` + `l_shadowVolumeDL`,
+    then `l_backSubMat` + `l_shadowVolumeDL`, then the seal passes under a
+    second position matrix (`GX_PNMTX1`), then `l_clearMat` +
+    `l_shadowVolumeDL` again — i.e. framebuffer-alpha arithmetic, not a picture.
+    Whether a path tracer handed those volume passes as ordinary world geometry
+    is what produces the black quad is **untested and unmeasured**; it is written
+    down only so the next session does not start from the refuted premise.
 
 12. **HUD fade-in effects drew as opaque squares.** Reported 2026-08-04: A-button
     prompts and Epona's spur icon appeared as an expanding rectangle with the

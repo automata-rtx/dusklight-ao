@@ -2537,7 +2537,7 @@ void dScnKy_env_light_c::setLight() {
                 g_kankyoHIO.bloom.m_saturationPattern = prev_pal_end_p->bloom_tbl_id;
             }
 
-            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) {
+            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) { // DEAD ON ARRIVAL: the block just below runs on this same condition and overwrites all four ids with 3, so the navy panel's four "twilight sense" modes never reach the bloom table. Recorded, not fixed - docs/japanese-naming.md
                 prev_bloom_start_id = next_bloom_start_id = prev_bloom_end_id = next_bloom_end_id = g_kankyoHIO.navy.twilight_sense_saturation_mode;
             }
             #endif

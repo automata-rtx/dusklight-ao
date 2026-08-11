@@ -52,7 +52,7 @@ Applied at `src/d/d_kankyo.cpp:9423` (global) and `:9458` (per-tevstr).
 
 ---
 
-## 2. Six layers modify fog before it reaches the screen
+## 2. Five layers modify fog before it reaches the screen
 
 This is why the bridge must read the **outputs** (`fog_col`, `mFogNear`,
 `mFogFar`) and never re-derive from the palette tables.
@@ -64,15 +64,50 @@ This is why the bridge must read the **outputs** (`fog_col`, `mFogNear`,
 | 3 | `now_fogcol_ratio` | `d_kankyo.cpp:4802`, `:9606` | scales fog colour; lightning pulses it (`d_kankyo_rain.cpp:362`) |
 | 4 | `dKy_fog_startendz_set` | `d_kankyo.cpp:9324` → `field_0x11ec/f0/f4` | start/end override with a blend ratio |
 | 5 | Gather colpat blend | `mColpatPrevGather` / `mColpatCurrGather` / `mColPatBlendGather` / `mColPatModeGather` | a **second**, independent palette blend layered on layer 1 |
-| 6 | `fog_avoid_tag` (kytag08) | `env_light.fog_avoid_tag` | a moving position that pushes fog away from the player |
 
 ("kytag" = *kankyo tag*: `d_a_kytag00`…`d_a_kytag17`, invisible actors that
 override environment state for the area they sit in.)
 
-Reading the final values inherits layers 1–5 for free and keeps working if the
+Reading the final values inherits all five for free and keeps working if the
 game changes. Re-deriving would mean reimplementing all five and keeping them
-in sync forever. Layer 6 is positional and is not represented in the outputs —
-see the compromise ledger (C6) in the Remix doc.
+in sync forever.
+
+> ### There was a sixth row here, and it was wrong
+>
+> **Removed 2026-08-11.** This table used to carry a layer 6, "`fog_avoid_tag`
+> (kytag08) — a moving position that pushes fog away from the player", with a
+> note that it was positional and could not be read out of the outputs. That
+> claim was the sole basis for compromise C6 and for a planned
+> heterogeneous-fog feature in the Remix doc. **kytag08 writes no fog state.**
+>
+> The field has four references in the whole tree: its declaration
+> (`include/d/d_kankyo.h:332`), one write (`d_a_kytag08.cpp:264`, on actor
+> create) and one read, tested then dereferenced (`d_kankyo.cpp:11608`,
+> `:11610`). That read sits in
+> `dKy_bg_MAxx_proc`'s branch for background materials named **`MA11`**
+> (`:11539`), on the non-twilight side of `dKy_darkworld_check()`. All it does
+> is aim a `C_MTXLightPerspective` projection at the tag's `mAvoidPos` and set
+> it as that material's texture matrix 0 effect matrix (`:11608-11637`) — a
+> **projected texture on drawn geometry**.
+>
+> The game names that geometry itself. The same branch sets the material's TEV
+> colours 1 and 2 (`:11584`, `:11590`), and the HIO panel that overrides exactly
+> those two in a debug build — `mist_twilight_c1_col`/`c2_col`, `:11594-11604` —
+> is headed 「霧沼　トワイライト時　色設定」 (`d_kankyo.cpp:7594`, sliders
+> `:7596-7603`): 霧沼 *kirinuma*, **fog swamp**, "colour settings while in
+> twilight". The "fog" being cleared is a **painted ground surface**, and the
+> hole in it is a texture projection.
+>
+> The rest of the actor is two JPA emitters (`0x84A0`, plus `0x84A1`/`0x84A2`
+> by world, `d_a_kytag08.cpp:252-257`), audio (`mDoAud_setFogWipeWidth` `:80`,
+> `mDoAud_startFogWipeTrigger` `:97`) and one player flag (`onFogFade()`
+> `:157`). Grepping the file for `fog_col`, `mFogNear`, `mFogFar`,
+> `dKy_fog_startendz_set`, `GXSetFog`, `J3DFogInfo`, `addcol_fog` and
+> `now_fogcol_ratio` returns nothing.
+>
+> **Consequence for the Remix side: nothing is owed.** The bubble is geometry
+> and particles, so it reaches Remix through the ordinary draw stream. C6 is
+> withdrawn; `DusklightAtmosphere.md` §8.2 carries the same finding.
 
 ---
 
@@ -126,13 +161,17 @@ the fade is the palette interpolation the game already does.
 > is room 3, Sacred Grove is the `F_SP117_1` layer).
 >
 > **Where the mix-up probably came from**, because it has produced more than one
-> wrong attribution: `d_kankyo.cpp:7457` is an HIO combo item
+> wrong attribution: `d_kankyo.cpp:7462` is an HIO combo item
 > 「２：ハイリア湖専用」 — *"2: Lake Hylia only"* — but it sits in the
-> 「■ トワイライト　センスパターン」 panel (`:7451`) bound to
-> `twilight_sense_pat` (`:7454`), the **wolf-sense** pattern index. That is a
+> 「■ トワイライト　センスパターン」 panel (`:7456`) bound to
+> `twilight_sense_pat` (`:7459`), the **wolf-sense** pattern index. That is a
 > different index space from colpat, and one Japanese label read out of its
 > panel appears to have seeded two separate wrong attributions (see
 > `japanese-naming-audit.md` §4.1).
+>
+> **The same panel struck a third time**, and that one is traced rather than
+> suspected: its entry 9, 「９：Ｌｖ８専用　D_MN08」 (`:7469`), became the fork's
+> `kPalaceOfTwilightColpat = 9`. §3.5 below.
 >
 > **What is *not* established:** whether Lake Hylia also carries a kytag01.
 > Actor placement lives in stage `.dzs` data, which this repo does not contain —
@@ -229,9 +268,36 @@ puts all 64 slices where the fog is.
 
 ### 3.5 Twilight Realm
 
-Colpat pattern 9 (`d_kankyo.cpp:266-270`, stage prefix `D_MN08`). Ordinary
-palette machinery with amber values, plus the full-screen mono overlay the
-bridge already reports. Not a special rendering mode.
+Ordinary palette machinery with amber values, plus the full-screen mono overlay
+the bridge already reports. Not a special rendering mode.
+
+> **Corrected 2026-08-11.** This paragraph used to open "Colpat pattern 9
+> (`d_kankyo.cpp:266-270`, stage prefix `D_MN08`)". **That citation is a
+> different index space** — the same trap as §3.3's Lake Hylia mix-up, from the
+> same debug panel.
+>
+> `d_kankyo.cpp:266-270` is inside `dKy_sense_pat_get` (`:135-316`), the
+> **wolf-sense vision** pattern. Its values pick what senses mode looks like, in
+> `dKy_WolfPowerup_BgAmbCol` (`:318`) and `dKy_WolfPowerup_FogNearFar` (`:416`),
+> and the panel that overrides it is 「■ トワイライト　センスパターン」 bound to
+> `twilight_sense_pat` (`:7456`, combo at `:7459-7474`), whose entry 9 reads
+> 「９：Ｌｖ８専用　D_MN08」 — *"9: for Lv8 only, D_MN08"* (`:7469`). True of the
+> sense patterns; **it says nothing about colpat.**
+>
+> Colpat is `g_env_light.wether_pat1` (§5), which indexes
+> `stage_envr_info_class::pselect_id[65]` (`d_stage.h:171`) through the switch at
+> `d_kankyo.cpp:1896-1990`. **What pattern the Palace of Twilight actually runs
+> is UNKNOWN** — no literal 9 is written to colpat anywhere in the tree
+> (`dKy_change_colpat` takes 0–6 and 10–12; direct `wether_pat1` writes are 1,
+> 2, 3, 4, 6), but three writers take it from actor parameters and path-point
+> arguments in `.dzs`/`.dzr` stage data (`d_a_kytag06.cpp:854`, `:876`,
+> `:1105-1107`; `d_a_kytag01.cpp:181-183`), which this repo does not contain. So
+> 9 is *possible* and unestablished, not ruled out.
+>
+> This mattered outside this document: the fork bypasses its entire physical sky
+> when the pushed colpat is 9, on this citation. It is now instrumented rather
+> than removed — `dxvk-remix/documentation/DusklightAtmosphere.md` §8.6 has the
+> log line and what each result decides.
 
 ---
 
