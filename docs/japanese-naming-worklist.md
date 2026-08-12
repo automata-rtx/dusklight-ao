@@ -123,16 +123,64 @@ code, or only the documents?*
 | **P17** | PR #11, water channels | **Yes.** `water_materials.hpp`, `remix_bridge`, `settings.{h,cpp}`, aurora's `Power` packing, and bidirectional side-channel checks in both invariants scripts. |
 | **P1** | PR #12, Lost Woods fog tag | **No — and correctly so.** There is no fork code that implements the `kytag01` blend; the game computes the fog range and pushes it. What is owed is a **measurement**, not a commit. See the item. |
 
-### DO — schedule these
+### ✅ DONE 2026-08-11 on `claude/japanese-naming-worklist-nea1rk` — protocol 11 → **13**
 
-| | Why it earns a session |
+One session, thirteen items, all three repos. Every invariants script green, syntax and
+protocol checks green, **untested in game throughout**.
+
+| | What landed | Code? |
+| :-- | :-- | :-- |
+| **P4** | Keyword guard in `check_invariants.py` (6th check). **Ten** dead keywords, not three — and it also caught that `classifyByName`'s lists had an unenforced second copy in `classKeyword`. | **Yes** |
+| **P8** | Material-name debug group moved off `#if DEBUG` onto `DUSK_GFX_DEBUG_GROUPS`, truncation handled. `grp=` now carries the artists' own material name. | **Yes** |
+| **P12** | **Verified, NOT batched.** Instrumented instead so one log is decisive. See below. | **Instrument only, on purpose** |
+| **P14** | `remixHideStarBillboards` sub-switch splits the star packet off the sun/moon packet. | **Yes** |
+| **P15** | Six time-slot comments (off by 5–6 h), `d_s_menu.cpp`, `kankyo-remix.md`; overlay reaches all **six** palette slots, not four. | **Yes** |
+| **P16** | `allowTextureDumps` is a setting, defaulting off. **Caveat: aurora only reaches the dump path from its GX resolver, so it writes nothing under D3D9/Remix.** | **Yes, with a real limit** |
+| **P3** | Already done on unmerged `claude/bloom-docs-verify-d2844x` — verified, **not rebuilt**. Only the one statement it misses was fixed (`dusklightThresholdScale`). | Partly, deliberately |
+| **P5** | Both claims confirmed. **Ledger row C6 withdrawn** — `fog_avoid_tag` is a projected hole in a painted "fog swamp" mesh, not fog state. colpat-9 provenance traced; impact **UNKNOWN**, now instrumented. | **Yes** (the log line) |
+| **P10** | Bloom vocabulary glossed; the decomp's `// ?` on `mOrigDensity` answered from code as well as label; presets 32–35 refutation confirmed and strengthened. | Comments only |
+| **P18** | Record halves (50 sites, not 48; issue 11 rewritten) **and** the code half — `perBladeFlowers`, defaulting off. | **Yes** |
+| **P9** | `docs/kankyo-tuning-surface.md` + **three** controls wired. | **Yes** |
+| **P7** | `colpatPrev` / `colpatBlend` pushed; the weather term lerps instead of cutting. Default-safe **by algebra**. | **Yes** |
+| **P20** | RGB layers **refused with a citation** (they are per-room-model ambient light); the three named **alphas** pushed and displayed. Two paraphrased descriptions corrected. | **Yes, and one deliberate no** |
+| **P19** | `dungeonlight[0..5]` forwarded as sphere lights, **off by default**, with cone shaping and found/drawn counters. The `mInfluence` trap was avoided. | **Yes** |
+
+**Dropped as already-done elsewhere: P2, P6, P11, P13** — all four are on unmerged
+`claude/kasumi-naming-correction-w3e204` (**protocol 12**). They were verified present and
+correct and deliberately **not** re-implemented, because two implementations of one feature
+is the exact trap this file's merge section documents.
+
+> **Two unmerged branches now carry finished worklist work** —
+> `claude/kasumi-naming-correction-w3e204` (P2, P6, P11, P13) and
+> `claude/bloom-docs-verify-d2844x` (P3). **Merging them is worth more than any remaining
+> item here**, and until they merge, every session rediscovers them at full cost. This one
+> spent a wave doing exactly that before catching it.
+
+### DO — what is actually left
+
+**Nothing in this file is now unscheduled work.** What remains is not a backlog of items;
+it is a short list of things blocked on something only the owner can supply.
+
+| | What it is waiting for |
 | :-- | :-- |
-| **P19** | The largest piece of game data we drop — and cheaper than it looked (see below). Instrument first. |
-| **P12** | The densest particle field in the game is unbatched. **Measure before changing anything.** |
-| **P8** | Turns on per-draw material identity, which is the door to name-keyed art assets. |
-| **P2** | **The one open case of a correction that reached the docs and not the code.** Now authorised to reach the code. |
+| **Merge the two branches** | `kasumi-naming-correction-w3e204` (P2/P6/P11/P13, protocol 12) and `bloom-docs-verify-d2844x` (P3). Highest value left, and it is a merge, not a session. |
+| **P12** | **One `dx9.draws` log, standing in the Palace of Twilight, room 0 or 1.** The counters now exist; the batching is deliberately not written until the number says it is worth writing. |
+| **P5** | One log saying whether the colpat-9 guard ever fires. The document already states what will be done for each answer, so it is a decision, not a discussion. |
+| **P1** | Still owed a **measurement**, not a commit — `zHalfMin` and `froxelRangeScale` are still guessed. Stand at the Lost Woods tag and walk out. |
+| **P19 / P18 / P9 / P7 / P20** | All shipped, all **off by default or default-identical**. Each needs one look to say whether it earns its default being flipped. |
 
-### FIX IN PASSING — cheap, but no longer free
+**Three of these collapse into one play session** and do not conflict: the Palace of
+Twilight draw count, the colpat-9 guard, and the Lost Woods fog range.
+
+### FIX IN PASSING — ~~cheap, but no longer free~~ **ALL DONE 2026-08-11**
+
+> Every item in this tier landed. Kept because the reasoning below is the reasoning that
+> got them landed, and because the split it predicted turned out to be **wrong in the
+> useful direction**: more of this tier carried a real code change than the split allowed
+> for. P18 was filed as record-only in its own out-of-scope line while its fix instruction
+> three paragraphs earlier asked for a switch; P10's "optional" comment was worth writing;
+> P5's record half withdrew a whole ledger row. The lesson is the one this file was
+> rewritten for — **"documentation" was doing the work of "we were not allowed to."**
 
 **P3, P5, P6, P7, P9, P10, P13, P14, P15, P16, P18.**
 
@@ -153,12 +201,17 @@ prose is how the backlog got here.
 
 ### DROPPED — with reasons
 
-- **P4, item 1** (the dead-keyword guard). Dropped on merit and it stays dropped: the live
-  words already cover every effect the dead ones would have, and at default settings the
-  class cannot move a pixel. **It was never built** — confirmed 2026-08-11, there is no
-  keyword check in `scripts/check_invariants.py`. Items 2 and 3 of P4 — the
-  single-romanization trap in the `Excluded` guidance, and the corrected description of
-  what `Class` does — remain worth doing in passing.
+- ~~**P4, item 1** (the dead-keyword guard).~~ **UN-DROPPED AND BUILT, 2026-08-11.** The
+  reasoning for dropping it was about *behaviour* and was correct: the live words already
+  cover every effect the dead ones would have, and at default settings the class cannot
+  move a pixel. But the item was never a behaviour change — it was a **check**, and a check
+  that changes no behaviour was dropped on a behaviour argument. Built as
+  `check_effect_light_keywords`.
+  It paid for itself immediately, and not in the way anyone expected: writing it surfaced
+  that `classifyByName`'s word lists have a **second copy** in `classKeyword`, whose own
+  comment asks for exactly this guard and which nothing enforced — the `settings.h` /
+  `settings.cpp` failure shape, inside one file. The dead count was also **ten**, not
+  three. Items 2 and 3 landed alongside it.
 - **`dKy_get_schbit`, the seasons index, the calendar.** All three are inert or
   actionless. They are recorded in the audit's §6 so nobody re-investigates them; there is
   nothing to build.
@@ -1760,27 +1813,37 @@ by A/B in one session. Do not flip the default without the owner seeing both.
 
 ## Sequencing summary
 
-**✅ Done:** P17 (channel collision), P0 (effect-lights merged, protocol 11), P1 (Lost
-Woods fog tag — record corrected; the measurement it points at is still owed).
+**✅ Done:** P17, P0, P1 (record; its measurement still owed) — and, on 2026-08-11,
+**P3, P4, P5, P7, P8, P9, P10, P12 (instrument only), P14, P15, P16, P18, P19, P20** on
+`claude/japanese-naming-worklist-nea1rk` at **protocol 13**. **P2, P6, P11, P13** are done
+on `claude/kasumi-naming-correction-w3e204` at protocol 12, unmerged.
 
-| When | Run | Needs a play-test? |
+**The queue above is spent. What is left is not a schedule, it is two merges and one play
+session.**
+
+| When | Do | Needs a play-test? |
 | :-- | :-- | :-- |
-| **Next** | **P2** — the shader half. The one open case of a correction that reached the docs and not the code | no, it ships gated |
-| Then — record corrections, in passing | P3, P10, P13, P18 (record half), P5 (record half) | no |
-| Then — contained code | P4, P14, P15, **P16 (one line, overdue)** | no |
-| Then — the strategic reads, each ending in a change | P8 (material identity), P9 (tuning panel → 3 controls) | no |
-| Measure, then act | P12 (Twilight fog), P13 (vrkumo half) | one log, then a change |
-| Then — retained game data | P19 (room lights, off by default), P20 (ambient layers) | yes, one window |
-| Together in one window | P6, P7 | yes, one window |
-| Last | P11 (= P2 step 2) | yes, A/B |
+| **Next, and it is not a session** | Merge `kasumi-naming-correction-w3e204` and `bloom-docs-verify-d2844x` | no |
+| Then, one trip | The three-sample play session below | yes, one window |
+| Then | Decide which of the shipped-but-off options earn their defaults flipped | yes |
 
-**Three items are one log away from being decided rather than discussed** — P12 (a
-`dx9.draws` peak from the Palace of Twilight), P13's vrkumo half (the same, outdoors and
-cloudy), and P5's colpat-9 guard. Ask for those three samples in the *same* play session;
-they do not conflict and it collapses three test windows into one.
+**Three items are one log away from being decided rather than discussed**, and they still
+collapse into one session — but the list has changed, because P13's vrkumo half is now
+instrumented on the kasumi branch and P12's counters exist here:
 
-**P16 is one line and has been verified since 2026-08-11.** Fold it into whichever session
-opens `settings.{h,cpp}` or `m_Do_main.cpp` first — P14 and P9 both do.
+1. **P12** — a `dx9.draws` peak from the Palace of Twilight, **standing in room 0 or 1**.
+   (Not merely "in D_MN08": the particle bound is set per room, and it is 2000 only in
+   rooms 0 and 1. That correction came out of building the counters.)
+2. **P5** — whether the colpat-9 guard ever fires.
+3. **P1** — the dense-fog range at the Lost Woods tag, which is still guessed.
+
+~~**P16 is one line and has been verified since 2026-08-11.**~~ **Done** — folded into the
+P14 session exactly as predicted, since both open `settings.{h,cpp}`. **But the capability
+it was supposed to unlock is not there:** aurora only reaches the dump path from its GX
+texture resolver, so it writes files on the WebGPU backends and **none at all under
+D3D9/Remix**. The setting is correct and the plumbing is right; the pack-authoring question
+on the backend the owner actually runs is still open, and the emulator route remains the
+answer for now.
 
 **P19 walks into a trap, and it is the approach the prompt recommends that walks into it.**
 Corrected 2026-08-11 — an earlier version of this paragraph called it "an unpaid debt from
