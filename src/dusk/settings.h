@@ -206,6 +206,13 @@ struct UserSettings {
         ConfigVar<bool> remixLocalLights;
         ConfigVar<float> remixLocalLightIntensity;
         ConfigVar<float> remixLocalLightRadius;
+        // Room lights: the room's own authored lights (dungeonlight), a third registry from
+        // either of the two the bridge already forwards, and the only one carrying a cone.
+        // Off by default. docs/effect-lights.md section 8.1.
+        ConfigVar<bool> remixRoomLights;
+        ConfigVar<float> remixRoomLightIntensity;
+        ConfigVar<float> remixRoomLightRadius;
+        ConfigVar<float> remixRoomLightConeSoftness;
         // Effect lights: sphere lights at the origin of the game's own fire and glow effects,
         // rather than at the positions of the game's registered lights. docs/effect-lights.md.
         ConfigVar<bool> effectLights;

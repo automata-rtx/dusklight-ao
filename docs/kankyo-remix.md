@@ -201,7 +201,8 @@ friends (`d_kankyo.cpp:9241-9301`). Everything below uses this one blend.
 | Output | Fields | Consumed by |
 | :-- | :-- | :-- |
 | Actor ambient | `actor_amb_col` | per-actor TEV via tevstr |
-| BG ambients | `bg_amb_col[0..3]` + alphas | room geometry TEV |
+| BG ambients | `bg_amb_col[0..3]` (RGB) | room geometry ambient — **one layer per room model file**, `l_tevStrType` in `d_a_bg.cpp:336` picking it with `tevstrType & 3` |
+| BG alphas | `bg_amb_col[1..3].a` | **not ambient**: per-material TEV constants on the water, murk and faked-fog materials. `setLight_bg` wipes the ambient path's copies to 255 (`:2931-2934`) |
 | Dungeon light colours | `dungeonlight_col[6]` | `DUNGEON_LIGHT` point lights |
 | Fog | `fog_col`, `mFogNear`, `mFogFar` | `GXSetFog(GX_FOG_PERSP_LIN, …)` |
 | Fog range adjust | `mXFogTbl`, `mFogAdjCenter` | `GXSetFogRangeAdj` (radial correction) |
@@ -437,7 +438,10 @@ knobs, so a hand-tuned `rtx.bloom.dusklight*` value survives the bridge and
 | `rtx.dusklight.env.monoColor` | `getMonoColor().rgb` /255 | 1 ✅ |
 | `rtx.dusklight.env.monoAmount` | `getMonoColor().a` /255 | 1 ✅ |
 | `rtx.dusklight.env.actorAmbient` | `actor_amb_col` /255 | 3 |
-| `rtx.dusklight.env.bgAmbient` | `bg_amb_col[0]` /255 | 3 |
+| `rtx.dusklight.env.bgAmbient` | `bg_amb_col[0]` /255 — **layer 0 only**; see I.4 | 3 |
+| `rtx.dusklight.env.bgWaterAlpha` | `bg_amb_col[1].a` /255 — 水面α, water surface | 3 |
+| `rtx.dusklight.env.bgAuxAlpha` | `bg_amb_col[2].a` /255 — 補佐α, auxiliary | 3 |
+| `rtx.dusklight.env.bgFakeFogAlpha` | `bg_amb_col[3].a` /255 — ウソFog, "fake fog" | 3 |
 | `rtx.dusklight.env.fogColor` | `fog_col` /255 (backup to fog capture; see IV.4) | 2/3 |
 | `rtx.dusklight.env.skyColor` | `vrbox_sky_col` /255 | 4 |
 | `rtx.dusklight.env.hazeColor` | `vrbox_kasumi_outer_col` /255 — the **near** haze band, despite "outer"; see [`japanese-naming.md`](japanese-naming.md) §6 | 4 |

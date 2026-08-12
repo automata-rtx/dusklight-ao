@@ -115,16 +115,17 @@ Of the 340 bindings:
 
 All 41 checkboxes bind panel objects; **not one touches `g_env_light`.**
 
-**62 bindings is the whole rendering-relevant subset**, and 29 of those 62 are
-already carried to Remix. That is the honest headline of this exercise: the
-surface is small, and it is mostly already covered.
+**62 bindings is the whole rendering-relevant subset**, and **32** of those 62
+are already carried to Remix (29 when this was written; the three BG-ambient
+alphas of §4 landed 2026-08-12). That is the honest headline of this exercise:
+the surface is small, and it is mostly already covered.
 
 ---
 
 ## 2. The live surface: every `g_env_light` binding
 
 All in `src/d/d_kankyo.cpp`. "To Remix" is against `src/dusk/remix_bridge.cpp`
-on this branch (protocol 11).
+on this branch (protocol 13; the column was first filled in at protocol 11).
 
 ### 2.1 Palette-blended per frame — the mood engine
 
@@ -135,12 +136,12 @@ outputs of the environment system, not settings.
 | --: | :-- | :-- | :-- | :-- | :-- |
 | 5132-5134 | `■ ACTOR_Amb R/G/B` | actor ambient | `actor_amb_col.rgb` | 0–255 | **yes** — `env.actorAmbient` |
 | 5144-5146 | `■ BG0_Amb R/G/B` (under `(地形)`, *chikei*, terrain) | terrain ambient | `bg_amb_col[0].rgb` | 0–255 | **yes** — `env.bgAmbient` |
-| 5155-5157 | `■ BG1_Amb R/G/B` | ambient layer 1 | `bg_amb_col[1].rgb` | 0–255 | no |
-| 5164 | `水面α A` | *suimen* — **water-surface alpha** | `bg_amb_col[1].a` | 0–255 | no |
-| 5165 | `補佐α A2` | *hosa* — **auxiliary alpha** | `bg_amb_col[2].a` | 0–255 | no |
-| 5168-5170 | `■ BG2_Amb R/G/B` | ambient layer 2 | `bg_amb_col[2].rgb` | 0–255 | no |
-| 5179-5181 | `■ BG3_Amb R/G/B` | ambient layer 3 | `bg_amb_col[3].rgb` | 0–255 | no |
-| 5188 | `ウソFog A` | *uso* — **"fake Fog"** | `bg_amb_col[3].a` | 0–255 | no |
+| 5155-5157 | `■ BG1_Amb R/G/B` | ambient layer 1 | `bg_amb_col[1].rgb` | 0–255 | no — §2.1a |
+| 5164 | `水面α A` | *suimen* — **water-surface alpha** | `bg_amb_col[1].a` | 0–255 | **yes** — `env.bgWaterAlpha` |
+| 5165 | `補佐α A2` | *hosa* — **auxiliary alpha** | `bg_amb_col[2].a` | 0–255 | **yes** — `env.bgAuxAlpha` |
+| 5168-5170 | `■ BG2_Amb R/G/B` | ambient layer 2 | `bg_amb_col[2].rgb` | 0–255 | no — §2.1a |
+| 5179-5181 | `■ BG3_Amb R/G/B` | ambient layer 3 | `bg_amb_col[3].rgb` | 0–255 | no — §2.1a |
+| 5188 | `ウソFog A` | *uso* — **"fake Fog"** | `bg_amb_col[3].a` | 0–255 | **yes** — `env.bgFakeFogAlpha` |
 | 5204-5206 | `■ FOG R/G/B` | fog colour | `fog_col.rgb` | 0–255 | **yes** — `env.fogColor` |
 | 5215 | `near` | | `mFogNear` | ±2500000.0 | **yes** — `env.fogStartZ` |
 | 5216 | `far` | | `mFogFar` | ±2500000.0 | **yes** — `env.fogEndZ` |
@@ -159,6 +160,58 @@ outputs of the environment system, not settings.
 `前/奥` (near/far) mapping onto `outer`/`inner` is the §6 worked example in
 [`japanese-naming.md`](japanese-naming.md) — the English words run the opposite
 way from the Japanese, and this panel is one of the three sources that settle it.
+
+### 2.1a Where the four BG ambient layers actually go
+
+Traced 2026-08-12, because §4 flag 2 could not be decided without it. **The four
+layers are routed two entirely different ways, and only one of the two is
+ambient light at all.** That split is what decides which of them are worth
+sending to Remix.
+
+**Path A — the RGB triples are ambient light, routed per room model file.**
+`setLight_bg` (`d_kankyo.cpp:2886`) blends all four layers into a local
+`BG_col[4]` (`:2920-2925`), and `settingTevStruct`'s background branch picks one
+of them with `sp54 = tevstrType & 3; field_0x10f0 = BG_col[sp54];`
+(`:4199-4200`), which then becomes `tevstr_p->AmbCol` (`:4278`). The types come
+from a fixed table in the room actor — `d_a_bg.cpp:336`,
+`static int l_tevStrType[6] = {32, 33, 34, 35, 35, 32}`, indexed by the same `i`
+that walks the six room model files `model.bmd` … `model5.bmd` (`:122`):
+
+| Room part | Model file | tevstr type | `& 3` → layer |
+| --: | :-- | --: | --: |
+| 0 | `model.bmd` | 32 (`0x20`) | **0** |
+| 1 | `model1.bmd` | 33 (`0x21`) | **1** |
+| 2 | `model2.bmd` | 34 (`0x22`) | **2** |
+| 3 | `model3.bmd` | 35 (`0x23`) | **3** |
+| 4 | `model4.bmd` | 35 (`0x23`) | **3** |
+| 5 | `model5.bmd` | 32 (`0x20`) | **0** |
+
+So the layers are genuinely distinct — but they are **ambient light**, which
+path tracing replaces outright, and a scene-global readout could not be applied
+per room model file by any full-screen consumer regardless. **That is why
+BG1/BG2/BG3 RGB are not on the wire, and the acceptable outcome §3 asked for.**
+
+Layer 0 is additionally what the game reuses whenever it wants "the" background
+ambient with no geometry in hand — particles (`d_particle.cpp:294`), grass and
+flowers (`d_grass.inc:571`, `d_flower.inc:655`), the mirror
+(`d_a_mirror.cpp:228`) — which is why one layer was the right one to send first,
+and why the original team's panel labels its group `(地形)`, terrain (`:5143`).
+
+**Path B — the three alphas are not ambient at all.** `setLight_bg` overwrites
+all four `BG_col` alphas with 255 (`:2931-2934`) before anything is lit, so the
+alphas never travel path A. They are storage: three unrelated authored values
+sharing a struct with the ambients, blended per frame from their own palette
+columns `BG1_amb_alpha` / `BG2_amb_alpha` / `BG3_amb_alpha`
+(`include/d/d_stage.h:153-155`) at `d_kankyo.cpp:2456-2466`, and consumed as
+**per-material TEV constants** on name-matched background materials — the table
+in §4. **Those three are on the wire as of protocol 13.**
+
+> **The claim this section was written to test was half right.** The worklist
+> said the four layers are "routed to different material classes". The *alphas*
+> are, by J3D material name. The *RGB triples* are not — they are routed by room
+> model file, through the lighting channel, and the material-class routing that
+> also reads BG1/BG2/BG3 RGB (`:11454`, `:11652`, `:11704`) is a second,
+> separate use of the same fields.
 
 ### 2.2 The room light registry — deliberately not driven from here
 
@@ -302,18 +355,24 @@ Every other decomp-coined name bound to a label in this file agrees with it:
 
 ## 4. Flag 2 — exposed by the game, not by us
 
-Of the 62 live bindings, **29 already reach Remix and 33 do not.** Six of the 33
-are alphas, which are the interesting ones: `formatColorS10` and `formatColor`
-(`remix_bridge.cpp:246-265`) send `r,g,b` only, so the game blends an alpha every
-frame and the bridge drops it.
+Of the 62 live bindings, **32 now reach Remix and 30 do not** (29 / 33 when this
+section was written). Six of the original 33 were alphas, which are the
+interesting ones: `formatColorS10` and `formatColor` (`remix_bridge.cpp:246-265`)
+send `r,g,b` only, so the game blends an alpha every frame and the bridge drops
+it. **Three of the six are now carried** — the BG-ambient alphas below — and the
+other three are the sky-dome alphas on the unmerged branch named next.
 
 **Three of those six are already done on an unmerged branch.** `df83de0` on
 `origin/claude/kasumi-naming-correction-w3e204` pushes `kasumiInnerAlpha`,
 `kasumiOuterAlpha` and `kumoAlpha` at **protocol 12**. Do not rebuild them, and
 do not take protocol 12.
 
-That leaves **the three BG-ambient alphas**, which are the ones the P9 prompt
-named:
+That left **the three BG-ambient alphas**, which are the ones the P9 prompt
+named. **All three landed on 2026-08-12, joining protocol 13** — as
+`rtx.dusklight.env.bgWaterAlpha`, `bgAuxAlpha` and `bgFakeFogAlpha`
+(`remix_bridge.cpp`, beside the `bgAmbient` push). **Pushed and displayed only;
+nothing on either side consumes them, so the image must not change.**
+Untested in game.
 
 | Field | Label | Meaning | Consumers |
 | :-- | :-- | :-- | :-- |
@@ -325,15 +384,26 @@ All three are blended per frame from the palette (`d_kankyo.cpp:2456-2466`),
 exactly like the colours beside them, and all three feed material colour — which
 [`kankyo-remix.md`](kankyo-remix.md) Part II says *does* travel to Remix.
 
-**A readout the game pushes needs a protocol bump on both sides in one commit.**
-Protocol is 13 here; 12 is taken by the unmerged
-`claude/kasumi-naming-correction-w3e204` and 13 by the per-flower switch, so the
-next number is **14**. **Not wired. Sequence with the protocol wave.** The
-natural shape is one more `push` beside `bgAmbient`, using the same
-`-1 means the game has not said` convention the unmerged branch established.
+**They are worth carrying even though they already travel per draw**, and this
+is the argument, stated as the inference it is: aurora folds a TEV konstant into
+`D3DRS_TEXTUREFACTOR` and the stage ops (`lib/dx9/dx9_tev.cpp:1686-1702`), so
+what reaches Remix is the combined result on one draw, and **no material name
+reaches Remix at all**
+(`extern/aurora/docs/dx9/remix-material-interface.md` §9). There is therefore no
+way for the fork to look at a draw and say "that alpha is the fake fog". The
+scene-global authored value is a thing only the game can state. **Not measured —
+inferred from those two documented facts.**
+
+**Protocol: they joined 13 rather than taking 14.** 13 already belongs to this
+session's branch (`claude/japanese-naming-worklist-nea1rk`) and everything on it
+ships as one build, so a further addition on the same branch joins the number
+rather than spending another — see the ladder in the fork's
+`documentation/DusklightOverlay.md`. 12 remains the unmerged kasumi branch's and
+is still not free.
 
 The other 27 uncovered bindings are the room light registry (§2.2, deliberately
-not driven), the BG1/BG2/BG3 ambient RGB triples, and the four §2.3 scalars.
+not driven), the BG1/BG2/BG3 ambient RGB triples (**§2.1a: refused on the
+routing, not deferred**), and the four §2.3 scalars.
 
 ---
 
@@ -397,14 +467,14 @@ eliminate most of the list on their own:
 | 2 | Grass light influence — `草ライト影響率` | `grass_light_inf_rate`, `:7590` | fork → game reads | **wired** |
 | 3 | Clock rate — `時刻速度` | `time_change_rate`, `:6773` | fork → game reads | **wired** |
 | 4 | Cloud shadow density — `雲影の濃さ` | `mFogDensity`, `:5058` | needs a consumer-side edit | blocked, see below |
-| 5 | "Fake fog" alpha — `ウソFog` | `bg_amb_col[3].a`, `:5188` | game **pushes** | needs protocol; not taken |
-| 6 | Water-surface alpha — `水面α` | `bg_amb_col[1].a`, `:5164` | game **pushes** | needs protocol; not taken |
-| 7 | Auxiliary alpha — `補佐α` | `bg_amb_col[2].a`, `:5165` | game **pushes** | needs protocol; not taken |
+| 5 | "Fake fog" alpha — `ウソFog` | `bg_amb_col[3].a`, `:5188` | game **pushes** | **wired 2026-08-12**, protocol 13 — displayed, not consumed |
+| 6 | Water-surface alpha — `水面α` | `bg_amb_col[1].a`, `:5164` | game **pushes** | **wired 2026-08-12**, protocol 13 — displayed, not consumed |
+| 7 | Auxiliary alpha — `補佐α` | `bg_amb_col[2].a`, `:5165` | game **pushes** | **wired 2026-08-12**, protocol 13 — displayed, not consumed |
 | 8 | Terrain light influence — `地形ライト影響率` | `bg_light_influence`, `:5056` | — | **refuted**: GX-light path, does not reach Remix |
 | 9 | Actor light influence — `影響率(0%-200%)` | `mActorLightEffect`, `:5032` | — | **refuted**: same path |
 | 10 | Depth-of-field focus bias — `注目点` | `mDemoAttentionPoint`, `:7625` | fork → game reads | not wired: EFB composite, reaching Remix unestablished |
 | 11 | Sky-dome layer alphas | `:6353`, `:6376`, `:6399` | game pushes | **already done** on the unmerged protocol-12 branch |
-| 12 | BG1/BG2/BG3 ambient RGB | `:5155-5181` | game pushes | low value: BG0 is the layer the game itself reuses as "the" ambient |
+| 12 | BG1/BG2/BG3 ambient RGB | `:5155-5181` | game pushes | **refused, §2.1a**: they are per-room-model-file ambient *light*, which the path tracer replaces, and no full-screen consumer could apply one per model file. Corrected 2026-08-12 — the earlier reason given here, "low value: BG0 is the layer the game itself reuses", was true but was not the reason |
 | 13 | Room light registry | `:5318-5408` | — | deliberately not driven — `effect-lights.md` |
 | 14 | Bloom / saturation-subtract table | `:7082-7092` | — | already driven at the output end, `japanese-naming.md` §8 |
 | 15 | Everything in `dKankyo_navyHIO_c` | 161 sliders | — | debug scratch; the two consumers sampled are both `#if DEBUG` |

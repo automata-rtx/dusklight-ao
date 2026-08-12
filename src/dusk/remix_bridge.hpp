@@ -99,6 +99,22 @@ struct EffectLightsDebug {
 
 const EffectLightsDebug& effectLightsDebug();
 
+// State of the room's authored lights - dScnKy_env_light_c::dungeonlight, fed every frame from
+// the current room's LightVec stage data. A different registry from the two above, and the only
+// one in the game that carries a cone. Off by default; see docs/effect-lights.md section 8.1.
+struct RoomLightsDebug {
+    bool enabled;
+    int found;           // slots the game itself considers live this room, before our filtering
+    int tracked;         // slots holding a live Remix handle
+    int drawn;           // drawn into the scene this frame
+    int shaped;          // of those, how many carried a cone
+    int unshapeable;     // GX_SP_RING1/RING2, which Remix's shaping cannot express at all
+    uint64_t creates;    // cumulative CreateLight calls
+    uint64_t destroys;   // cumulative DestroyLight calls
+};
+
+const RoomLightsDebug& roomLightsDebug();
+
 // Session-only debug toggle: negates the pushed light direction, for quickly
 // diagnosing a handedness mismatch between game and Remix world space.
 bool& celestialFlipDirection();

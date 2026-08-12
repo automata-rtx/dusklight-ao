@@ -11,6 +11,7 @@
 #include "dusk/settings.h"
 #include "d/d_kankyo.h"
 #include "m_Do/m_Do_graphic.h"
+#include "dolphin/gx/GXEnum.h"
 #include "dolphin/pad.h"
 #include "d/d_com_inf_game.h"
 #include "f_op/f_op_camera_mng.h"
@@ -60,6 +61,7 @@ bool s_celestialLock = false;
 
 LocalLightsDebug s_localDebug = {};
 EffectLightsDebug s_effectDebug = {};
+RoomLightsDebug s_roomDebug = {};
 
 // The draw count from the frame just completed. The report is emitted from inside collect(),
 // which runs before this frame's draw loop, so this frame's counter is still zero at that
@@ -278,6 +280,16 @@ const char* formatBool(bool value) {
     return value ? "True" : "False";
 }
 
+// A GXColorS10 alpha to 0..1. Same signed-16-holding-signed-10 story as formatColorS10: the
+// environment blend keeps these inside 0..255 but events add before clamping, so clamp here.
+//
+// Never returns a negative value, and that is load-bearing. The fork defaults these options to -1
+// to mean "the game has not said", so it can tell an older game's silence from an authored zero.
+// Pushing a negative would make a real value indistinguishable from no value at all.
+f32 clampAlpha01(s16 alpha) {
+    return std::clamp(static_cast<f32>(alpha), 0.0f, 255.0f) / 255.0f;
+}
+
 // Whether this area has a sky at all.
 //
 // The game answers this itself in g_env_light.hide_vrbox, but that flag is written by the sky
@@ -342,6 +354,7 @@ void* s_registeredDevice = nullptr;
 // notification and the other kept handles bound to a device that no longer exists.
 bool s_lightsNeedRecreate = false;        // the local light mirror
 bool s_effectLightsNeedRecreate = false;  // the effect lights
+bool s_roomLightsNeedRecreate = false;    // the room's authored lights
 bool s_celestialLightExists = false;
 remixapi_LightHandle s_celestialHandle = nullptr;
 float s_lastDir[3] = {0.0f, 0.0f, 0.0f};
@@ -377,6 +390,7 @@ bool ensureDeviceRegistered() {
         s_celestialLightExists = false;
         s_lightsNeedRecreate = true;
         s_effectLightsNeedRecreate = true;
+        s_roomLightsNeedRecreate = true;
         BridgeLog.info("registered D3D9 device with the Remix API");
     }
 
@@ -935,6 +949,93 @@ void releaseLocalLights() {
     s_localLights.clear();
     s_localDebug.tracked = 0;
     s_localDebug.drawn = 0;
+}
+
+// --- Room lights (the room's authored lights) --------------------------------
+//
+// A THIRD registry, separate from both of the above, and the only source in the game that
+// carries a cone.
+//
+// g_env_light.dungeonlight[8] is refreshed every frame from the room the player is standing in,
+// out of that room's LightVec stage data (src/d/d_kankyo.cpp:8669-8675, inside
+// dKy_setLight_nowroom_common). Up to six entries; the fields are position, the palette blended
+// colour, a reference distance, a cutoff angle, a spot function and two direction angles. Until
+// this function existed nothing in the port read any of it - the only other readers in the whole
+// tree are the game's own debug draw and its HIO sliders, neither of which is compiled in.
+//
+// NOT the same lights the mirror above forwards. That one reads pointlight[] and efplight[],
+// which actors register through dKy_plight_set - torches, lanterns, campfires. These are placed
+// by whoever built the room, in the room's stage file, and are what lights a dungeon corridor
+// that has no fire in it at all.
+//
+// DO NOT ROUTE THIS THROUGH DUNGEON_LIGHT::mInfluence. It is a LIGHT_INFLUENCE embedded at offset
+// 0x2C, the exact struct the mirror above already speaks, and reaching for it is the obvious
+// move - but the cone fields live at 0x18-0x24, OUTSIDE it, so the transport that looks like a
+// free ride silently drops the one thing this registry has that the others do not. It is also
+// dead: mInfluence is written only by dungeonlight_init (d_kankyo.cpp:1157-1162) from a table of
+// y = -99999 and colour {0,0,0}, and is never re-derived, so anyone who reads it today sees
+// nothing and concludes, wrongly, that the room lights are not there.
+//
+// The placement criticism in docs/effect-lights.md section 0 applies here too and is not
+// answered - these are authored positions, and a path tracer casts a real shadow from exactly
+// where they sit. That is why this is off by default and why the counters exist. Section 8.1 of
+// that document states the case for and against.
+
+constexpr uint64_t kRoomLightHashBase = 0xA05C114E00000000ull;
+
+struct TrackedRoomLight {
+    int slot;
+    remixapi_LightHandle handle;
+    float position[3];
+    float radiance[3];
+    float radius;
+    bool shaped;
+    float coneAxis[3];
+    float coneAngleDegrees;
+    float coneSoftness;
+    bool seen;
+};
+
+std::vector<TrackedRoomLight> s_roomLights;
+
+uint64_t roomLightHash(int slot) {
+    return kRoomLightHashBase | static_cast<uint64_t>(slot);
+}
+
+void destroyRoomLight(TrackedRoomLight& light) {
+    if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
+        s_interface.DestroyLight(light.handle);
+        s_roomDebug.destroys++;
+    }
+
+    light.handle = nullptr;
+}
+
+void releaseRoomLights() {
+    for (TrackedRoomLight& light : s_roomLights) {
+        destroyRoomLight(light);
+    }
+
+    s_roomLights.clear();
+    s_roomDebug.tracked = 0;
+    s_roomDebug.drawn = 0;
+    s_roomDebug.shaped = 0;
+    s_roomDebug.unshapeable = 0;
+}
+
+// The GX spot function, spelled out. The log prints the name rather than the number because a
+// reader without the SDK header in front of them cannot do anything with "3".
+const char* gxSpotFnName(unsigned int fn) {
+    switch (fn) {
+    case GX_SP_OFF:   return "OFF";
+    case GX_SP_FLAT:  return "FLAT";
+    case GX_SP_COS:   return "COS";
+    case GX_SP_COS2:  return "COS2";
+    case GX_SP_SHARP: return "SHARP";
+    case GX_SP_RING1: return "RING1";
+    case GX_SP_RING2: return "RING2";
+    default:          return "?";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1751,6 +1852,504 @@ void updateEffectLights() {
     s_effectDrawnLastFrame = s_effectDebug.drawn;
 }
 
+// Radiance for one of the room's authored lights.
+//
+// The same conversion localLightRadiance uses - Remix's own legacy-light maths, solved so a
+// sphere light of a fixed radius is still perceptible at the reach - but the reach it starts
+// from is a much weaker claim than the mirror's mPow, and that has to be said out loud.
+//
+// mRefDistance is the room light's authored radius, loaded into GX as
+// GXInitLightDistAttn(radius, 0.99999f, distFn) (d_kankyo.cpp:8607 and :8612 fill the slot,
+// :8472 loads it). With a reference brightness of 0.99999 the GX coefficients come out at
+// k2 = 1e-5 / radius^2 for GX_DA_STEEP, so attenuation(D) = 1 / (1 + 1e-5 * (D/radius)^2): the
+// light is still at 99.999 percent of peak AT the radius, and would need about 5000 times it to
+// fall to 1/255. The game's room lights therefore barely attenuate at all, and the authored
+// radius is a nominal size rather than a distance the light stops at.
+//
+// So this is NOT "the game says it reaches this far", the way the mirror's mPow is. It is the
+// only distance the authors wrote down, used as a reach because there is nothing better, with
+// game.roomLightIntensity to correct it. A path-traced sphere light falls off physically
+// whatever we put here, so the flat room-wide wash the original hardware produced is not
+// reproducible from this data at any setting - expect a hot spot near the light where the game
+// had an even fill. That prediction is read off the GX coefficients above; it is INFERENCE, not
+// a measurement, and the play session is what settles it.
+bool roomLightRadiance(const GXColor& color, float reach, float radius, float scale,
+                       float outRadiance[3]) {
+    const float channel[3] = {static_cast<float>(color.r), static_cast<float>(color.g),
+                              static_cast<float>(color.b)};
+    const float brightest = std::max(channel[0], std::max(channel[1], channel[2]));
+
+    if (brightest <= 0.0f || reach <= 0.01f || radius <= 0.0f) {
+        return false;
+    }
+
+    // Remix's own "still perceptible" threshold (kNewLightEndValue in rtx_lights.h). A literal
+    // because it is part of Remix's conversion, not a knob of ours.
+    constexpr float kNewLightEndValue = 0.01f;
+    constexpr float kPi = 3.14159265358979323846f;
+
+    const float intensity =
+        (reach * reach) * kNewLightEndValue / (kPi * radius * radius) * scale;
+
+    for (int i = 0; i < 3; i++) {
+        outRadiance[i] = (channel[i] / brightest) * intensity;
+    }
+
+    return true;
+}
+
+// The room's authored lights, surveyed once per room change.
+//
+// Rule 4, and the reason this lands before anyone tunes anything: the whole question - is this
+// six lights a room or two, do they sit on top of the fires the effect lights already cover, do
+// any of them actually carry a cone - is unanswerable by reading, because the data is in the
+// stage files rather than in the source. One session through two dungeons answers it from a log.
+//
+// Bounded and self-describing, per the logging rule: one line per slot, eight slots, a fixed
+// header, the spot function spelled out by name, and a hard cap on how many rooms report before
+// it says so and stops. It runs whether or not the forwarding option is on - it is the
+// measurement that decides whether to turn the option on.
+void surveyRoomLights(int stayNo, const char* stageName) {
+    constexpr int kMaxRoomReports = 64;
+    // Frames to let the room settle before sampling. getStayNo() changes as soon as the player
+    // crosses into the room, but dungeonlight is only refreshed by dKy_setLight_nowroom_common,
+    // inside the kankyo process - so for the first frames after a door the array still describes
+    // the room just left. Reporting then would produce a log that is confidently about the wrong
+    // room, which is worse than no log at all.
+    constexpr int kSettleFrames = 8;
+
+    static int s_reportedRooms = 0;
+    static bool s_capNoticed = false;
+    static int s_lastRoom = -0x7fffffff;
+    static char s_lastStage[16] = {0};
+    static int s_settle = 0;   // >0 counting down to a report, 0 once this room has reported
+
+    const bool sameRoom = stayNo == s_lastRoom && std::strncmp(stageName, s_lastStage,
+                                                              sizeof(s_lastStage) - 1) == 0;
+    if (!sameRoom) {
+        s_lastRoom = stayNo;
+        std::strncpy(s_lastStage, stageName, sizeof(s_lastStage) - 1);
+        s_lastStage[sizeof(s_lastStage) - 1] = '\0';
+        s_settle = kSettleFrames;
+        return;
+    }
+
+    if (s_settle <= 0 || --s_settle > 0) {
+        return;
+    }
+
+    if (s_reportedRooms >= kMaxRoomReports) {
+        if (!s_capNoticed) {
+            s_capNoticed = true;
+            BridgeLog.info("[room-lights] {} rooms reported; further room reports SUPPRESSED for "
+                           "this session", kMaxRoomReports);
+        }
+        return;
+    }
+
+    s_reportedRooms++;
+
+    const dScnKy_env_light_c* env = dKy_getEnvlight();
+    dStage_roomDt_c* roomDt =
+        (stayNo >= 0 && stayNo < 0x40) ? dComIfGp_roomControl_getStatusRoomDt(stayNo) : nullptr;
+    const bool hasVec = roomDt != nullptr && roomDt->getLightVecInfo() != nullptr;
+
+    int liveCount = 0;
+    if (hasVec) {
+        liveCount = roomDt->getLightVecInfoNum();
+        if (liveCount > 6) {
+            liveCount = 6;   // the game's own cap, d_kankyo.cpp:8512-8513
+        }
+        if (liveCount < 0) {
+            liveCount = 0;
+        }
+    }
+
+    const bool celestial = dKy_SunMoon_Light_Check() == TRUE;
+
+    BridgeLog.info("[room-lights] stage {} room {}: LightVec {}, {} of 6 slots live, "
+                   "sun/moon light {} (slots 0-1 are the sun and moon when it is). Sampled "
+                   "{} frames after entering, once per room, first {} rooms only",
+                   stageName, stayNo, hasVec ? "present" : "ABSENT", liveCount,
+                   celestial ? "ON" : "off", kSettleFrames, kMaxRoomReports);
+    BridgeLog.info("[room-lights]   slot | live | pos | refDist | spotFn | cutoff | angX,angY | "
+                   "colour | note");
+
+    for (int i = 0; i < 8; i++) {
+        const DUNGEON_LIGHT& d = env->dungeonlight[i];
+
+        // Slots 6 and 7 exist in the struct and are never refreshed: the refresh loop runs
+        // i < 6 (d_kankyo.cpp:8589). They stay on dungeonlight_init's placeholder of
+        // y = -99999 forever, which is what "degenerate" means below.
+        const bool refreshed = i < 6;
+        const bool live = refreshed && hasVec && i < liveCount && !(celestial && i <= 1);
+        const bool degenerate = d.mPosition.y < -99998.0f;
+
+        const char* note = "";
+        if (!refreshed) {
+            note = "slot never refreshed (loop is i<6)";
+        } else if (!hasVec) {
+            note = "room has no LightVec data";
+        } else if (i >= liveCount) {
+            note = "beyond the room's light count";
+        } else if (celestial && i <= 1) {
+            note = "SUN/MOON holds this slot";
+        } else if (degenerate) {
+            note = "placeholder position, never written";
+        } else if (!(d.mRefDistance > 0.001f)) {
+            // Exactly the test the submit loop uses, so the log cannot say "fine" about a
+            // light the loop then drops.
+            note = "switch-gated OFF (refDist forced to ~0)";
+        } else if (d.mColor.r == 0 && d.mColor.g == 0 && d.mColor.b == 0) {
+            note = "black - palette gives this room no light colour";
+        } else if (d.mAngleAttenuation == GX_SP_RING1 || d.mAngleAttenuation == GX_SP_RING2) {
+            note = "RING cone - Remix shaping cannot express it, would go out unshaped";
+        } else if (d.mAngleAttenuation != GX_SP_OFF) {
+            note = "CONE";
+        }
+
+        BridgeLog.info("[room-lights]   {} | {} | {:.0f},{:.0f},{:.0f} | {:.1f} | {} | {:.1f} | "
+                       "{:.1f},{:.1f} | {},{},{} | {}",
+                       i, live ? "yes" : "no ", d.mPosition.x, d.mPosition.y, d.mPosition.z,
+                       d.mRefDistance, gxSpotFnName(d.mAngleAttenuation), d.mCutoffAngle,
+                       d.mAngleX, d.mAngleY, static_cast<int>(d.mColor.r),
+                       static_cast<int>(d.mColor.g), static_cast<int>(d.mColor.b), note);
+    }
+}
+
+void updateRoomLights() {
+    s_roomDebug.drawn = 0;
+    s_roomDebug.found = 0;
+    s_roomDebug.shaped = 0;
+    s_roomDebug.unshapeable = 0;
+    s_roomDebug.enabled = false;
+
+    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
+        s_interface.dxvk_RegisterD3D9Device == nullptr) {
+        return;
+    }
+
+    if (!dusk::IsGameLaunched) {
+        releaseRoomLights();
+        return;
+    }
+
+    // Which room the player is standing in. The refresh at d_kankyo.cpp:8669-8675 only writes
+    // dungeonlight when room_no == getStayNo(), so this is the only room whose lights are in
+    // there. Stage identity comes from getStartStageName(), which is what the game's own
+    // dKy_SunMoon_Light_Check compares against to decide which stage it is in
+    // (d_kankyo.cpp:11034-11046) - it tracks the loaded stage, not the session's first one.
+    const int stayNo = dComIfGp_roomControl_getStayNo();
+    const char* stageName = dComIfGp_getStartStageName();
+    if (stageName == nullptr) {
+        stageName = "?";
+    }
+
+    // Before every gate below, so the survey happens whether or not forwarding is switched on.
+    surveyRoomLights(stayNo, stageName);
+
+    dStage_roomDt_c* roomDt =
+        (stayNo >= 0 && stayNo < 0x40) ? dComIfGp_roomControl_getStatusRoomDt(stayNo) : nullptr;
+    const bool hasVec = roomDt != nullptr && roomDt->getLightVecInfo() != nullptr;
+    const bool celestial = dKy_SunMoon_Light_Check() == TRUE;
+
+    // Counted ahead of the option gate, so "this room has none" and "we dropped them" stay
+    // distinguishable - the same reason the mirror above counts before its gates. This is the
+    // count the GAME considers live, not ours: LightVec present, capped at six, minus the two
+    // slots the sun and moon take when they are up.
+    int liveCount = 0;
+    if (hasVec) {
+        liveCount = roomDt->getLightVecInfoNum();
+        if (liveCount > 6) {
+            liveCount = 6;
+        }
+        if (liveCount < 0) {
+            liveCount = 0;
+        }
+    }
+
+    for (int i = 0; i < liveCount; i++) {
+        if (celestial && i <= 1) {
+            continue;
+        }
+        s_roomDebug.found++;
+    }
+
+    if (!readOptionBool("rtx.dusklight.game.roomLights",
+                        getSettings().game.remixRoomLights.getValue())) {
+        releaseRoomLights();
+        return;
+    }
+
+    if (!ensureDeviceRegistered()) {
+        return;
+    }
+
+    s_roomDebug.enabled = true;
+
+    if (s_roomLightsNeedRecreate) {
+        // Drop the handles without destroying them: they belong to a device that no longer
+        // exists, and its light manager went with it.
+        s_roomLights.clear();
+        s_roomLightsNeedRecreate = false;
+    }
+
+    const float radius = std::max(
+        readOptionFloat("rtx.dusklight.game.roomLightRadius",
+                        getSettings().game.remixRoomLightRadius.getValue()), 0.01f);
+    const float scale = std::max(
+        readOptionFloat("rtx.dusklight.game.roomLightIntensity",
+                        getSettings().game.remixRoomLightIntensity.getValue()), 0.0f);
+    const float softnessScale = std::max(
+        readOptionFloat("rtx.dusklight.game.roomLightConeSoftness",
+                        getSettings().game.remixRoomLightConeSoftness.getValue()), 0.0f);
+
+    for (TrackedRoomLight& tracked : s_roomLights) {
+        tracked.seen = false;
+    }
+
+    const dScnKy_env_light_c* env = dKy_getEnvlight();
+
+    for (int i = 0; i < liveCount; i++) {
+        // Every one of these gates is the game's own, read at the site named beside it rather
+        // than invented here.
+
+        // Slots 0 and 1 are overwritten with the sun and moon positions whenever the celestial
+        // light is up (d_kankyo.cpp:8629-8645), AFTER the room's own position was written into
+        // them - so what is in dungeonlight[0..1] then is a body 10000 units away, not a room
+        // light. The bridge already submits that light itself, from updateCelestialLight.
+        if (celestial && i <= 1) {
+            continue;
+        }
+
+        const DUNGEON_LIGHT& d = env->dungeonlight[i];
+
+        // The room's light switch. dKy_lightswitch_check (d_kankyo.cpp:8483-8497) returns FALSE
+        // for a light whose switch says off, and the caller then writes 0.000001f into the
+        // reference distance instead of the authored radius (:8606-8610). So this one test
+        // reproduces the switch gate exactly, and catches the never-written slot too.
+        if (!(d.mRefDistance > 0.001f)) {
+            continue;
+        }
+
+        const float position[3] = {d.mPosition.x, d.mPosition.y, d.mPosition.z};
+        // dungeonlight_init's placeholder (d_kankyo.cpp:1137-1141, applied at :1149), still there if the refresh
+        // never ran for this slot.
+        if (d.mPosition.y < -99998.0f) {
+            continue;
+        }
+
+        // Colour. dungeonlight[i].mColor is the environment-wide blend of the palette's
+        // plight_col[i] column (d_kankyo.cpp:2486-2500). Worth knowing that it is NOT bit-exact
+        // with what GX ends up loading: when the room's tevstr carries its own light object the
+        // game prefers that (:8653-8655), and that copy is blended from the SAME palette column
+        // but with the tevstr's own pat_ratio and add colour (:3055-3074) instead of the
+        // environment's. Same hue, slightly different weight. Reading the tevstr copy instead
+        // would mean tracking which tevstr a room light belongs to for a difference the
+        // intensity knob covers, so this uses the array whose entire purpose is to hold the
+        // current room's light state, and records the discrepancy rather than chasing it.
+        float radiance[3];
+        if (!roomLightRadiance(d.mColor, d.mRefDistance, radius, scale, radiance)) {
+            continue;
+        }
+
+        if (!isFinite3(position) || !isFinite3(radiance)) {
+            continue;
+        }
+
+        // --- The cone -------------------------------------------------------------------
+        //
+        // The only cone data in the game, and the first thing this bridge has ever had to send.
+        // Read carefully: PART of this is a transcription and part of it is an approximation
+        // nobody has characterised, and they are not the same claim.
+        //
+        // TRANSCRIPTION, verified twice:
+        //   The axis. dKy_lightdir_set (d_kankyo.cpp:565-583) builds
+        //     (cos X * cos Y, sin X, cos X * sin Y)
+        //   from the two authored angles and then transforms it by inverseTranspose(view) for
+        //   GX, so the vector before that transform is world space. It is the direction the
+        //   light TRAVELS: GXInitLightDir stores the negation of what it is handed
+        //   (libs/dolphin/src/gx/GXLight.c:204-213), and independently the game's own debug
+        //   draw (d_kankyo_debug.cpp:826-832) draws a beam FROM the light position along
+        //   exactly this vector. Remix wants the same convention - its shaping cosine is
+        //   dot(primaryAxis, light-to-surface) (light_shaping.slangh:60) - so no negation.
+        //
+        //   The angle. GX puts the zero crossing of every monotone spot function at
+        //   cos(cutoff) (GXLight.c:75-134), and Remix's coneAngleDegrees becomes cos(angle)
+        //   and cuts there too (rtx_remix_api.cpp toRtLightShaping). Same number, same meaning.
+        //
+        // APPROXIMATION, stated as such:
+        //   The shape of the falloff between the cone edge and the axis. GX has four monotone
+        //   shapes - FLAT is a hard step, COS is linear in cosine, COS2 is that times cosine,
+        //   SHARP is 1 - ((1-cos)/(1-cutoffCos))^2 - and Remix has exactly one, a smoothstep
+        //   over coneSoftness. FLAT maps exactly (softness 0). The other three are all mapped
+        //   to a smoothstep spanning the whole cone, which reproduces the EXTENT of the
+        //   softening and not its curve. game.roomLightConeSoftness scales that span.
+        //
+        //   focusExponent is left at 0 deliberately. It is not a sharpening term: Remix mixes
+        //   the softened falloff TOWARDS 1 by it (light_shaping.slangh:97-103), so raising it
+        //   makes the cone brighter rather than tighter, and there is no GX spot function it
+        //   corresponds to. Inventing a mapping would have been the kind of confident-and-wrong
+        //   the project rules exist to stop.
+        //
+        // CANNOT BE EXPRESSED: GX_SP_RING1 and GX_SP_RING2 are dark on axis and peak at an
+        //   intermediate angle. Remix's shaping is monotone in the cosine, so no parameters
+        //   reproduce a ring. Those go out as unshaped spheres - present but wrong - rather
+        //   than being dropped, because an interior with no light at all is the worse failure,
+        //   and roomLightsUnshapeable counts them so we find out whether the game uses any.
+        bool shaped = false;
+        float coneAxis[3] = {0.0f, 0.0f, 1.0f};
+        float coneAngleDegrees = 90.0f;
+        float coneSoftness = 0.0f;
+
+        const bool ringFn =
+            d.mAngleAttenuation == GX_SP_RING1 || d.mAngleAttenuation == GX_SP_RING2;
+        if (ringFn) {
+            s_roomDebug.unshapeable++;
+        }
+
+        // The game's own gate on whether a cone exists at all: GXInitLightSpot forces
+        // GX_SP_OFF for a cutoff outside (0, 90] before it does anything else
+        // (GXLight.c:86-87, mirrored in dKy_GXInitLightSpot at d_kankyo.cpp:586-588).
+        if (d.mAngleAttenuation != GX_SP_OFF && !ringFn && d.mCutoffAngle > 0.0f &&
+            d.mCutoffAngle <= 90.0f) {
+            constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+            const float ax = d.mAngleX * kDegToRad;
+            const float ay = d.mAngleY * kDegToRad;
+
+            float axis[3] = {std::cos(ax) * std::cos(ay), std::sin(ax),
+                             std::cos(ax) * std::sin(ay)};
+            const float length =
+                std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+
+            // Remix rejects the whole light if the direction is not normalized
+            // (RtLightShaping::validateParameters), so a degenerate axis has to mean "no cone"
+            // rather than "no light".
+            if (length > 1e-4f && std::isfinite(length)) {
+                coneAxis[0] = axis[0] / length;
+                coneAxis[1] = axis[1] / length;
+                coneAxis[2] = axis[2] / length;
+                coneAngleDegrees = d.mCutoffAngle;
+                coneSoftness = (d.mAngleAttenuation == GX_SP_FLAT)
+                                   ? 0.0f
+                                   : (1.0f - std::cos(d.mCutoffAngle * kDegToRad)) * softnessScale;
+                shaped = isFinite3(coneAxis) && std::isfinite(coneSoftness);
+            }
+        }
+
+        if (shaped) {
+            s_roomDebug.shaped++;
+        }
+
+        // Identity is the slot, not an address: dungeonlight is a fixed array inside the
+        // environment singleton, so slot 3 is slot 3 for the whole session. Changing rooms
+        // rewrites the slot in place rather than moving it, which is exactly what the change
+        // test below is for.
+        const uint64_t hash = roomLightHash(i);
+
+        TrackedRoomLight* tracked = nullptr;
+        for (TrackedRoomLight& candidate : s_roomLights) {
+            if (candidate.slot == i) {
+                tracked = &candidate;
+                break;
+            }
+        }
+
+        if (tracked == nullptr) {
+            s_roomLights.push_back(
+                TrackedRoomLight {i, nullptr, {}, {}, 0.0f, false, {}, 0.0f, 0.0f, false});
+            tracked = &s_roomLights.back();
+        }
+
+        tracked->seen = true;
+
+        // Room lights do not move, but their colour is re-blended from the palette every frame
+        // as time of day advances, so this cannot be a "created once" path. The epsilons are the
+        // mirror's: a re-create crosses the API lock and re-enters the light manager.
+        constexpr float kPositionEpsilon = 0.5f;
+        constexpr float kRadianceEpsilon = 0.01f;
+        constexpr float kAxisEpsilon = 0.001f;
+
+        const bool changed =
+            tracked->handle == nullptr ||
+            tracked->shaped != shaped ||
+            std::fabs(position[0] - tracked->position[0]) > kPositionEpsilon ||
+            std::fabs(position[1] - tracked->position[1]) > kPositionEpsilon ||
+            std::fabs(position[2] - tracked->position[2]) > kPositionEpsilon ||
+            std::fabs(radiance[0] - tracked->radiance[0]) > kRadianceEpsilon ||
+            std::fabs(radiance[1] - tracked->radiance[1]) > kRadianceEpsilon ||
+            std::fabs(radiance[2] - tracked->radiance[2]) > kRadianceEpsilon ||
+            std::fabs(radius - tracked->radius) > 0.001f ||
+            (shaped && (std::fabs(coneAxis[0] - tracked->coneAxis[0]) > kAxisEpsilon ||
+                        std::fabs(coneAxis[1] - tracked->coneAxis[1]) > kAxisEpsilon ||
+                        std::fabs(coneAxis[2] - tracked->coneAxis[2]) > kAxisEpsilon ||
+                        std::fabs(coneAngleDegrees - tracked->coneAngleDegrees) > 0.01f ||
+                        std::fabs(coneSoftness - tracked->coneSoftness) > 0.001f));
+
+        if (changed) {
+            remixapi_LightInfoSphereEXT sphere = {};
+            sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+            sphere.position = {position[0], position[1], position[2]};
+            sphere.radius = radius;
+            sphere.shaping_hasvalue = shaped ? 1 : 0;
+            if (shaped) {
+                sphere.shaping_value.direction = {coneAxis[0], coneAxis[1], coneAxis[2]};
+                sphere.shaping_value.coneAngleDegrees = coneAngleDegrees;
+                sphere.shaping_value.coneSoftness = coneSoftness;
+                sphere.shaping_value.focusExponent = 0.0f;
+            }
+            sphere.volumetricRadianceScale = 1.0f;
+
+            remixapi_LightInfo info = {};
+            info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+            info.pNext = &sphere;
+            info.hash = hash;
+            info.radiance = {radiance[0], radiance[1], radiance[2]};
+
+            remixapi_LightHandle handle = nullptr;
+            if (s_interface.CreateLight(&info, &handle) != REMIXAPI_ERROR_CODE_SUCCESS) {
+                // Remix refuses the whole light if the shaping fails validation, so a light
+                // that vanishes the moment it gains a cone is the signature to look for.
+                tracked->handle = nullptr;
+                continue;
+            }
+
+            // No DestroyLight on the overwrite: Remix returns the hash itself as the handle
+            // (rtx_remix_api.cpp), our hash is stable per slot, so destroying the "old" one
+            // would erase the light just written. Same reasoning as the effect lights.
+            tracked->handle = handle;
+            for (int c = 0; c < 3; c++) {
+                tracked->position[c] = position[c];
+                tracked->radiance[c] = radiance[c];
+                tracked->coneAxis[c] = coneAxis[c];
+            }
+            tracked->radius = radius;
+            tracked->shaped = shaped;
+            tracked->coneAngleDegrees = coneAngleDegrees;
+            tracked->coneSoftness = coneSoftness;
+            s_roomDebug.creates++;
+        }
+
+        if (s_interface.DrawLightInstance(tracked->handle) == REMIXAPI_ERROR_CODE_SUCCESS) {
+            s_roomDebug.drawn++;
+        }
+    }
+
+    // Slots the new room does not use. Remix keeps an entry per created handle until it is
+    // destroyed, so dropping them here is what stops a light from the last room lighting this
+    // one.
+    for (size_t i = s_roomLights.size(); i-- > 0;) {
+        if (!s_roomLights[i].seen) {
+            destroyRoomLight(s_roomLights[i]);
+            s_roomLights.erase(
+                s_roomLights.begin() +
+                static_cast<std::vector<TrackedRoomLight>::difference_type>(i));
+        }
+    }
+
+    s_roomDebug.tracked = static_cast<int>(s_roomLights.size());
+}
+
 // The bridge's diff cache assumed nothing else ever touched rtx.dusklight.env.*.
 // That is wrong: those options are NoSave, so anything that rebuilds Remix's user
 // layer - saving settings from its UI, a config reload - drops them back to their
@@ -1899,13 +2498,59 @@ void pushKankyoState() {
     // docs/kankyo-remix.md IV.3.
     //
     // Already the fully blended per-frame values: setLight() ran the four-way palette blend,
-    // folded in the event add-colours and applied the global ratios before we read them. BG
-    // layer 0 is the main room layer, the one the game itself reuses when it needs "the"
-    // background ambient (e.g. mirror reflections).
+    // folded in the event add-colours and applied the global ratios before we read them.
+    //
+    // There are FOUR background ambient layers, and this sends layer 0 on purpose. The layer a
+    // piece of room geometry gets is the low two bits of its tevstr type (d_kankyo.cpp:4199-4200,
+    // selecting out of the BG_col[4] that setLight_bg fills at :2920-2925), and the room actor
+    // hands out those types from a fixed table - d_a_bg.cpp:336,
+    // l_tevStrType[6] = {32, 33, 34, 35, 35, 32} over the six room model files model.bmd ..
+    // model5.bmd (:122). So model/model5 take layer 0, model1 layer 1, model2 layer 2, and
+    // model3/model4 layer 3. Layer 0 is also the one the game itself reuses whenever it wants
+    // "the" background ambient without a tevstr to hand - particles (d_particle.cpp:294), grass
+    // and flowers, the mirror (d_a_mirror.cpp:228) - and the original team's panel labels its
+    // slider group "chikei", terrain (d_kankyo.cpp:5143).
+    //
+    // Layers 1-3 are deliberately NOT pushed. Along that path they are ambient LIGHT, and the
+    // path tracer relights that geometry itself; a scene-global readout could not be applied per
+    // room model file by any full-screen consumer anyway. docs/kankyo-tuning-surface.md 2.1a.
     const dScnKy_env_light_c* env = dKy_getEnvlight();
 
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
     push("rtx.dusklight.env.bgAmbient", formatColorS10(env->bg_amb_col[0]));
+
+    // The three background ALPHAS, joining protocol 13. These are not ambient light and never
+    // travel the path above: setLight_bg overwrites all four BG_col alphas with 255
+    // (d_kankyo.cpp:2931-2934) before anything lights anything. The alpha slot of an ambient
+    // colour is being used as storage for three unrelated authored values, each blended per frame
+    // from its own palette column - BG1_amb_alpha, BG2_amb_alpha, BG3_amb_alpha
+    // (include/d/d_stage.h:153-155) at d_kankyo.cpp:2456-2466 - and each with its own slider in
+    // the original team's panel:
+    //
+    //   bg_amb_col[1].a   "suimen alpha"  - suimen is water surface   (:5164)
+    //   bg_amb_col[2].a   "hosa alpha"    - hosa is assistance        (:5165)
+    //   bg_amb_col[3].a   "uso Fog"       - uso is a lie, so fake fog (:5188)
+    //
+    // The labels are kana/kanji in the source; they are transcribed here rather than quoted
+    // because nothing else in src/dusk/ or in the fork carries CJK and this is not the change to
+    // find out whether MSVC minds. docs/kankyo-tuning-surface.md sections 2.1 and 4 quote them.
+    //
+    // Their real consumers are per-material TEV constants on the game's own water, murk and haze
+    // materials, matched by J3D material name: dKy_murky_set writes [2].a into a TEV colour alpha
+    // and [1].a into a konst alpha (:11309-11310) for MA06; dKy_bg_MAxx_proc does the same pair
+    // for MA03/MA09/MA17/MA19 (:11457, :11459), [3].a for MA13 (:11687) and MA14 (:11699), and
+    // both [1].a and [3].a for MA16 (:11707, :11711). dKyr_mud_draw reads [1].a as well
+    // (d_kankyo_rain.cpp:6174).
+    //
+    // Pushed and displayed only - nothing on either side consumes them, and the image must not
+    // change. The reason to carry them at all is that the fork cannot recover them from the D3D9
+    // feed: they arrive per draw already folded into the TEV chain, and no material name reaches
+    // Remix (extern/aurora/docs/dx9/remix-material-interface.md section 9), so there is no way to
+    // tell which draw carried "the fake fog alpha". That last sentence is inference from those
+    // two documented facts, not something measured. docs/kankyo-tuning-surface.md flag 2.
+    push("rtx.dusklight.env.bgWaterAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[1].a), 0.004f));
+    push("rtx.dusklight.env.bgAuxAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[2].a), 0.004f));
+    push("rtx.dusklight.env.bgFakeFogAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[3].a), 0.004f));
 
     // The clock, so the overlay's slider can follow the game while nobody is holding it and a
     // frozen scene can say what it is frozen at. Quantized to a quarter of a degree - one
@@ -2043,6 +2688,23 @@ void pushLightStatus() {
     std::snprintf(buffer, sizeof(buffer), "%d/%d", s_effectDebug.stats.vanillaPoint,
                   s_effectDebug.stats.vanillaSpot);
     push("rtx.dusklight.env.effLightsVanilla", buffer);
+
+    // Room lights. found vs drawn is the same separation the mirror needed: "this room has no
+    // authored lights" and "it has them and we dropped them" both read as zero drawn otherwise.
+    // shaped and unshapeable are the pair that answers the cone question - whether the game
+    // uses spotlights at all here, and whether any of them are the ring functions Remix cannot
+    // express.
+    push("rtx.dusklight.env.roomLightsRunning", formatBool(s_roomDebug.enabled));
+    std::snprintf(buffer, sizeof(buffer), "%d", s_roomDebug.found);
+    push("rtx.dusklight.env.roomLightsFound", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_roomDebug.drawn);
+    push("rtx.dusklight.env.roomLightsDrawn", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_roomDebug.tracked);
+    push("rtx.dusklight.env.roomLightsTracked", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_roomDebug.shaped);
+    push("rtx.dusklight.env.roomLightsShaped", buffer);
+    std::snprintf(buffer, sizeof(buffer), "%d", s_roomDebug.unshapeable);
+    push("rtx.dusklight.env.roomLightsUnshapeable", buffer);
 }
 #endif  // DUSK_REMIX_BRIDGE_SUPPORTED
 
@@ -2282,6 +2944,7 @@ void tick() {
     updateCelestialLight();
     updateLocalLights();
     updateEffectLights();
+    updateRoomLights();
     updateWarp();
     updateControls();
     pushLightStatus();
@@ -2314,6 +2977,10 @@ const EffectLightsDebug& effectLightsDebug() {
 
 const LocalLightsDebug& localLightsDebug() {
     return s_localDebug;
+}
+
+const RoomLightsDebug& roomLightsDebug() {
+    return s_roomDebug;
 }
 
 void noteHorseDashing() {

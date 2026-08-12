@@ -155,7 +155,16 @@ range they considered sane. Pulled straight out of `d_kankyo.cpp`:
 | `● 下雲カラー` | lower cloud colour | `vrbox_kumo_bottom_col` | 0–255 |
 
 Three of those BG ambient *alphas* read as meaningless noise in English. In Japanese
-they are a water-surface term and a "fake fog" term. None of the three is exposed by us.
+they are a water-surface term, an "auxiliary" term and a "fake fog" term. ~~None of the
+three is exposed by us.~~ **All three are now pushed and displayed** — P20, protocol 13,
+2026-08-11. They are pushed and shown only; nothing consumes them yet.
+
+> This sentence was false for part of a day, and the shape is worth keeping. P20 changed
+> the code in a different file and could not edit this one, so the correction arrived
+> separately. Nothing mechanical could have caught it: the claim is prose, in a document
+> the change never touched. That is the "merges that succeed and are still wrong" failure
+> in miniature, and the only defence was a session saying out loud what it had falsified
+> elsewhere.
 
 **Why this matters more than any single defect.** The stated end state for this project
 is that remastering becomes *tweaking values we have exposed, plus new art assets*. The

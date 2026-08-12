@@ -1704,6 +1704,47 @@ everything tested now lives in "Confirmed working in-game" above.*
   current binds, so the overlay has to read them before it can show them), and
   a decision on who owns conflict resolution — doing it in both places means
   two different answers.
+- **Room lights** (2026-08-12) — `rtx.dusklight.game.roomLights`, **off by
+  default**, forwarding the room's own authored lights
+  (`dScnKy_env_light_c::dungeonlight`) as Remix sphere lights, with cones.
+  A third registry, distinct from both the local-light mirror and the effect
+  lights; nothing in the port had ever read it. Design, every citation, and the
+  case against: [`effect-lights.md`](effect-lights.md) §8.1.
+
+  **This one is a measurement before it is a feature.** The questions it exists
+  to answer cannot be answered by reading, because the data lives in the game's
+  *stage files*: how many lights a room actually has, whether any of them carry
+  a cone, whether any use one of the two ring spot functions Remix cannot
+  express, and whether they sit on top of the fires the effect lights already
+  light. A survey is logged once per room entered — bounded, capped at 64 rooms,
+  spot functions spelled out by name — and it runs **whether or not the option
+  is on**, so one ordinary play session answers all four.
+
+  **What to ask for from a session:** turn the option on somewhere indoors with
+  authored lighting, walk two dungeons, send the log. Then read
+  `roomLightsFound` vs `roomLightsDrawn` and `roomLightsShaped` vs
+  `roomLightsUnshapeable` in the tab.
+
+  Three specific things to look at, in decreasing order of how much they
+  decide:
+
+  1. **Do shadows come from somewhere sensible?** These are authored placements,
+     which is precisely the property `effect-lights.md` §0 indicts. If the
+     shadows are wrong, the correct outcome is to record that and leave the
+     option off — not to tune it.
+  2. **Does every fire acquire a second, offset light?** That is double-counting
+     against the effect lights.
+  3. **Are interiors blinding?** The intensity is derived from the authored
+     radius, and §8.1 shows that radius is *not* a falloff distance — the
+     original lights barely attenuate at all. A hot spot where the game had an
+     even wash is the **predicted** behaviour, inference from the GX
+     coefficients rather than something anyone has seen.
+
+  Also unverified: the cone mapping itself. The direction and the cutoff angle
+  are transcriptions (each confirmed against two independent sites in the game);
+  the softness of the cone's edge is an approximation, because GX has four
+  falloff curves and Remix has one. Nobody has characterised how different they
+  look.
 
 **Partly reached:**
 

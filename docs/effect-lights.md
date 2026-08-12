@@ -770,6 +770,264 @@ leaving it in a paragraph.
 
 ---
 
+## 8.1 The room's authored lights — a third registry, off by default
+
+Landed 2026-08-12. **CI-green and syntax-checked; never run in game.** It is
+off by default and this section explains why that is a decision rather than
+caution.
+
+### What they are, and why they are not the mirror
+
+`dScnKy_env_light_c::dungeonlight[8]` (`include/d/d_kankyo.h:259`) is refreshed
+**every frame** from the room the player is standing in, out of that room's
+`LightVec` stage data — `d_kankyo.cpp:8669-8675`, inside
+`dKy_setLight_nowroom_common`. Seven fields cross: `mPosition`,
+`mRefDistance`, `mCutoffAngle`, `mAngleAttenuation` (the GX spot function),
+`mDistAttenuation`, `mAngleX`, `mAngleY` — plus `mColor`, which is written
+separately every frame by the palette blend from `plight_col[i]`
+(`d_kankyo.cpp:2486-2500`).
+
+Before this landed **nothing in the port read any of it.** The only other
+readers in the whole tree are the game's own debug draw
+(`d_kankyo_debug.cpp:788`) and its HIO sliders, and neither is compiled into
+any build of this port.
+
+These are **not** the lights §0 and §8 are about. That mirror reads
+`pointlight[]` and `efplight[]` — `LIGHT_INFLUENCE`s that *actors* register
+through `dKy_plight_set`: torches, lanterns, campfires, Midna. These are placed
+by whoever laid the **room** out, in its stage file, and are what lights a
+dungeon corridor with no fire in it at all. Three separate registries, and
+until now the bridge read two.
+
+> **Do not route this through `DUNGEON_LIGHT::mInfluence`, and this is the one
+> trap worth spelling out.** `DUNGEON_LIGHT` embeds a `LIGHT_INFLUENCE` at
+> offset `0x2C` — the exact struct the mirror's forwarding loop already speaks,
+> so reaching for it looks like a free ride. **The cone fields are at
+> `0x18`–`0x24`, outside it.** Routing through `mInfluence` drops the cone
+> *structurally*, before it ever reaches any shaping code, and nothing in a
+> diff shows it. It is also **dead data**: `mInfluence` is written only inside
+> `dungeonlight_init` (`d_kankyo.cpp:1157-1162`) from a table of `y = -99999`
+> and colour `{0,0,0}`, and is never re-derived — so anyone who inspects it
+> today sees nothing and concludes, wrongly, that the room lights are not
+> there.
+
+### The guards are the game's, copied from the sites that set them
+
+Each of these was read where the game applies it, not invented:
+
+| Guard | Where the game does it |
+| :-- | :-- |
+| room has `LightVec` data at all | `d_kankyo.cpp:8506` (room non-NULL), `:8509-8510` (`getLightVecInfo()` non-NULL) |
+| at most **six** slots | `d_kankyo.cpp:8512-8513` — `getLightVecInfoNum()` capped at 6 |
+| slots 0–1 are **not room lights** when `dKy_SunMoon_Light_Check()` is TRUE | `d_kankyo.cpp:8629-8645` overwrites both with the sun and moon positions, *after* the room's own were written there. The bridge already submits that light itself |
+| a switched-off light | `dKy_lightswitch_check` (`:8483-8497`) returns FALSE and the caller writes `0.000001f` into the reference distance (`:8606-8610`). So one test on `mRefDistance` reproduces the switch gate exactly |
+| a black light | the palette can take `plight_col[i]` to zero; a zero colour cannot produce radiance |
+| a slot never written | `dungeonlight_init`'s placeholder `y = -99999` is still there |
+
+Slots **6 and 7 are never refreshed** — the refresh loop runs `i < 6`
+(`d_kankyo.cpp:8589`) — so those two hold the placeholder for the whole
+session. Anyone reading "eight room lights" from the array's size is reading
+two that do not exist.
+
+**What this deliberately does not carry, and why it is not an oversight.**
+After the room's own lights are placed, `dKy_setLight_nowroom_common` hands any
+*still-free* GX light slot to the `BOSS_LIGHT` registry — the twilight and wolf
+lights, `d_kankyo.cpp:8714-8724`. Those are written straight into the GX light
+slots and **never into `dungeonlight`**, so nothing this reads can see them.
+`BOSS_LIGHT` is also the *other* struct in the game that carries a cone, and
+§5.1's `gatherVanillaLights` already reads it — for **colour only, deliberately**
+(`effect_lights.cpp:1455`). Forwarding it is a separate piece of work with its
+own placement question, and is not started.
+
+### The cone — what is transcription and what is approximation
+
+This is the first cone anything in this project has ever had to send, and the
+two halves are **not** the same kind of claim.
+
+**Transcription, verified twice each:**
+
+- **The axis.** `dKy_lightdir_set` (`d_kankyo.cpp:565-583`) builds
+  `(cos X · cos Y, sin X, cos X · sin Y)` from the two authored angles and only
+  then transforms it by `inverseTranspose(view)` for GX — so the vector before
+  that transform is **world space**. It is the direction the light *travels*:
+  `GXInitLightDir` stores the **negation** of what it is handed
+  (`libs/dolphin/src/gx/GXLight.c:204-213`), and independently the game's own
+  debug draw (`d_kankyo_debug.cpp:826-832`) draws a beam **from** the light
+  position along exactly this vector, 8000 units out. Remix wants the same
+  convention — its shaping cosine is `dot(primaryAxis, light-to-surface)`,
+  `light_shaping.slangh:60` — so no negation is applied.
+- **The angle.** GX puts the zero crossing of every monotone spot function at
+  `cos(cutoff)` (`GXLight.c:75-134`), and Remix turns `coneAngleDegrees` into
+  `cos(angle)` and cuts there too (`rtx_remix_api.cpp`, `toRtLightShaping`).
+  Same number, same meaning.
+
+**Approximation, and nobody has characterised it:**
+
+GX has **four** monotone falloff shapes between the cone edge and the axis and
+Remix has **one**.
+
+| GX spot function | Its curve in `cos θ` | What we send |
+| :-- | :-- | :-- |
+| `GX_SP_FLAT` | `1000·(cos − cosCut)` — a hard step | softness `0`. **Exact** |
+| `GX_SP_COS` | `(cos − cosCut)/(1 − cosCut)` — linear | smoothstep over the whole cone |
+| `GX_SP_COS2` | that, times `cos` | the same smoothstep |
+| `GX_SP_SHARP` | `1 − ((1 − cos)/(1 − cosCut))²` | the same smoothstep |
+
+So the **extent** of the softening is reproduced and its **curve** is not.
+`rtx.dusklight.game.roomLightConeSoftness` scales the extent; treat it as a
+preference, not a conversion.
+
+`focusExponent` is left at **0, deliberately**. It is not a sharpening term:
+Remix mixes the softened falloff *towards 1* by it
+(`light_shaping.slangh:97-103`), so raising it makes a cone brighter rather
+than tighter, and there is no GX spot function it corresponds to. Inventing a
+mapping would have been exactly the confident-and-wrong this project's rule 3
+exists to stop.
+
+**Cannot be expressed at all:** `GX_SP_RING1` and `GX_SP_RING2` are dark on
+axis and peak at an intermediate angle. Remix's shaping is monotone in the
+cosine, so no parameters reproduce a ring. Those lights go out as **unshaped
+spheres** — present but wrong — rather than being dropped, on the grounds that
+an unlit interior is the worse failure, and `roomLightsUnshapeable` counts how
+often that compromise is being made. Whether the game uses them at all is
+unknown and is one of the things the log answers.
+
+### The colour is close but not bit-exact, and that is recorded rather than fixed
+
+`dungeonlight[i].mColor` is the environment-wide blend of the palette's
+`plight_col[i]` column (`d_kankyo.cpp:2486-2500`), and is what this forwards.
+It is **not** exactly what GX ends up loading. When the room's `tevstr` carries
+its own light object the game prefers that copy (`:8653-8655`), and that copy is
+blended from the **same palette column** but with the tevstr's own `pat_ratio`
+and add colour (`:3055-3074`) rather than the environment's. Same hue, slightly
+different weight.
+
+Reading the tevstr copy instead would mean tracking which tevstr a given room
+light belongs to, for a difference the intensity knob already covers. So this
+uses the array whose entire purpose is to hold the current room's light state,
+and the discrepancy is written down here rather than chased.
+
+### The intensity derivation is weaker than the mirror's, and says so
+
+The mirror starts from `LIGHT_INFLUENCE::mPow`, which the game really does
+treat as a reach. This starts from `mRefDistance` — the room light's authored
+`radius` — and that is a **nominal size, not a distance the light stops at**.
+
+The game loads it as `GXInitLightDistAttn(radius, 0.99999f, distFn)`
+(`d_kankyo.cpp:8607` and `:8612` fill the slot, `:8472` loads it). With a
+reference brightness of `0.99999` the GX coefficients come out at
+`k₂ = 1e-5 / radius²` for `GX_DA_STEEP`, so
+
+```
+attenuation(D) = 1 / (1 + 1e-5 · (D/radius)²)
+```
+
+— the light is still at **99.999 % of peak at the radius**, and would need
+about **5000×** it to fall to 1/255. In other words the original room lights
+barely attenuate at all; they are a near-flat wash over the room.
+
+A path-traced sphere light falls off physically whatever we set, so **that wash
+is not reproducible from this data at any setting.** Expect a bright spot near
+the light where the game had an even fill. *That is inference read off the GX
+coefficients above, not a measurement* — the play session is what settles it.
+`rtx.dusklight.game.roomLightIntensity` starts at the mirror's 19 and is
+expected to move.
+
+### The argument against, weighed rather than routed around
+
+§0's criticism applies here in full and is **not answered**: these are authored
+placements, a GameCube light casts no shadow, so a room light could be sunk in
+a wall or floating over a doorway and nothing would have looked wrong at the
+time. A path tracer casts a real shadow from exactly where it sits.
+
+What is different about this registry, and why it was built anyway:
+
+1. It is a **different registry** from the one §0 indicts. §0's argument is
+   about lights placed to make a *visible object's* shading read right — a
+   flame's light nudged so the flicker falls nicely. A room light has no object
+   to be offset from; it is the room's own fill.
+2. It is the **only cone data in the game.** `BOSS_LIGHT` also carries one and
+   `gatherVanillaLights` reads it for colour only, deliberately
+   (`effect_lights.cpp:1455`); nothing has ever sent a cone.
+3. Per §7.2, interiors are lit **only** by the effect emitters and Remix's
+   fallback. A room with no fire in it has nothing.
+
+**None of that makes it right.** It makes it worth one measurement. Hence: off
+by default, with the instrumentation to decide it from a log rather than an
+argument.
+
+### Instrumentation — the measurement comes first
+
+Two things, and the first is the important one.
+
+**A survey, logged once per room, whether or not forwarding is on.** The whole
+question — six lights a room or two, do they sit on top of the fires the effect
+lights already cover, does anything actually carry a cone — is unanswerable by
+reading, because the data is in the *stage files* and not in the source. One
+session through two dungeons answers it. Bounded per the logging rule: one line
+per slot, eight slots, the spot function spelled out **by name**, and a hard
+cap of 64 rooms with a notice when it is hit. Sampled **8 frames after**
+entering the room, because `getStayNo()` changes as soon as the player crosses
+the threshold but `dungeonlight` is not refreshed until the kankyo process runs
+— reporting immediately would produce a log confidently describing the room
+just left.
+
+**Six readouts**, in the Dusklight tab beside the mirror's:
+
+| Readout | Answers |
+| :-- | :-- |
+| `roomLightsRunning` | did the submission run at all — separates "switched off" from "nothing here" |
+| `roomLightsFound` | how many the room was authored with, as the game counts them |
+| `roomLightsDrawn` | how many reached Remix. Lower is normal: switched-off and black lights are skipped exactly as the game skips them |
+| `roomLightsTracked` | how many hold a live Remix light |
+| `roomLightsShaped` | how many carried a cone — the first number this project has for how much of the game is spotlit |
+| `roomLightsUnshapeable` | how many used a ring function and had to lose their cone |
+
+The last two count **submissions**, so they only move while the system is
+running; the log answers the same questions with it off.
+
+### Regression signature
+
+- **Every fire gains a second light, offset from the first** → it is
+  double-counting with the effect lights, and the room-light half of the pair
+  is the one to drop. This is what off-by-default plus `roomLightsFound` /
+  `effLightsSites` exist to catch.
+- **Shadows arrive from somewhere that is not a visible light** → the authored
+  placements do not survive the path tracer, and §0's criticism is real for
+  this registry too. **The honest answer is then to say so and leave this off**,
+  not to tune around it.
+- **A light disappears the moment it gains a cone** → Remix refuses the entire
+  light if the shaping fails validation (`RtLightShaping::validateParameters`
+  rejects a non-normalized direction), so `CreateLight` returning an error on
+  exactly the shaped lights is the signature.
+- **Interiors go blinding** → the intensity derivation above; `radius` was not
+  a reach.
+
+### Settings
+
+| Setting | Default | What it does |
+| :-- | :-- | :-- |
+| `rtx.dusklight.game.roomLights` | **off** | the system |
+| `rtx.dusklight.game.roomLightIntensity` | 19.0 | scales them; the derivation it corrects is weak, see above |
+| `rtx.dusklight.game.roomLightRadius` | 10.0 | emitter radius, world units — changes brightness as well as softness |
+| `rtx.dusklight.game.roomLightConeSoftness` | 1.0 | how far the smoothstep reaches into the cone. 0 is a hard edge |
+
+### What is verified and what is not
+
+- **Verified by reading**, with the citation given above in every case: the
+  refresh site and its seven fields, all six guards, the axis convention
+  (twice, independently), the angle correspondence, the GX spot coefficients,
+  the distance-attenuation coefficients, and that nothing else in `src/dusk/`
+  reads `dungeonlight`.
+- **Inference, marked as such**: that the near-flat GX falloff will read as a
+  hot spot under Remix.
+- **Unknown until a log**: how many room lights a typical room has, whether any
+  carry a cone, whether any use a ring function, and whether they duplicate the
+  effect lights.
+- **Never run in game.** Nothing here has been seen.
+
+---
+
 ## 9. Settings
 
 All under `rtx.dusklight.game.*`, read by the game every frame, with a
