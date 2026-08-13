@@ -506,7 +506,19 @@ Added **2026-08-08**:
    exactly what exposed the problem: the mirror faithfully reproduces placements
    that were authored for a renderer where a point light casts no shadow.
 
-4. **The fog medium dims the generated sky.** Reported 2026-07-29 at frozen
+4. **CLOSED 2026-08-13 — the fog medium dimmed the generated sky.**
+   `rtx.dusklight.atmosphere.skyFogMode = 1` (Exempt) was run in game and
+   **confirmed good** by the owner: the dim sky and the horizon seam are gone.
+   Exempt is the default. The other two modes stay — `0 Off` as the A/B
+   baseline, `2 Weighted` as a taste control for genuinely foggy weather — but
+   neither is a rival candidate any more, so the "one of them is meant to be
+   deleted" plan is settled rather than outstanding. The report below is kept
+   because §14.8's general lesson outlives the fix: *a guard in one path is not
+   a guarantee across the system*, and the composite reaches the sky twice.
+
+   Original report follows.
+
+   Reported 2026-07-29 at frozen
    noon with `physicalSky` on, and again — worse — in Lake Hylia morning fog
    with it off. The visible sky reads dim and "grimier" than it should, and
    there is a seam where distant terrain is convincingly blue but the sky
@@ -1770,6 +1782,62 @@ Added **2026-08-07**:
     check. Translucency visible on some water is therefore not evidence the mark
     landed — that is by design, since a replacement is how a real normal map
     gets onto the surface, but it is why `dusklight.water.replaced` exists.
+
+16. **Volumetric fog rework — landed 2026-08-13, UNTESTED IN GAME.** Raised by
+    the owner: with volumetric fog on, the result looks less faithful than the
+    depth ramp, and dark scenes lose contrast and read grey — so much so that
+    volumetrics were routinely being switched off. **Fork-only; no protocol
+    bump.** Design and derivations:
+    `dxvk-remix/documentation/DusklightAtmosphere.md` §5.2–§5.4.
+
+    **Four causes, all read from source rather than inferred:**
+
+    1. **The medium could not be clear where the game is clear.** TP's ramp is
+       exactly zero before `fogStartZ`; an exponential extinguishes from the
+       camera. With `start` halfway to `end` the derived medium is ~37% opaque
+       where the original is untouched. Ledger C11.
+    2. **The two halves of our own fog converged to different colours, by
+       4.4×.** The froxel half's ambient reaches `albedo × multiScatteringScale
+       × C` = `0.225 C`; the composite ramp reaches `1.0 C`. No setting could
+       correct both.
+    3. **The fog is never lit by the sky.** Remix's froxel grid does NEE over
+       the RTXDI light list, which holds five types — sphere, rect, disk,
+       cylinder, distant. **No dome light.** So fog in shadow received nothing
+       from the sky and fell back entirely to a flat constant.
+    4. **`rtx.volumetrics.anisotropy` is 0** — isotropic — so shafts and torch
+       glow had no directional shape.
+
+    **What was done:** the ramp now owns the fog's appearance at *every*
+    distance, applied as an exact residual against what the medium achieved
+    (`T·(1−t) = 1−f`, for any density); σ is capped so the medium never
+    out-fogs the game's own curve by more than `clearZoneTolerance`; the fog's
+    colour is measured off the generated dome by a new one-workgroup reduction
+    pass with a non-stalling readback; forward scattering defaults to 0.6. The
+    same residual is applied to alpha-blended surfaces, or particles would sit
+    almost unfogged in front of fogged terrain.
+
+    **Instrumentation, so this needs no eyeballing:** one bounded log line per
+    distinct fog state (capped at 32), carrying both extinctions, the peak
+    excess over the game's ramp and where it occurs, the grid reach, and the
+    ambient with the fraction of it that came from the dome. The same numbers
+    are in the atmosphere panel.
+
+    **Regression signature.** Near-field haze that is *thicker* than before
+    means the cap is not binding — check "peak excess" is at or below
+    `clearZoneTolerance`. Fog that changes hue with distance means the near and
+    far halves disagree — check `multiScatteringScale` is 1.0. Light shafts
+    that have vanished mean the cap took too much density — raise
+    `clearZoneTolerance`. Outdoor fog brighter than the terrain in front of it
+    means the dome average is too strong — lower `skyAmbientScale`. Everything
+    reverts by setting `fogRampMode = 0`, which restores the previous
+    behaviour exactly.
+
+    **Deliberately NOT done: the exposure-relative fog level**, the remaining
+    half of ledger C10. The palette's fog colour is a *display* colour used as a
+    radiance; outdoors the dome measurement now supplies a real one, but indoors
+    the flat colour still stands and can still lift a dark room's blacks. The
+    machinery exists — `AutoExposureDebugStats` already carries `exposure` and
+    already has a host ring — and it is a separate change by the owner's call.
 
 #### Built and CI-green but NEVER RUN
 
