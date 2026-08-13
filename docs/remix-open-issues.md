@@ -147,7 +147,7 @@ problem**, and `dx9.draws` is where you look.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 13.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 14.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit. (This line has been stale twice — it
 said 6 until 2026-08-09 and 7 until 2026-08-11 — which is exactly the skew the
 coupling warning exists to prevent. The fork's `CLAUDE.md` and the tab's readout
@@ -1194,9 +1194,11 @@ Added **2026-08-07**:
   file rather than here, because they are open questions and this list is for
   settled ones.
 
-13. **CLOSED 2026-08-08 for rain and snow — dense weather particles were a
-    draw-call problem.** Three loops that sweep deliberately left are still open
-    and, since 2026-08-11, **measurement-blocked**; see the end of this entry.
+13. **CLOSED 2026-08-08 for rain and snow, and 2026-08-13 for the Twilight fog
+    and the bog surface — dense weather particles were a draw-call problem.**
+    The three loops that sweep left are now batched as far as they can be
+    without damaging the material Remix reconstructs; **untested in game**, and
+    one of the three is deliberately left alone. See the end of this entry.
     Reported 2026-08-07: rain in Hyrule Field and snow in the Snowpeak
     exteriors and Snowpeak Ruins ran at unusable frame rates. **Fixed and
     tested in game 2026-08-08 — the owner reports particle performance "far
@@ -1291,15 +1293,18 @@ Added **2026-08-07**:
     texture hash rather than the geometry hash. **The question is never "does
     this batch?" but "is there a stable identity here to destroy?"**
 
-    **Still open, and since 2026-08-11 MEASUREMENT-BLOCKED rather than merely
-    deferred.** Three loops the sweep left still emit one `GXBegin`/`GXEnd` per
-    quad. Read in source on 2026-08-11, in `src/d/d_kankyo_rain.cpp`:
+    **The last three loops, batched 2026-08-13.** These are the ones the
+    2026-08-07 sweep left emitting one `GXBegin`/`GXEnd` per quad. The owner
+    authorised batching them **without** waiting for the measurement below, on
+    the grounds that batching produces identical pixels with fewer draw calls,
+    the pattern is proven on rain and snow, and it is reversible. Line numbers
+    are `src/d/d_kankyo_rain.cpp` as of that change:
 
-    | Function | What it draws | Where | Per-quad `GXBegin` |
+    | Function | What it draws | Where | Result |
     | :-- | :-- | :-- | :-- |
-    | `dKyr_evil_draw` (`:6624`) | the Palace of Twilight fog that forces wolf form, `mEffect[2000]` | wherever `kytag12` is placed — that actor creates the packet and sets the trip count | `:6881` |
-    | `dKyr_evil_draw2` (`:6377`) | the second, counter-rotating layer of the same fog | reached only from the tail of `dKyr_evil_draw`, guarded by `!daPy_py_c::checkNowWolfPowerUp()`; this is the one that names `D_MN08` outright, culling `i >= 1600` in its room 1 | `:6586` |
-    | `dKyr_mud_draw` (`:6142`) | the mud/haze ground layer, `mEffect[100]` | `D_MN05A` (Diababa's arena) gets its own colour path, but `kytag00`'s effect type 15 (`wether_tag_efect_move`, `d_a_kytag00.cpp:339-341`) can enable it anywhere | `:6333` |
+    | `dKyr_evil_draw` (`:6848`) | the Palace of Twilight fog that forces wolf form, `mEffect[2000]` | wherever `kytag12` is placed — that actor creates the packet and sets the trip count | **one draw per run** of particles sharing `GX_TEVREG1` (`:7082`), which is one draw for the whole field whenever no boss light is near |
+    | `dKyr_evil_draw2` (`:6582`) | the second, counter-rotating layer of the same fog | reached only from the tail of `dKyr_evil_draw`, guarded by `!daPy_py_c::checkNowWolfPowerUp()`; this is the one that names `D_MN08` outright, culling `i >= 1600` in its room 1 | **deliberately still ~one draw per quad** — batching it would cost the material Remix reconstructs. Reason below |
+    | `dKyr_mud_draw` (`:6315`) | the mud/haze ground layer, `mEffect[100]` | `D_MN05A` (Diababa's arena) gets its own colour path, but `kytag00`'s effect type 15 (`wether_tag_efect_move`, `d_a_kytag00.cpp:339-341`) can enable it anywhere | **fully batched — one draw per pass** (`:6466`) |
 
     **A naming note, because it points the other way for once.** `evil` and
     `mud` are **English** words, not romanized Japanese, and nothing in this
@@ -1314,16 +1319,90 @@ Added **2026-08-07**:
     member name**, a hypothesis rather than an authored one, per
     `japanese-naming.md` §8b.
 
-    **The earlier version of this paragraph named only `dKyr_evil_draw2` and
-    `dKyr_mud_draw`, and that was incomplete.** `dKyr_evil_draw` emits per quad
-    too. What it does *not* need is the `GX_TEVREG0`→vertex-colour rework rain
-    got: that half already landed (the `// move color_reg0 to vtx for perf`
-    block at `:6710-6721`, in the tree since before 2026-06-15, with the
-    per-particle `GXSetTevColor(GX_TEVREG0, …)` already demoted to
-    `IF_NOT_DUSK`). Its one remaining blocker is a per-particle
-    `GXSetTevColor(GX_TEVREG1, …)` at `:6842` — a state change inside what would
-    be the batched primitive. `dKyr_evil_draw2` still sets *both* TEV registers
-    per particle (`:6545-6546`), so it needs the full rework.
+    **`dKyr_evil_draw` was already half-reworked before any of this.** The
+    `GX_TEVREG0`→vertex-colour half landed long ago (the
+    `// move color_reg0 to vtx for perf` block at `:6935`, in the tree since
+    before 2026-06-15, with the per-particle `GXSetTevColor(GX_TEVREG0, …)`
+    already demoted to `IF_NOT_DUSK`), but the `GXBegin`/`GXEnd` hoist that would
+    have collected the win never did — the same "paid the cost, took none of the
+    benefit" state `dKyr_drawSnow` was in. Its one remaining per-particle state
+    was `GXSetTevColor(GX_TEVREG1, …)`.
+
+    **How the two evil loops are batched, and why it is not the rain pattern.**
+    Rain's fix was to *eliminate* the per-particle state by moving the colour
+    into vertex `CLR0`. Neither evil loop can do that, because each needs **two**
+    colours per particle and one GX TEV stage reads exactly one rasterized
+    channel. So instead of eliminating the state change, they now collect the
+    quads *between* state changes: one `GXBegin(…, GX_AUTO)` per **run** of
+    consecutive particles whose TEV colour registers are identical, closed and
+    reopened wherever a register actually changes (`KyrRunBatch` in
+    `d_kankyo_rain.cpp`).
+
+    That is exact by construction: every register write still happens, with the
+    same value, in the same order, before the quads that depend on it, so the
+    FIFO is the unbatched one minus some primitive headers. The run key is the
+    packed colour bytes, **not a hash** — a collision would silently skip a
+    `GXSetTevColor` and draw a particle in its neighbour's colour, a wrong pixel
+    with nothing in the log.
+
+    How much it collects is entirely a property of the data, which is why the
+    counter now reports draws as well as quads:
+
+    - **`dKyr_evil_draw` should collapse to one draw.** Its `color_reg1` is a
+      loop-invariant colour scaled by `effect->field_0x2c`, and `field_0x2c` is
+      driven by `cLib_addCalc` toward `0` unless a boss light is within 5000
+      units (`dKyr_near_bosslight_check`). `cLib_addCalc`
+      (`src/SSystem/SComponent/c_lib.cpp:40`) snaps exactly to its target rather
+      than approaching it asymptotically, so with no boss light in range every
+      particle's `color_reg1` is an identical `(0,0,0,255)`. **Read in source,
+      not measured** — `evilDrawMean`/`evilDrawPeak` are what settle it.
+    - **`dKyr_evil_draw2` will not collapse**, because both its TEV colour
+      registers are functions of a per-particle `temp_f30`. The machinery is
+      still wired up (it costs one comparison and collects any run that does
+      form after `u8` quantisation), but the expectation is roughly one draw per
+      quad.
+
+    **Why `dKyr_evil_draw2` is not batched properly, and why that is a finding
+    rather than a shortcut.** The obvious fix is the one this entry used to
+    recommend: put the second endpoint in `GX_VA_CLR1` / `GX_COLOR1A1`, or split
+    the combiner across two TEV stages. **Both were refuted by reading aurora on
+    2026-08-13** (`extern/aurora/lib/dx9/dx9_tev.cpp`), and they fail in
+    different ways:
+
+    - **`GX_VA_CLR1`.** `ras_operand` turns `GX_COLOR1A1` into `D3DTA_SPECULAR`,
+      and `eval_operand` resolves only constants, `D3DTA_TEXTURE` and
+      `D3DTA_DIFFUSE` — everything else returns `false` and `evaluate_albedo`
+      bails with `valid == false`. `set_remix_material` then ships the fog **no
+      exact two-colour ramp and no self-lit colour at all**.
+    - **Two TEV stages.** `preferred_albedo_stage` returns the *first* stage
+      that samples a colour texture and reads it in its colour pass, so the
+      albedo would be evaluated from **stage 0 alone** — half the combiner, so
+      both ramp endpoints wrong — and stage 1's `CPREV` becomes `D3DTA_CURRENT`,
+      which `eval_operand` also refuses.
+
+    Folding into `CLR0` instead is impossible arithmetically rather than by
+    convention: TEV is componentwise, and this layer's blue channel needs `t³`
+    from one endpoint and `t²` from the other in the same channel.
+
+    So the trade on offer was the fog's material for its draw count, and that is
+    not a trade this project wants — Remix's renderer is the product. **This is
+    also why `dKyr_mud_draw` moved only its ALPHA into `CLR0`** and left the
+    colour stage on `GX_CC_C1`/`GX_CC_C0`: aurora declines the exact ramp as
+    soon as the *colour* program reads a streamed vertex colour
+    (`rampWhy="usesVtx"`), and the alpha program is not part of that test —
+    `evaluate_albedo` discards the alpha pass's `sawVtx`. Alpha-only therefore
+    keeps mud's ramp and its self-lit evidence exactly as they were, and still
+    gets the whole field into one draw.
+
+    **An unremarked side effect of the earlier half-rework, recorded here
+    because nobody has looked at it.** `dKyr_evil_draw`'s colour program has read
+    `GX_CC_RASC` from a streamed `CLR0` since before this work started, which by
+    the same two code paths means that layer *already* ships with
+    `rampWhy="usesVtx"` and `readsRaster=true` — no exact ramp, and no "unlit"
+    contribution to its self-lit score. **Read in aurora's source, not measured
+    in game**, and not caused by the 2026-08-13 batching; `matrep` would confirm
+    or refute it in one log. It is noted because it is the price the rain pattern
+    charges wherever the colour, rather than the alpha, is what moves.
 
     **The 2,000 in the header is an array bound, not a frame cost — and the
     priority was inverted on exactly that mistake.** `EF_EVIL_EFF mEffect[2000]`
@@ -1345,23 +1424,31 @@ Added **2026-08-07**:
     the single scarce play window would produce an ambiguous answer — which is
     rule 2, a question we would have to ask is a defect in the logging. So on
     2026-08-11 the three loops were given a counter of their own, matching the
-    shape of aurora's, in `d_kankyo_rain.cpp`. Once every 600 game ticks it
-    emits **one** line:
+    shape of aurora's, in `d_kankyo_rain.cpp`; on 2026-08-13 it gained the draw
+    counts that make it a before/after. Once every 600 game ticks it emits
+    **one** line:
 
     ```
-    kankyo.unbatched frames=600 passes=600 evilMean=… evilPeak=… evil2Mean=… evil2Peak=… mudMean=… mudPeak=… - …
+    kankyo.particles frames=600 passes=600 evilQuadMean=… evilQuadPeak=… evilDrawMean=… evilDrawPeak=… evil2QuadMean=… evil2QuadPeak=… evil2DrawMean=… evil2DrawPeak=… mudQuadMean=… mudQuadPeak=… mudDrawMean=… mudDrawPeak=… - …
     ```
 
-    Counts are quads that survived **every** cull and reached a `GXBegin`, so
-    each one is a real D3D9 draw. The line is silent unless one of the three is
-    drawing — their packets only exist while their area is loaded — so it costs
-    nothing everywhere else. `passes` is there because the roll keys on the
-    game's tick counter rather than on presented frames: `passes == frames`
-    means the figures are already per presented frame, `passes == 2 × frames`
-    means halve them. **Behaviour is unchanged — the counters increment and
-    nothing reads them.**
+    `…Quad…` counts quads that survived **every** cull and were emitted; its
+    meaning has not changed since 2026-08-11, so a log from before the batching
+    and a log from after compare directly on those fields. `…Draw…` counts the
+    `GXBegin` blocks that carried them — one real D3D9 draw each. **Before the
+    batching the two were equal by construction; the gap between them now is the
+    batching's effect.** The line is silent unless one of the three is drawing —
+    their packets only exist while their area is loaded — so it costs nothing
+    everywhere else. `passes` is there because the roll keys on the game's tick
+    counter rather than on presented frames: `passes == frames` means the figures
+    are already per presented frame, `passes == 2 × frames` means halve them.
 
-    **THE MEASUREMENT REQUEST. One play session, roughly a minute.**
+    **The key was renamed from `kankyo.unbatched` on 2026-08-13**, because the
+    old name asserts something that is no longer true. A log carrying the old
+    key predates the batching, which is itself useful to know when reading one.
+
+    **THE MEASUREMENT REQUEST — now a confirmation rather than a decision. One
+    play session, roughly a minute.**
 
     1. Warp to **Palace of Twilight** (`D_MN08`), room **0** or room **1** —
        those are the two rooms `daKytag12_Execute` gives the full 2,000-particle
@@ -1373,34 +1460,35 @@ Added **2026-08-07**:
     3. Send the game log — `<CachePath>/logs/<timestamp>.log`. Nothing else is
        needed; the Remix log is not part of this.
 
-    **What the number decides.** Read `evilPeak + evil2Peak` (halving first if
-    `passes` is a multiple of `frames` greater than one):
+    **What the numbers now answer**, in order of what would change a decision:
 
-    - **In the high hundreds or thousands** — the fog is a draw-call problem of
-      the same order rain was, and batching it is worth doing. The same line is
-      then the before/after measure.
-    - **In the low tens** — the culls are doing their job, the pre-cull bound
-      never materialises, and this should be closed as not worth doing.
-    - **In between** — also read `dx9.draws peak` from the same log. If the fog
-      is not a large fraction of the frame's total draws, it is not the thing to
-      fix next.
-    - **No `kankyo.unbatched` line at all** after 30 seconds standing in the
+    - **`evilDrawPeak`.** Predicted to be **1** (or a small number) against an
+      `evilQuadPeak` in the hundreds or thousands. That is the batching working
+      exactly as `cLib_addCalc`'s snap-to-target says it should. If instead
+      `evilDrawPeak ≈ evilQuadPeak`, a boss light is in range and the prediction
+      above is wrong somewhere — say so rather than assuming the run batching is
+      broken.
+    - **`evil2QuadPeak`.** This layer is *not* batched, so its quads are still
+      its draws. If it is in the high hundreds it is now the largest remaining
+      per-draw cost in the fog, and the only way to reduce it is the material
+      trade described above — which would need a deliberate decision, not a
+      cheap fix.
+    - **`mudDrawPeak`.** Should be exactly `1` per pass wherever mud is drawing.
+      Anything else means the hoisted `GXBegin` is not doing what it looks like.
+    - **`dx9.draws peak` from the same log**, for the fraction of the frame all
+      of this actually is.
+    - **No `kankyo.particles` line at all** after 30 seconds standing in the
       fog — that is also an answer: the packet is not drawing there and the
-      diagnosis is wrong.
+      diagnosis about where this fog lives is wrong.
 
-    The high/low thresholds above are **chosen by analogy with the rain case
-    (~1000 draws a frame, unusable), not measured.** They are a reading aid, not
-    a finding.
-
-    **Until that log exists, do not batch these.** The fix is well understood —
-    hoist one `GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO)` above each loop with the
-    per-quad one demoted to `IF_NOT_DUSK`, move `color_reg1` into the second GX
-    colour channel or fold it into `CLR0`, exactly as `dKyr_drawRain` at
-    `:3264` shows — and it is *cheap*, which is precisely why it keeps getting
-    proposed ahead of the measurement that would say whether it is worth
-    anything. Regression signature if it is ever done: the Twilight fog
-    vanishing, drawing in one flat colour, losing its per-particle fade, or a
-    `GX_AURORA_DRAW_SIZED` / vertex-count-mismatch assertion in the log.
+    **Regression signature.** The Twilight fog or the bog surface vanishing,
+    drawing in one flat colour, losing its per-particle fade, or a
+    `GX_AURORA_DRAW_SIZED` / `GXEnd: vertex count mismatch` assertion in the log.
+    All of those mean a vertex colour is not reaching the TEV stage or a
+    `GXBegin` block is unbalanced. **The fog looking identical with a lower draw
+    count is success** — so this needs a log read, not only an opinion about the
+    picture. Reverting is a matter of restoring the per-quad `GXBegin` and
+    dropping `KyrRunBatch`; nothing else in the frame depends on it.
 
     **Also unexercised:** Remix's billboard/intersection-primitive path, which
     only now has batched instances to work with. It is gated on the Particle

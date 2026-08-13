@@ -6001,14 +6001,15 @@ void dKyr_mud_move() {
 // conflict. The header is #pragma once, so a duplicate costs nothing.
 #include "dusk/logging.h"
 
-// Dusk: how many quads the three still-unbatched kankyo particle systems actually put on
-// screen, per game tick - see the unit caveat below before reading the number as per-frame.
+// Dusk: how many quads the three late-batched kankyo particle systems put on screen, and how
+// many D3D9 draw calls carry them, per game tick - see the unit caveat below before reading
+// either number as per-frame.
 //
 // The 2026-08-07 sweep hoisted GXBegin/GXEnd out of the per-quad loops in dKyr_drawRain,
 // dKyr_drawSnow, dKyr_drawSibuki and dKyr_odour_draw, because aurora submits each GXBegin
 // block as its own D3D9 draw and Remix charges per draw rather than per pixel. Three loops
-// were deliberately left emitting one GXBegin per quad, and they are the three counted
-// here:
+// were left emitting one GXBegin per quad, were given this counter on 2026-08-11, and were
+// batched on 2026-08-13 (see "WHAT BATCHING EACH ONE COST" below). They are:
 //
 //   dKyr_evil_draw   the Palace of Twilight fog - kytag12 is what creates and sizes it
 //   dKyr_evil_draw2  the second, counter-rotating layer of the same fog; this is the one
@@ -6025,17 +6026,64 @@ void dKyr_mud_move() {
 // struct member name is reconstructed rather than authored - a hypothesis, not evidence.
 // The naming lens says as much by ruling a reading out as by supplying one.
 //
-// Whether they cost anything is a MEASUREMENT, and nobody has taken it. The array bound is
-// 2000 evil effects, but the trip count is g_env_light.field_0x1054, which daKytag12_Execute
-// sets per room (2000 in rooms 0 and 1, 1000 in 11/0x33/0x34, 500 otherwise), and every
-// particle must still clear mStatus, a field_0x38 > 9000 reject, a screen-space reject and a
-// near-zero alpha reject before it draws. So the bound says nothing about the cost, and
-// reading the cost off aurora's dx9.draws cannot work either: that is a TOTAL for the whole
-// frame, so a high number while standing in the Palace of Twilight cannot tell the fog apart
-// from the room around it. Answering it from that line would mean asking whoever is playing
-// to judge the difference - which is the project's rule 2 exactly, a question we would have
-// to ask is a defect in the logging. So count the three directly instead. They play, they
-// send a log, we know.
+// How much they cost is still a MEASUREMENT nobody has taken, and this counter is it. The
+// array bound is 2000 evil effects, but the trip count is g_env_light.field_0x1054, which
+// daKytag12_Execute sets per room (2000 in rooms 0 and 1, 1000 in 11/0x33/0x34, 500
+// otherwise), and every particle must still clear mStatus, a field_0x38 > 9000 reject, a
+// screen-space reject and a near-zero alpha reject before it draws. So the bound says nothing
+// about the cost, and reading the cost off aurora's dx9.draws cannot work either: that is a
+// TOTAL for the whole frame, so a high number while standing in the Palace of Twilight cannot
+// tell the fog apart from the room around it. Answering it from that line would mean asking
+// whoever is playing to judge the difference - which is the project's rule 2 exactly, a
+// question we would have to ask is a defect in the logging. So count the three directly
+// instead. They play, they send a log, we know.
+//
+// WHAT BATCHING EACH ONE COST, 2026-08-13. The owner authorised batching without waiting for
+// the measurement, so both halves are now reported: `...QuadMean/Peak` is unchanged in meaning
+// (quads that survived every cull and drew) and `...DrawMean/Peak` is the number of D3D9 draw
+// calls that carried them. Before this change the two were equal by construction; the ratio
+// between them is now the batching's effect, and it is different for each of the three because
+// what each had inside its GXBegin block is different:
+//
+//   mud   FULLY BATCHED - one draw per pass. Its only per-particle state was the alpha in
+//         GX_TEVREG0, so that moved into vertex CLR0 (GX_CA_RASA) exactly as dKyr_drawRain
+//         did, and the redundant per-particle GXLoadTexObj went with it. The COLOUR stage is
+//         untouched (GX_CC_C1/GX_CC_C0, both loop-invariant), which matters: aurora declines
+//         the exact two-colour ramp it hands Remix as soon as the *colour* program reads a
+//         streamed vertex colour (dx9_tev.cpp, rampWhy="usesVtx"), and it reads only the
+//         colour program for that (evaluate_albedo's alpha pass uses a throwaway sawVtx).
+//         Alpha-only therefore keeps mud's ramp and its self-lit evidence exactly as they were.
+//
+//   evil  BATCHED PER RUN - one draw per run of consecutive particles sharing GX_TEVREG1.
+//         color_reg0 already rode vertex CLR0 (an earlier session did that half). color_reg1
+//         is K * effect->field_0x2c, where K is loop-invariant and field_0x2c is driven by
+//         cLib_addCalc toward 0 unless a boss light is within 5000 units - and cLib_addCalc
+//         snaps exactly to its target, so with no boss light in range every particle's
+//         color_reg1 is an identical (0,0,0,255) and the whole field collapses to ONE draw.
+//         Near a boss light it degrades toward one draw per quad. Read in source, not measured
+//         - which is what evilDrawMean/evilDrawPeak are here to settle.
+//
+//   evil2 NOT BATCHED, and this is a finding rather than an omission. Its two TEV colour
+//         registers BOTH vary per particle (both are functions of temp_f30), so a run is
+//         normally one quad long. The obvious fix - put the second endpoint in GX_VA_CLR1 /
+//         GX_COLOR1A1, or split the combiner across two TEV stages - was refuted by reading
+//         aurora (lib/dx9/dx9_tev.cpp), where BOTH forms damage the material Remix is handed:
+//
+//           - GX_VA_CLR1: ras_operand turns GX_COLOR1A1 into D3DTA_SPECULAR, and eval_operand
+//             resolves only constants, D3DTA_TEXTURE and D3DTA_DIFFUSE - anything else returns
+//             false and evaluate_albedo bails with valid=false. set_remix_material then ships
+//             the fog no exact two-colour ramp AND no self-lit colour at all.
+//           - Two stages: preferred_albedo_stage returns the FIRST stage that samples a colour
+//             texture and reads it, so the albedo would be evaluated from stage 0 alone - half
+//             the combiner, so both ramp endpoints wrong - and stage 1's CPREV is D3DTA_CURRENT,
+//             which eval_operand also refuses.
+//
+//         Folding into CLR0 is impossible too, arithmetically rather than by convention: TEV is
+//         componentwise, and evil2's blue channel needs t^3 from one endpoint and t^2 from the
+//         other in the same channel. Trading the fog's material for its draw count is not a
+//         trade this project wants - Remix's renderer is the product - so evil2 keeps the
+//         run-batching machinery (it is free, and collects any run that does form once the u8
+//         quantisation is applied) and nothing else.
 //
 // Same period of 600 as dx9.draws and vrkumo.draws on purpose, so the lines land near each
 // other and read side by side. Bounded and self-describing: one line per period,
@@ -6055,97 +6103,219 @@ void dKyr_mud_move() {
 // frame; passes == 2 * frames means halve them. Do not delete that field without replacing
 // what it answers.
 //
-// Behaviour is unchanged. The counters increment and nothing reads them, deliberately -
-// whether to batch these loops is what the number decides, and batching first would be the
-// blind change the "charges per draw, not per pixel" work exists to prevent.
+// Nothing in the game reads these counters; they exist only to be logged. They are the
+// before/after instrument for the batching described above, which is why the quad counts kept
+// their old meaning rather than being redefined - a log from before 2026-08-13 and a log from
+// after are directly comparable on the ...QuadMean/...QuadPeak fields.
 namespace {
 
-const u32 kKyrUnbatchedStatsPeriod = 600;
+const u32 kKyrParticleStatsPeriod = 600;
 
-struct KyrUnbatchedDrawStats {
+struct KyrParticleDrawStats {
     u32 lastFrame;
+    // Quads that survived every cull and were emitted. Meaning unchanged since 2026-08-11, so
+    // logs from before and after the batching compare directly.
     u32 frameEvil;
     u32 frameEvil2;
     u32 frameMud;
+    // GXBegin blocks opened to carry those quads - one D3D9 draw each. Before the batching
+    // these would have equalled the counts above.
+    u32 frameEvilDraws;
+    u32 frameEvil2Draws;
+    u32 frameMudDraws;
     u32 periodFrames;
     u32 periodPasses;
     u32 periodEvil;
     u32 periodEvilPeak;
+    u32 periodEvilDraws;
+    u32 periodEvilDrawsPeak;
     u32 periodEvil2;
     u32 periodEvil2Peak;
+    u32 periodEvil2Draws;
+    u32 periodEvil2DrawsPeak;
     u32 periodMud;
     u32 periodMudPeak;
+    u32 periodMudDraws;
+    u32 periodMudDrawsPeak;
     bool started;
 };
 
-KyrUnbatchedDrawStats s_kyrUnbatchedStats;
+KyrParticleDrawStats s_kyrParticleStats;
 
 // Folds the finished tick's counts into the period and emits the line when the period is up.
 // Only called when the tick has actually changed, so the flush below always describes a
 // complete tick.
-void kyrUnbatchedRollTick(u32 frame) {
-    if (s_kyrUnbatchedStats.started) {
-        s_kyrUnbatchedStats.periodEvil += s_kyrUnbatchedStats.frameEvil;
-        if (s_kyrUnbatchedStats.frameEvil > s_kyrUnbatchedStats.periodEvilPeak) {
-            s_kyrUnbatchedStats.periodEvilPeak = s_kyrUnbatchedStats.frameEvil;
+void kyrParticleRollTick(u32 frame) {
+    if (s_kyrParticleStats.started) {
+        s_kyrParticleStats.periodEvil += s_kyrParticleStats.frameEvil;
+        if (s_kyrParticleStats.frameEvil > s_kyrParticleStats.periodEvilPeak) {
+            s_kyrParticleStats.periodEvilPeak = s_kyrParticleStats.frameEvil;
+        }
+        s_kyrParticleStats.periodEvilDraws += s_kyrParticleStats.frameEvilDraws;
+        if (s_kyrParticleStats.frameEvilDraws > s_kyrParticleStats.periodEvilDrawsPeak) {
+            s_kyrParticleStats.periodEvilDrawsPeak = s_kyrParticleStats.frameEvilDraws;
         }
 
-        s_kyrUnbatchedStats.periodEvil2 += s_kyrUnbatchedStats.frameEvil2;
-        if (s_kyrUnbatchedStats.frameEvil2 > s_kyrUnbatchedStats.periodEvil2Peak) {
-            s_kyrUnbatchedStats.periodEvil2Peak = s_kyrUnbatchedStats.frameEvil2;
+        s_kyrParticleStats.periodEvil2 += s_kyrParticleStats.frameEvil2;
+        if (s_kyrParticleStats.frameEvil2 > s_kyrParticleStats.periodEvil2Peak) {
+            s_kyrParticleStats.periodEvil2Peak = s_kyrParticleStats.frameEvil2;
+        }
+        s_kyrParticleStats.periodEvil2Draws += s_kyrParticleStats.frameEvil2Draws;
+        if (s_kyrParticleStats.frameEvil2Draws > s_kyrParticleStats.periodEvil2DrawsPeak) {
+            s_kyrParticleStats.periodEvil2DrawsPeak = s_kyrParticleStats.frameEvil2Draws;
         }
 
-        s_kyrUnbatchedStats.periodMud += s_kyrUnbatchedStats.frameMud;
-        if (s_kyrUnbatchedStats.frameMud > s_kyrUnbatchedStats.periodMudPeak) {
-            s_kyrUnbatchedStats.periodMudPeak = s_kyrUnbatchedStats.frameMud;
+        s_kyrParticleStats.periodMud += s_kyrParticleStats.frameMud;
+        if (s_kyrParticleStats.frameMud > s_kyrParticleStats.periodMudPeak) {
+            s_kyrParticleStats.periodMudPeak = s_kyrParticleStats.frameMud;
+        }
+        s_kyrParticleStats.periodMudDraws += s_kyrParticleStats.frameMudDraws;
+        if (s_kyrParticleStats.frameMudDraws > s_kyrParticleStats.periodMudDrawsPeak) {
+            s_kyrParticleStats.periodMudDrawsPeak = s_kyrParticleStats.frameMudDraws;
         }
 
-        s_kyrUnbatchedStats.periodFrames++;
+        s_kyrParticleStats.periodFrames++;
 
-        if (s_kyrUnbatchedStats.periodFrames >= kKyrUnbatchedStatsPeriod) {
+        if (s_kyrParticleStats.periodFrames >= kKyrParticleStatsPeriod) {
             DuskLog.info(
-                "kankyo.unbatched frames={} passes={} evilMean={} evilPeak={} evil2Mean={} "
-                "evil2Peak={} mudMean={} mudPeak={} - quads per game tick that survived every "
-                "cull and drew, one D3D9 draw each: evil = the Palace of Twilight fog, evil2 = "
-                "its second layer, mud = the bog surface. passes counts entries into these draw "
-                "functions over the same period, so divide by passes/frames for a per-presented-"
-                "frame figure. All three are a subset of dx9.draws; compare against it",
-                s_kyrUnbatchedStats.periodFrames, s_kyrUnbatchedStats.periodPasses,
-                s_kyrUnbatchedStats.periodEvil / s_kyrUnbatchedStats.periodFrames,
-                s_kyrUnbatchedStats.periodEvilPeak,
-                s_kyrUnbatchedStats.periodEvil2 / s_kyrUnbatchedStats.periodFrames,
-                s_kyrUnbatchedStats.periodEvil2Peak,
-                s_kyrUnbatchedStats.periodMud / s_kyrUnbatchedStats.periodFrames,
-                s_kyrUnbatchedStats.periodMudPeak);
-            s_kyrUnbatchedStats.periodFrames = 0;
-            s_kyrUnbatchedStats.periodPasses = 0;
-            s_kyrUnbatchedStats.periodEvil = 0;
-            s_kyrUnbatchedStats.periodEvilPeak = 0;
-            s_kyrUnbatchedStats.periodEvil2 = 0;
-            s_kyrUnbatchedStats.periodEvil2Peak = 0;
-            s_kyrUnbatchedStats.periodMud = 0;
-            s_kyrUnbatchedStats.periodMudPeak = 0;
+                "kankyo.particles frames={} passes={} evilQuadMean={} evilQuadPeak={} "
+                "evilDrawMean={} evilDrawPeak={} evil2QuadMean={} evil2QuadPeak={} "
+                "evil2DrawMean={} evil2DrawPeak={} mudQuadMean={} mudQuadPeak={} "
+                "mudDrawMean={} mudDrawPeak={} - per game tick: Quad = quads that survived "
+                "every cull and drew, Draw = D3D9 draw calls that carried them. evil = the "
+                "Palace of Twilight fog, evil2 = its second layer, mud = the bog surface. "
+                "Before 2026-08-13 Quad and Draw were equal for all three; now mud is one draw "
+                "a pass, evil is one draw per run of particles sharing GX_TEVREG1 (one for the "
+                "whole field when no boss light is near), and evil2 is still about one draw per "
+                "quad on purpose - batching it would cost the material Remix reconstructs. "
+                "passes counts entries into these draw functions over the same period, so "
+                "divide by passes/frames for a per-presented-frame figure. All are a subset of "
+                "dx9.draws; compare against it",
+                s_kyrParticleStats.periodFrames, s_kyrParticleStats.periodPasses,
+                s_kyrParticleStats.periodEvil / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodEvilPeak,
+                s_kyrParticleStats.periodEvilDraws / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodEvilDrawsPeak,
+                s_kyrParticleStats.periodEvil2 / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodEvil2Peak,
+                s_kyrParticleStats.periodEvil2Draws / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodEvil2DrawsPeak,
+                s_kyrParticleStats.periodMud / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodMudPeak,
+                s_kyrParticleStats.periodMudDraws / s_kyrParticleStats.periodFrames,
+                s_kyrParticleStats.periodMudDrawsPeak);
+            s_kyrParticleStats.periodFrames = 0;
+            s_kyrParticleStats.periodPasses = 0;
+            s_kyrParticleStats.periodEvil = 0;
+            s_kyrParticleStats.periodEvilPeak = 0;
+            s_kyrParticleStats.periodEvilDraws = 0;
+            s_kyrParticleStats.periodEvilDrawsPeak = 0;
+            s_kyrParticleStats.periodEvil2 = 0;
+            s_kyrParticleStats.periodEvil2Peak = 0;
+            s_kyrParticleStats.periodEvil2Draws = 0;
+            s_kyrParticleStats.periodEvil2DrawsPeak = 0;
+            s_kyrParticleStats.periodMud = 0;
+            s_kyrParticleStats.periodMudPeak = 0;
+            s_kyrParticleStats.periodMudDraws = 0;
+            s_kyrParticleStats.periodMudDrawsPeak = 0;
         }
     }
 
-    s_kyrUnbatchedStats.frameEvil = 0;
-    s_kyrUnbatchedStats.frameEvil2 = 0;
-    s_kyrUnbatchedStats.frameMud = 0;
-    s_kyrUnbatchedStats.lastFrame = frame;
-    s_kyrUnbatchedStats.started = true;
+    s_kyrParticleStats.frameEvil = 0;
+    s_kyrParticleStats.frameEvil2 = 0;
+    s_kyrParticleStats.frameMud = 0;
+    s_kyrParticleStats.frameEvilDraws = 0;
+    s_kyrParticleStats.frameEvil2Draws = 0;
+    s_kyrParticleStats.frameMudDraws = 0;
+    s_kyrParticleStats.lastFrame = frame;
+    s_kyrParticleStats.started = true;
 }
 
 // Records that another pass over one of the counted loops has begun, rolling the tick first
 // if this is the first pass of a new one. Called from the top of dKyr_mud_draw and
 // dKyr_evil_draw; dKyr_evil_draw2 is only ever reached from the tail of dKyr_evil_draw, so it
 // belongs to its caller's pass and does not call this itself.
-void kyrUnbatchedBeginPass() {
+void kyrParticleBeginPass() {
     const u32 frame = g_Counter.mCounter0;
-    if (!s_kyrUnbatchedStats.started || frame != s_kyrUnbatchedStats.lastFrame) {
-        kyrUnbatchedRollTick(frame);
+    if (!s_kyrParticleStats.started || frame != s_kyrParticleStats.lastFrame) {
+        kyrParticleRollTick(frame);
     }
-    s_kyrUnbatchedStats.periodPasses++;
+    s_kyrParticleStats.periodPasses++;
 }
+
+// Packs one or two GXColors into a run key. The key is EXACT, not a hash: two colours are
+// eight bytes and the key is 64 bits, so no two distinct colour pairs can share one. A hash
+// here would mean a collision silently skipped a GXSetTevColor and drew a particle in its
+// neighbour's colour - a wrong pixel with nothing in the log, which is the one failure mode
+// this whole change must not introduce.
+//
+// A single step of difference ends the run. That is correct rather than conservative: GX
+// would have seen a different register value.
+inline u64 kyrColorKey(const GXColor& c) {
+    return ((u64)c.r << 24) | ((u64)c.g << 16) | ((u64)c.b << 8) | (u64)c.a;
+}
+
+inline u64 kyrColorKey2(const GXColor& a, const GXColor& b) {
+    return (kyrColorKey(a) << 32) | kyrColorKey(b);
+}
+
+// One D3D9 draw per RUN of consecutive particles that share their TEV colour registers,
+// instead of one per quad.
+//
+// The two evil loops cannot do what dKyr_drawRain did - move the varying colour into vertex
+// CLR0 - because they need TWO colours per particle and GX gives one TEV stage one rasterized
+// channel. The alternatives (GX_VA_CLR1, or splitting the combiner over two stages) were
+// refuted against aurora's source: see the block comment above, "WHAT BATCHING EACH ONE COST".
+//
+// So instead of eliminating the state change, this collects the quads BETWEEN state changes.
+// GXSetTevColor inside a GXBegin block is illegal, so a run ends wherever a register changes -
+// but every register write still happens, with the same value, in the same order, before the
+// quads that depend on it. The FIFO is therefore byte-identical to the unbatched version apart
+// from the primitive headers, and the rendered result cannot differ. The win is whatever the
+// data gives: one draw for the whole field when the colour is uniform, one per quad when every
+// particle differs, and never worse than before.
+//
+//     KyrRunBatch batch;
+//     for (...) {
+//         if (batch.startRun(key)) {           // ends the open primitive if the key changed
+//             GXSetTevColor(GX_TEVREG1, c);    // the state that ended it
+//             batch.begin(&counter);           // GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO)
+//         }
+//         ...emit the quad's vertices...
+//     }
+//     batch.finish();                          // after the loop, before anything else draws
+struct KyrRunBatch {
+    bool mOpen = false;
+    bool mHasKey = false;
+    u64 mKey = 0;
+
+    // True when the caller must rewrite its registers and open a new primitive.
+    bool startRun(u64 key) {
+        if (mOpen && mHasKey && key == mKey) {
+            return false;
+        }
+        if (mOpen) {
+            GXEnd();
+            mOpen = false;
+        }
+        mKey = key;
+        mHasKey = true;
+        return true;
+    }
+
+    void begin(u32* drawCounter) {
+        GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+        mOpen = true;
+        (*drawCounter)++;
+    }
+
+    void finish() {
+        if (mOpen) {
+            GXEnd();
+            mOpen = false;
+        }
+    }
+};
 
 } // namespace
 #endif
@@ -6153,7 +6323,7 @@ void kyrUnbatchedBeginPass() {
 void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
     ZoneScoped;
 #if TARGET_PC
-    kyrUnbatchedBeginPass();
+    kyrParticleBeginPass();
 #endif
     dKankyo_mud_Packet* mud_packet = g_env_light.mpMudPacket;
     dKankyo_sun_Packet* sun_packet = g_env_light.mpSunPacket;
@@ -6256,16 +6426,29 @@ void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
                 dKyr_set_btitex(&texobj, (ResTIMG*)tex[0]);
 #endif
 
+#if TARGET_PC
+                // Dusklight optimization: the only thing that varied per particle here was
+                // color_reg0's ALPHA, so it moves into vertex CLR0 and the whole mud field
+                // becomes one draw - the dKyr_drawRain pattern exactly. Deliberately alpha
+                // only: the colour stage below still reads GX_CC_C1/GX_CC_C0, both of which
+                // are loop-invariant, and aurora declines the exact two-colour ramp it hands
+                // Remix the moment the *colour* program reads a streamed vertex colour
+                // (lib/dx9/dx9_tev.cpp, rampWhy="usesVtx"). The alpha program is not part of
+                // that test, so mud keeps its ramp and its self-lit evidence unchanged.
+                GXSetNumChans(1);
+                GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_CLAMP, GX_AF_NONE);
+#else
                 GXSetNumChans(0);
+#endif
                 GXSetTevColor(GX_TEVREG0, color_reg0);
                 GXSetTevColor(GX_TEVREG1, color_reg1);
                 GXSetNumTexGens(1);
                 GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
                 GXSetNumTevStages(1);
-                GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
+                GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, DUSK_IF_ELSE(GX_COLOR0A0, GX_COLOR_NULL));
                 GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_C1, GX_CC_C0, GX_CC_TEXC, GX_CC_ZERO);
                 GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-                GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_A0, GX_CA_TEXA, GX_CA_ZERO);
+                GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, DUSK_IF_ELSE(GX_CA_RASA, GX_CA_A0), GX_CA_TEXA, GX_CA_ZERO);
                 GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
                 GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_SET);
                 GXSetAlphaCompare(GX_GREATER, 0, GX_AOP_OR, GX_GREATER, 0);
@@ -6278,12 +6461,19 @@ void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
 
                 GXSetClipMode(GX_CLIP_ENABLE);
                 GXSetNumIndStages(0);
-                dKr_cullVtx_Set();
+                dKr_cullVtx_Set(IF_DUSK(true));
 
                 MTXRotRad(rotMtx, 'Z', DEG_TO_RAD(rot));
                 MTXConcat(camMtx, rotMtx, camMtx);
                 GXLoadPosMtxImm(drawMtx, GX_PNMTX0);
                 GXSetCurrentMtx(GX_PNMTX0);
+
+#if TARGET_PC
+                // One draw call for the whole mud field rather than one per effect. GX_AUTO
+                // because mEffectNum is not the vertex count - it is only the trip count.
+                GXBegin(GX_QUADS, GX_VTXFMT0, GX_AUTO);
+                s_kyrParticleStats.frameMudDraws++;
+#endif
 
                 for (int j = 0; j < mud_packet->mEffectNum; j++) {
                     fopAc_ac_c* sp28 = dComIfGp_getPlayer(0);
@@ -6295,11 +6485,15 @@ void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
                     color_reg0.a = mud_packet->mEffect[j].field_0x38 * var_f31;
 
 #if TARGET_PC
-                    GXLoadTexObj(texobj, GX_TEXMAP0);
+                    // load_cached_tex above already issued GXLoadTexObj for this texture and
+                    // nothing in the loop changes it, so the per-effect reload was redundant
+                    // even before batching - and a GXLoadTexObj inside a GXBegin block would
+                    // corrupt the primitive.
+                    (void)texobj;
 #else
                     GXLoadTexObj(&texobj, GX_TEXMAP0);
-#endif
                     GXSetTevColor(GX_TEVREG0, color_reg0);
+#endif
 
                     f32 sp30 = 1.0f;
 
@@ -6339,19 +6533,27 @@ void dKyr_mud_draw(Mtx drawMtx, u8** tex) {
                     pos[3].z = sp70.z + sp64.z;
 
 #if TARGET_PC
-                    s_kyrUnbatchedStats.frameMud++;
+                    s_kyrParticleStats.frameMud++;
 #endif
-                    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                    IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                     GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
+                    IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0, 0);
                     GXPosition3f32(pos[1].x, pos[1].y, pos[1].z);
+                    IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0xFF, 0);
                     GXPosition3f32(pos[2].x, pos[2].y, pos[2].z);
+                    IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0xFF, 0xFF);
                     GXPosition3f32(pos[3].x, pos[3].y, pos[3].z);
+                    IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                     GXTexCoord2s16(0, 0xFF);
-                    GXEnd();
+                    IF_NOT_DUSK(GXEnd());
                 }
+
+#if TARGET_PC
+                GXEnd();
+#endif
             }
 
             GXSetClipMode(GX_CLIP_ENABLE);
@@ -6466,6 +6668,14 @@ static void dKyr_evil_draw2(Mtx drawMtx, u8** tex) {
         GXSetClipMode(GX_CLIP_DISABLE);
         GXSetNumIndStages(0);
 
+#if TARGET_PC
+        // Dusklight: the same run batching the first layer uses, but keyed on BOTH TEV colour
+        // registers, because this layer varies both. Expect little from it - see the block
+        // comment above the counters for why this loop is not vertex-colour batched like the
+        // others, and why that is a decision rather than an omission.
+        KyrRunBatch batch;
+#endif
+
         for (int i = 0; i < g_env_light.field_0x1054; i++) {
             EF_EVIL_EFF* effect = &evil_packet->mEffect[i];
             camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
@@ -6553,8 +6763,15 @@ static void dKyr_evil_draw2(Mtx drawMtx, u8** tex) {
                         }
 
                         color_reg0.a = 0xFF;
-                        GXSetTevColor(GX_TEVREG0, color_reg0);
-                        GXSetTevColor(GX_TEVREG1, color_reg1);
+                        IF_NOT_DUSK(GXSetTevColor(GX_TEVREG0, color_reg0));
+                        IF_NOT_DUSK(GXSetTevColor(GX_TEVREG1, color_reg1));
+#if TARGET_PC
+                        if (batch.startRun(kyrColorKey2(color_reg0, color_reg1))) {
+                            GXSetTevColor(GX_TEVREG0, color_reg0);
+                            GXSetTevColor(GX_TEVREG1, color_reg1);
+                            batch.begin(&s_kyrParticleStats.frameEvil2Draws);
+                        }
+#endif
 
                         spA0 = sp7C;
 
@@ -6592,9 +6809,9 @@ static void dKyr_evil_draw2(Mtx drawMtx, u8** tex) {
 
                         for (int j = 0; j < 1; j++) {
 #if TARGET_PC
-                            s_kyrUnbatchedStats.frameEvil2++;
+                            s_kyrParticleStats.frameEvil2++;
 #endif
-                            GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                            IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                             GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                             GXTexCoord2s16(0, 0);
                             GXPosition3f32(pos[1].x, pos[1].y, pos[1].z);
@@ -6603,12 +6820,16 @@ static void dKyr_evil_draw2(Mtx drawMtx, u8** tex) {
                             GXTexCoord2s16(0xFF, 0xFF);
                             GXPosition3f32(pos[3].x, pos[3].y, pos[3].z);
                             GXTexCoord2s16(0, 0xFF);
-                            GXEnd();
+                            IF_NOT_DUSK(GXEnd());
                         }
                     }
                 }
             }
         }
+
+#if TARGET_PC
+        batch.finish();
+#endif
 
         IF_DUSK(GXPopDebugGroup());
 
@@ -6637,7 +6858,7 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
 #if TARGET_PC
     // Opens the pass for dKyr_evil_draw2 as well, which is only ever reached from the tail of
     // this function and so has none of its own.
-    kyrUnbatchedBeginPass();
+    kyrParticleBeginPass();
 #endif
     dScnKy_env_light_c* envlight = dKy_getEnvlight();
     dKankyo_evil_Packet* evil_packet = envlight->mpEvilPacket;
@@ -6732,6 +6953,16 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
 #endif
 
         dComIfG_Ccsp()->PrepareMass();
+
+#if TARGET_PC
+        // Dusklight optimization: one draw per run of particles sharing GX_TEVREG1, rather
+        // than one per quad. color_reg0 already rides vertex CLR0 (the block above); this is
+        // the other half. color_reg1 is a loop-invariant colour scaled by effect->field_0x2c,
+        // which cLib_addCalc drives - and snaps - to exactly 0 unless a boss light is within
+        // 5000 units (dKyr_near_bosslight_check), so with none in range every particle's
+        // color_reg1 is an identical (0,0,0,255) and this is ONE draw for the whole fog.
+        KyrRunBatch batch;
+#endif
 
         for (int i = 0; i < g_env_light.field_0x1054; i++) {
             EF_EVIL_EFF* effect = &evil_packet->mEffect[i];
@@ -6850,7 +7081,17 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
                         }
 
                         IF_NOT_DUSK(GXSetTevColor(GX_TEVREG0, color_reg0));
-                        GXSetTevColor(GX_TEVREG1, color_reg1);
+                        IF_NOT_DUSK(GXSetTevColor(GX_TEVREG1, color_reg1));
+#if TARGET_PC
+                        // GXSetTevColor is illegal inside a GXBegin block, so the run ends
+                        // here whenever color_reg1 changes - and the register is then written
+                        // with exactly the value it would have had, before the quads that use
+                        // it. Same FIFO, fewer primitive headers.
+                        if (batch.startRun(kyrColorKey(color_reg1))) {
+                            GXSetTevColor(GX_TEVREG1, color_reg1);
+                            batch.begin(&s_kyrParticleStats.frameEvilDraws);
+                        }
+#endif
 
                         spC8 = spA4;
 
@@ -6887,9 +7128,9 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
                         pos[3].z = spC8.z + spB0.z;
 
 #if TARGET_PC
-                        s_kyrUnbatchedStats.frameEvil++;
+                        s_kyrParticleStats.frameEvil++;
 #endif
-                        GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+                        IF_NOT_DUSK(GXBegin(GX_QUADS, GX_VTXFMT0, 4));
                         GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                         IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0, 0);
@@ -6902,11 +7143,17 @@ void dKyr_evil_draw(Mtx drawMtx, u8** tex) {
                         GXPosition3f32(pos[3].x, pos[3].y, pos[3].z);
                         IF_DUSK(GXColor4u8(color_reg0.r, color_reg0.g, color_reg0.b, color_reg0.a));
                         GXTexCoord2s16(0, 0xFF);
-                        GXEnd();
+                        IF_NOT_DUSK(GXEnd());
                     }
                 }
             }
         }
+
+#if TARGET_PC
+        // Before anything else touches GX state - GXPopDebugGroup, resetVcdVatCache and
+        // dKyr_evil_draw2 all follow.
+        batch.finish();
+#endif
 
         IF_DUSK(GXPopDebugGroup());
 
