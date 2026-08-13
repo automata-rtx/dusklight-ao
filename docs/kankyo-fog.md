@@ -391,8 +391,9 @@ Added to the existing `rtx.dusklight.env.*` block (all `NoSave`, written by
 `src/dusk/remix_bridge.cpp` every frame):
 
 All under `rtx.dusklight.env.`, all `NoSave`, written by `src/dusk/remix_bridge.cpp` every frame. These keys arrived at
-protocol **2**; the wire has since advanced to **13** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
-6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout, 13 = per-flower blossoms) and gained more keys.
+protocol **2**; the wire has since advanced to **14** (3 = overlay + warp, 4 = the clock, 5 = per-blade grass,
+6 = the Controls tab, 7 = effect lights, 8 = the effect-light exclusion readout, 13 = per-flower blossoms,
+14 = the effect-light vocabulary, the three global multipliers and the lantern toggle) and gained more keys.
 The full ladder, including why 12 is skipped, is `dxvk-remix/documentation/DusklightOverlay.md`; the authoritative key list is
 `dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_env.h`.
 

@@ -20,32 +20,50 @@ namespace effect_lights {
 // What kind of thing the effect is, read out of the effect's own name. See
 // docs/effect-lights.md section 3.1.
 //
-// WHAT THIS ACTUALLY FEEDS, corrected 2026-08-11 - the four readers are the whole list:
+// WHAT THIS ACTUALLY FEEDS - the five readers are the whole list:
 //
 //   1. two gates. Excluded refuses a candidate outright, and Burst is skipped unless
 //      Params::bursts is on. Nothing else here decides whether a light exists; that is the
-//      blend-mode-and-colour rule in classify().
-//   2. the vertical offset (classOffset). Fire and Burst take fireOffset, Glow takes
-//      glowOffset, and Lava, Other and Excluded take nothing.
+//      blend-mode-and-colour rule, written inline in collectEmitters and collectSimple.
+//   2. the vertical offset (classOffset). Fire, Lantern and Burst take fireOffset, Glow and
+//      Spark take glowOffset, and Lava, Other and Excluded take nothing.
 //   3. the merge tie-break (classWeight). Within one site, the highest-weight member donates
-//      the position, the colour and the effect id: Fire 4 > Lava 3 > Glow 2 > Burst 1.5 >
-//      Other 1.
+//      the position, the colour and the effect id.
 //   4. site identity across frames. A pending site only matches last frame's site if the
 //      class agrees, so a class that changed would start a new site - and a new Remix light
 //      hash, losing that light's temporal history.
+//   5. ONE class, Lantern, can be given its own reach, radius and intensity, entirely
+//      separately from every other light - Params::lanternSeparate. Off by default, and off
+//      means the lantern is solved exactly like any other fire.
 //
-// IT DOES NOT SELECT THE FALLBACK RADIUS OR REACH, which this comment claimed until
-// 2026-08-11. That keys on whether a vanilla light was adopted - derivedReach/derivedRadius
-// when one was, undeterminedReach/undeterminedRadius when none was - and neither branch reads
-// the class at all.
+// IT STILL DOES NOT SELECT THE FALLBACK RADIUS OR REACH for any other class. That keys on
+// whether a vanilla light was adopted - derivedRadius when one was, undeterminedReach and
+// undeterminedRadius when none was - and neither branch reads the class. That is deliberate
+// and it is the survey's headline finding: NOTHING THE ARTISTS AUTHORED IS PHOTOMETRIC. The
+// JPA blocks carry colour, extent, rate and lifetime; not one of them is a brightness, and
+// inventing a brightness from rate x lifetime would be exactly the plausible-mechanism-as-
+// finding this project has recorded three times. Hue, extent and persistence come from the
+// authored data; radiance comes from the game's own LIGHT_INFLUENCE::mPow and from settings.
 //
-// At stock settings glowOffset is 0.0, the same as the offset Other gets, so Glow and Other
-// currently behave identically in every one of the four. Worth knowing before spending time
-// on which of the two a name lands in: today that question cannot move a pixel.
+// At stock settings glowOffset is 0.0, the same as the offset Other gets, so Glow, Spark and
+// Other currently behave identically in every one of the five. Worth knowing before spending
+// time on which of the three a name lands in: today that question cannot move a pixel.
 enum class Class : uint8_t {
     Other = 0,
     Fire,
+    // Link's lantern, and only it. "kantera" (カンテラ) matches five names in the game's whole
+    // effect table, two of which are the lantern's still and swung flames and three of which
+    // have no caller anywhere in the tree - so this is a clean identification, not a heuristic.
+    // It has to cover BOTH of Link's, because the game destroys one emitter and creates the
+    // other every time he swings the lamp; a class that changed on the swing would mint a new
+    // site id and a new Remix light hash every time.
+    Lantern,
     Glow,
+    // Sparkle and twinkle - kirakira, and the "spark" effects that are not explosions. Split
+    // off Glow so that a group of sub-second, high-frequency effects can be recognised in the
+    // report and damped later without touching steady glows. Today it takes the same offset
+    // and the same merge weight as Glow, so the split moves nothing by itself.
+    Spark,
     Lava,
     Burst,
     // Named by the game as a substance that is never a light source - drool, body fluid.
@@ -82,7 +100,16 @@ struct Site {
 struct Params {
     bool enable = true;
 
-    float intensity = 1.0f;              // master multiplier over every light made here
+    // --- the three global multipliers ----------------------------------------------------
+    //
+    // ONE per value the system derives from the game, all defaulting to 1.0, all applied at
+    // the same point in the chain to both the derived and the undetermined branch. They exist
+    // so that a value the game authored can be corrected without a rebuild when it comes out
+    // too weak or too strong. The full chain, authored value to final radiance, is written
+    // out once in docs/effect-lights.md section 5 - and nowhere else, deliberately.
+    float intensity = 1.0f;              // radiance
+    float reachScale = 1.0f;             // reach
+    float radiusScale = 1.0f;            // sphere radius
 
     // How much a light grows with the amount of fire standing at it. Reach is multiplied by
     // the site's mass raised to this power; 0 disables it exactly, 0.5 makes radiance
@@ -90,12 +117,35 @@ struct Params {
     float massExponent = 0.5f;
 
     float derivedIntensity = 19.0f;      // sites that adopted a vanilla light
-    float derivedReach = 1.0f;           // multiplies the reach the game authored, not a replacement
     float derivedRadius = 10.0f;
-
+    // NOTE there is no derivedReach: the derived branch's reach IS the game's authored
+    // LIGHT_INFLUENCE::mPow, and reachScale above is what scales it. Until 2026-08-13 that
+    // multiplier existed separately, applied to this branch only, and defaulted to the same
+    // 1.0 - so widening it to both branches changed no default and no behaviour.
     float undeterminedIntensity = 1.0f;  // sites with nothing to copy
     float undeterminedReach = 400.0f;
     float undeterminedRadius = 8.0f;
+
+    // --- what the artists authored -------------------------------------------------------
+    //
+    // Both read the loaded JPA blocks through public accessors, with no .jpa parsing, and
+    // both are IMMUTABLE for the session - which is the point. The live emitter fields beside
+    // them are overwritten every frame by key blocks and by several hundred actor setter
+    // calls, so a value read from the live side can animate, and an animating value that
+    // reaches radiance re-creates the Remix light every frame and costs its temporal history.
+    bool authoredColor = true;   // hue from the authored colour ramp, not the live register
+    bool authoredRadius = false; // grow the sphere to the authored extent where that is bigger
+
+    // --- the lantern ---------------------------------------------------------------------
+    //
+    // Off: Class::Lantern is solved exactly like Class::Fire, global multipliers included.
+    // On: the three values below replace the branch's, RAW - the global multipliers and the
+    // mass boost do not apply, which is what "its own settings" has to mean to be useful.
+    // The colour is not overridden either way; the lantern adopts the game's own lamp colour.
+    bool lanternSeparate = false;
+    float lanternIntensity = 1.0f;
+    float lanternReach = 400.0f;
+    float lanternRadius = 8.0f;
 
     float fireOffset = 15.0f;            // upward offset, world units, per class
     float glowOffset = 0.0f;
@@ -155,6 +205,21 @@ struct Stats {
     // printed counter looked healthy was reachable before these existed.
     int droppedCandidates = 0;
     int droppedSites = 0;
+
+    // Where the values each site was solved from actually came from, counted per frame. These
+    // are the "authored versus defaulted" question asked of the whole frame at once, so it can
+    // be answered from the overlay without pressing the report button: authoredColor counts
+    // sites whose hue came from the effect's authored ramp, authoredRadius counts sites whose
+    // sphere grew to the authored extent, and lantern counts sites solved from the lantern's
+    // own settings rather than the shared ones.
+    int authoredColor = 0;
+    int authoredRadius = 0;
+    int lantern = 0;
+
+    // Sites this frame per Class, indexed by the enum. The report names every class it prints;
+    // this is the same split without a log, and it is what makes a classification change
+    // visible the moment it happens rather than at the next report.
+    int byClass[static_cast<int>(Class::Count)] = {};
 
     bool ran = false;
 };

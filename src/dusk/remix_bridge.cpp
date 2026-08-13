@@ -1643,15 +1643,22 @@ void updateEffectLights() {
     params.intensity = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightIntensity",
                         game.effectLightIntensity.getValue()), 0.0f);
+    // The other two of the three global multipliers. Applied once each, to both branches, in
+    // effect_lights' solve - see docs/effect-lights.md section 5 for the whole chain.
+    // reachScale is what effectLightDerivedReach became: same default, same meaning, no longer
+    // limited to the derived half.
+    params.reachScale = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightReachScale",
+                        game.effectLightReachScale.getValue()), 0.0f);
+    params.radiusScale = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightRadiusScale",
+                        game.effectLightRadiusScale.getValue()), 0.01f);
     params.massExponent = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightMassExponent",
                         game.effectLightMassExponent.getValue()), 0.0f);
     params.derivedIntensity = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightDerivedIntensity",
                         game.effectLightDerivedIntensity.getValue()), 0.0f);
-    params.derivedReach = std::max(
-        readOptionFloat("rtx.dusklight.game.effectLightDerivedReach",
-                        game.effectLightDerivedReach.getValue()), 0.0f);
     params.derivedRadius = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightDerivedRadius",
                         game.effectLightDerivedRadius.getValue()), 0.01f);
@@ -1664,6 +1671,33 @@ void updateEffectLights() {
     params.undeterminedRadius = std::max(
         readOptionFloat("rtx.dusklight.game.effectLightUndeterminedRadius",
                         game.effectLightUndeterminedRadius.getValue()), 0.01f);
+    // What the artists authored, read off the loaded JPA blocks rather than off the live
+    // emitter. Colour defaults ON - the live register carries a time-of-day tint and, on the
+    // shared simple emitters, a colour cycle that free-runs from level load, so it is not the
+    // effect's own colour in the first place. Radius defaults OFF: growing a sphere to the
+    // authored extent is a judgement call about softness, not a correctness fix, and today's
+    // look is the one worth keeping until it has been looked at.
+    params.authoredColor = readOptionBool("rtx.dusklight.game.effectLightAuthoredColor",
+                                          game.effectLightAuthoredColor.getValue());
+    params.authoredRadius = readOptionBool("rtx.dusklight.game.effectLightAuthoredRadius",
+                                           game.effectLightAuthoredRadius.getValue());
+
+    // The lantern. Off means Class::Lantern is solved exactly like Class::Fire, global
+    // multipliers included; the three values below are read either way but only used when it
+    // is on, and their defaults are the undetermined branch's own, so flipping the toggle with
+    // nothing else changed leaves the light where it was apart from dropping the multipliers.
+    params.lanternSeparate = readOptionBool("rtx.dusklight.game.effectLightLanternSeparate",
+                                            game.effectLightLanternSeparate.getValue());
+    params.lanternIntensity = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightLanternIntensity",
+                        game.effectLightLanternIntensity.getValue()), 0.0f);
+    params.lanternReach = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightLanternReach",
+                        game.effectLightLanternReach.getValue()), 0.0f);
+    params.lanternRadius = std::max(
+        readOptionFloat("rtx.dusklight.game.effectLightLanternRadius",
+                        game.effectLightLanternRadius.getValue()), 0.01f);
+
     params.fireOffset = readOptionFloat("rtx.dusklight.game.effectLightFireOffset",
                                         game.effectLightFireOffset.getValue());
     params.glowOffset = readOptionFloat("rtx.dusklight.game.effectLightGlowOffset",
@@ -2463,7 +2497,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "13");
+    push("rtx.dusklight.env.protocol", "14");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -2688,6 +2722,36 @@ void pushLightStatus() {
     std::snprintf(buffer, sizeof(buffer), "%d/%d", s_effectDebug.stats.vanillaPoint,
                   s_effectDebug.stats.vanillaSpot);
     push("rtx.dusklight.env.effLightsVanilla", buffer);
+
+    // Where this frame's lights got their values, and what kind of thing each one is. These
+    // two are the vocabulary-and-authored-values work made visible without a log: the first
+    // says whether the new derivations are running at all, the second says which classes are
+    // actually producing lights in the room you are stood in. Both are strings so that one
+    // readout carries a whole split rather than needing a readout per number.
+    {
+        char sources[64];
+        std::snprintf(sources, sizeof(sources), "colour %d  radius %d  lantern %d",
+                      s_effectDebug.stats.authoredColor, s_effectDebug.stats.authoredRadius,
+                      s_effectDebug.stats.lantern);
+        push("rtx.dusklight.env.effLightsAuthored", sources);
+
+        // Bounded by construction: Class::Count is 8 and every name is at most six characters,
+        // so this cannot overflow however many sites there are.
+        char classes[160];
+        size_t n = 0;
+        classes[0] = '\0';
+        for (int c = 0; c < static_cast<int>(dusk::effect_lights::Class::Count); c++) {
+            const int written = std::snprintf(
+                classes + n, sizeof(classes) - n, "%s%s %d", n ? "  " : "",
+                dusk::effect_lights::className(static_cast<dusk::effect_lights::Class>(c)),
+                s_effectDebug.stats.byClass[c]);
+            if (written <= 0 || static_cast<size_t>(written) >= sizeof(classes) - n) {
+                break;
+            }
+            n += static_cast<size_t>(written);
+        }
+        push("rtx.dusklight.env.effLightsClasses", classes);
+    }
 
     // Room lights. found vs drawn is the same separation the mirror needed: "this room has no
     // authored lights" and "it has them and we dropped them" both read as zero drawn otherwise.

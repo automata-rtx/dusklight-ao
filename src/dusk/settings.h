@@ -216,14 +216,27 @@ struct UserSettings {
         // Effect lights: sphere lights at the origin of the game's own fire and glow effects,
         // rather than at the positions of the game's registered lights. docs/effect-lights.md.
         ConfigVar<bool> effectLights;
+        // The three global multipliers, one per value the system derives from the game. All
+        // default to 1.0 and all apply to both the derived and the undetermined branch.
+        // effectLightReachScale replaced effectLightDerivedReach on 2026-08-13 - same default,
+        // same meaning, applied to both branches instead of one.
         ConfigVar<float> effectLightIntensity;
+        ConfigVar<float> effectLightReachScale;
+        ConfigVar<float> effectLightRadiusScale;
         ConfigVar<float> effectLightMassExponent;
         ConfigVar<float> effectLightDerivedIntensity;
-        ConfigVar<float> effectLightDerivedReach;
         ConfigVar<float> effectLightDerivedRadius;
         ConfigVar<float> effectLightUndeterminedIntensity;
         ConfigVar<float> effectLightUndeterminedReach;
         ConfigVar<float> effectLightUndeterminedRadius;
+        // What the effect's artists authored, as opposed to what its emitter holds this frame.
+        ConfigVar<bool> effectLightAuthoredColor;
+        ConfigVar<bool> effectLightAuthoredRadius;
+        // Link's lantern, given its own settings when the toggle is on.
+        ConfigVar<bool> effectLightLanternSeparate;
+        ConfigVar<float> effectLightLanternIntensity;
+        ConfigVar<float> effectLightLanternReach;
+        ConfigVar<float> effectLightLanternRadius;
         ConfigVar<float> effectLightFireOffset;
         ConfigVar<float> effectLightGlowOffset;
         ConfigVar<float> effectLightMergeRadius;

@@ -359,41 +359,69 @@ The rule above decides **whether**. The effect's own name decides **what kind**:
 
 | Class | Name evidence | Why it is a separate class |
 | :-- | :-- | :-- |
-| `Lava` | `lava`, `magma`, `youdo`, **`yogan`, `yougan`** | large, dim, wide |
+| `Lava` | `lava`, `magma`, `youdo`, **`yogan`, `yougan`** | 溶岩 *yogan*, lava. **Not "large, dim, wide"** — see the correction below |
 | `Excluded` | `yoda`, `taieki` | **refused outright.** The game names it as a substance that is never a light source |
 | `Burst` | `bakuha`, `explo`, `bomb`, `baku` | one-shot; **off by default**, because a two-frame light reads as a flicker |
-| `Fire` | `fire`, `honoo`, `hono`, `kaen`, `flame`, `taimatsu`, `maki`, `kantera`, `torch`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
-| `Glow` | `hikari`, `light`, `kira`, `pika`, `glow`, `aura`, `shine`, `spark` | no offset; usually smaller and cooler |
+| `Lantern` | `kantera` | **Link's lamp, and only it.** カンテラ *kantera*. The one class that can be given settings of its own — §5.4 |
+| `Fire` | `fire`, `honoo`, `hono`, `kaen`, `flame`, `taimatsu`, `maki`, `torch`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
+| `Spark` | `kira`, `pika`, `spark` | きらきら *kirakira*, glitter. Sub-second and tiny where a glow is steady and soft. **Takes Glow's offset and Glow's weight**, so the split moves nothing today |
+| `Glow` | `hikari`, `light`, `glow`, `aura`, `shine` | no offset; usually smaller and cooler |
 | `Other` | anything else that passed §3 | global defaults |
 
-**Class feeds exactly four things.** This list was wrong here and in
-`effect_lights.hpp` until 2026-08-11, and the wrong entry was the one that
-sounded most consequential:
+**`Lantern` and `Spark` were added on 2026-08-13**, and the whole blast radius
+was measured rather than estimated: replaying both classifiers over all 3,205
+names in `d_particle_name.cpp` before and after, **exactly 26 names move** — 5
+from `Fire` to `Lantern`, 21 from `Glow` to `Spark` — and **not one name enters
+or leaves `Excluded`, `Burst`, `Lava` or `Other`.** Re-run that scan rather than
+guessing if either list is touched again.
+
+**The `Lava` row's old description, "large, dim, wide", was wrong** and is
+corrected here rather than quietly deleted. The 21 names in that class are lava
+*pillars* (柱 `bashira`), *embers* (火の粉 `hinoko`) and *splash* (飛沫
+`shibuki`) — localised columns and sparks, not an area source. **There is no
+lava-surface emitter at all:** the pool itself is a material, handled by the
+fork's self-illumination rule, not by this system. Every number around that row
+was right; only the prose was wrong, which is the failure mode
+`scripts/check_invariants.py` cannot catch.
+
+**Class feeds exactly five things**, four of them since 2026-08-11 and the
+fifth since 2026-08-13. All five live in **one table now**, `kClassTable` in
+`effect_lights.cpp` — it replaced three separate `switch` statements that had to
+be kept in step by hand and had already drifted once, which is how the wrong
+entry below survived as long as it did:
 
 1. **Two gates.** `Excluded` refuses a candidate outright; `Burst` is skipped
    unless `effectLightBursts` is on. Nothing else about the class decides
    whether a light exists.
-2. **The vertical offset** (`classOffset`). `Fire` and `Burst` take
-   `effectLightFireOffset`, `Glow` takes `effectLightGlowOffset`, and `Lava`,
-   `Other` and `Excluded` take nothing.
+2. **The vertical offset** (`classOffset`). `Fire`, `Lantern` and `Burst` take
+   `effectLightFireOffset`, `Glow` and `Spark` take `effectLightGlowOffset`, and
+   `Lava`, `Other` and `Excluded` take nothing.
 3. **The merge tie-break** (`classWeight`, §6). The highest-weight member of a
-   site donates its position, colour and effect id: `Fire` 4 > `Lava` 3 >
-   `Glow` 2 > `Burst` 1.5 > `Other` 1.
+   site donates its position, colour and effect id: `Fire` 4 = `Lantern` 4 >
+   `Lava` 3 > `Glow` 2 = `Spark` 2 > `Burst` 1.5 > `Other` 1. **Equal weights
+   fall through to the lower effect id**, which is exactly the rule two members
+   of one class always used — so the two new ties are decided by a fixed number
+   rather than by sweep order. `Lantern` gains +1 and outranks `Fire`, but
+   **only while `effectLightLanternSeparate` is on**: otherwise Link standing at
+   a bonfire would hand the site to his lamp for no reason.
 4. **Site identity across frames.** A site only matches last frame's site if the
-   class agrees (`effect_lights.cpp:1844`), so a name that changed class would
-   start a new site — and a new Remix light hash, losing that light's temporal
-   history.
+   class agrees, so a name that changed class would start a new site — and a new
+   Remix light hash, losing that light's temporal history. **This is why
+   `Lantern` is keyed on the word and not on an effect id:** the game destroys
+   one emitter and creates another every time Link swings the lamp
+   (`d_a_alink.cpp:14875` vs `:14883`), and both names carry `kantera`.
+5. **One class can be solved separately.** `Lantern`, and nothing else — §5.4.
 
-**It does not select the fallback radius or reach.** That keys on whether a
-vanilla light was adopted (`effect_lights.cpp:1788`): `derivedReach` /
-`derivedRadius` when one was, `undeterminedReach` / `undeterminedRadius` when
-none was, §5. Neither branch reads the class.
+**It does not select the fallback radius or reach for any other class.** That
+keys on whether a vanilla light was adopted: `derivedRadius` when one was,
+`undeterminedReach` / `undeterminedRadius` when none was, §5. Neither branch
+reads the class.
 
 **And `effectLightGlowOffset` defaults to 0.0, the same as what `Other` gets**,
-so `Glow` and `Other` currently behave identically in all four. Worth knowing
-before spending time on which of the two a name lands in: at stock settings that
-question cannot move a pixel. It becomes a real question only if the glow offset
-is turned up.
+so `Glow`, `Spark` and `Other` currently behave identically in all five. Worth
+knowing before spending time on which of the three a name lands in: at stock
+settings that question cannot move a pixel. It becomes a real question only if
+the glow offset is turned up.
 
 **Ten of the thirty keywords match none of the game's 3,205 effect names** —
 `lava`, `magma`, `youdo`, `bakuha`, `honoo`, `hono`, `taimatsu`, `kagarib`,
@@ -437,6 +465,22 @@ the lists over all 3,205 names rather than chosen by ear:
   `Fire` above `Burst` turns every explosion into a persistent fire — which is
   exactly what happened while this section was being written, and the test suite
   caught it.
+- **`Lantern` outranks `Fire`.** All five `kantera` names contain `fire` too, so
+  below `Fire` the branch would be unreachable and the report would go on
+  printing keyword `fire` for the lantern — which is precisely the gap that made
+  a lantern-only setting unbuildable before 2026-08-13.
+- **`Burst` outranks `Lantern`.** No name collides today; the ordering is stated
+  so the invariant "one-shot violence outranks every steady flame" survives the
+  new class.
+- **`Spark` sits below `Burst`, deliberately, and this one is a decision rather
+  than a fact.** The 20 `ZM_*_BombInsectSpark*` names — the electric bugs — are
+  claimed by `bomb` and are therefore `Burst`, and therefore **dark by default**.
+  On the evidence they are misclassified: they are persistent, not one-shot.
+  Moving `Spark` above `Burst` would fix it and would also light twenty effects
+  that are dark today, which is a look change nobody asked for and nobody can
+  un-see. The authored persistence now printed in the classification report
+  (`persist=Y`, from the authored `maxFrame`) is the measurement that should
+  settle it — **it is measured today and acted on by nothing.**
 
 Reading the effect's *name* is not tagging in the sense rule 1 forbids: the
 name is the game's own identity for the effect, shipped in the game's own
@@ -556,6 +600,70 @@ they are the ones most likely to be overruled:
 
 Each **site** (§6) resolves its parameters in this order.
 
+**The headline finding, from a read-only survey of the authored JPA data on
+2026-08-13: nothing the artists authored is photometric.** The blocks carry a
+colour ramp, a particle size, a spawn volume, an emission rate, a lifetime and a
+particle count — and not one of them is a brightness. `rate`, `lifetime` and
+`volumeSize` are particle bookkeeping, and their live copies are overwritten by
+key blocks and by 119 / 18 / 12 actor setter call sites respectively, so a
+mapping from any of them onto a Remix radiance would be a number **this project
+invented and then cited the game for**. That is precisely the shape of the three
+inferences-recorded-as-findings rule 3 exists to stop.
+
+So the split is deliberate and it is the whole design of this section:
+
+> **Hue, extent and persistence come from what the artists authored. Radiance
+> comes from the game's own `LIGHT_INFLUENCE::mPow` where there is one, and from
+> settings where there is not.**
+
+`mPow` is the single genuinely photometric authored number anywhere in the game
+— a reach in world units, verified at `d_kankyo.cpp:924` and `:3536`, and
+consistently 500 across `fireWood`, `fireWood2`, `maki`, `ep`, `lv3Candle` and
+`poCandle`. Everything §5.1 does with it stands.
+
+### 5.0 The whole chain, authored value to radiance — written once, here
+
+This is the only place the chain is written out. The classification report
+prints it back with the session's live numbers substituted in, so a log can
+settle "is a multiplier being applied twice" without anyone reading the source.
+
+```
+class     = classifyByName(the effect's own name)                        §3.1
+
+hue       = the adopted game light's colour                              §5.1
+            else the effect's AUTHORED colour ramp   (authoredColor, on) §5.5
+            else the emitter's live registers                            §5.2
+
+reach     = ( the adopted light's mPow  |  undeterminedReach )
+              × mass ^ massExponent
+              × effectLightReachScale                                    ← multiplier
+
+radius    = ( derivedRadius | undeterminedRadius ),
+              grown to the AUTHORED extent when authoredRadius is on     §5.5
+              × effectLightRadiusScale                                   ← multiplier
+
+radiance  = reach² · 0.01 / (π · radius²)
+              × ( derivedIntensity | undeterminedIntensity )
+              × effectLightIntensity                                     ← multiplier
+              , then normalised to the hue's brightest channel
+
+lantern   = when effectLightLanternSeparate is on, a Lantern site takes
+            effectLightLantern{Reach,Radius,Intensity} RAW instead —
+            no mass boost, and none of the three multipliers above       §5.4
+```
+
+**Three global multipliers, one per value this system derives from the game, all
+defaulting to 1.0, all applied at one point to both branches.** They exist for
+exactly the reason the owner asked for them: an authored value that comes out too
+weak or too strong can be corrected while the game runs, without a rebuild.
+
+**One option was retired to get there.** `effectLightDerivedReach` did this job
+for the derived branch alone, with the same 1.0 default;
+`effectLightReachScale` is the same knob applied to both. **A value set for the
+old name in an `rtx.conf` is now inert** — move it. Nothing else was renamed, and
+no default changed: at stock settings the chain above computes exactly the
+numbers the previous one did.
+
 ### 5.1 Adopt a vanilla light — "derived"
 
 If one of the game's own lights (§2.4, either registry) lies within
@@ -596,11 +704,15 @@ orange comes from `IT_JN_arwFir_fire00`'s own palette.
 Radius and reach come from the `undetermined*` settings, scaled by
 `undeterminedIntensity`. **They are per-*path*, not per-class** — this branch is
 chosen by "no vanilla light was adopted", and the site's class is not consulted
-here or in the derived branch (§3.1). **Both multipliers exist and are separate on
-purpose**: the derived path's job is to map the game's units onto Remix's
-scale, and the undetermined path's job is to pick a size out of nothing. They
-will not want the same number, and tying them together guarantees that tuning
-one breaks the other.
+here or in the derived branch (§3.1), with the single exception of the lantern
+(§5.4). **Both intensity multipliers exist and are separate on purpose**: the
+derived path's job is to map the game's units onto Remix's scale, and the
+undetermined path's job is to pick a size out of nothing. They will not want the
+same number, and tying them together guarantees that tuning one breaks the
+other.
+
+The three *global* multipliers (§5.0) are on top of both and are not a
+replacement for either.
 
 ### 5.3 Vertical offset
 
@@ -609,12 +721,137 @@ one breaks the other.
 flame — and the light belongs a little way up inside the flame. In world units,
 applied after adoption so it applies to derived and undetermined sites alike.
 
-**Two settings cover five classes, not one each.** `Fire` and `Burst` share
-`effectLightFireOffset` (15.0); `Glow` takes `effectLightGlowOffset`, which is
-**0.0** by default; `Lava`, `Other` and `Excluded` are not offset at all. So at
-stock settings this is the only class distinction that changes anything, and it
-separates fire from everything else — `Glow` and `Other` land on the same number
-(§3.1).
+**Two settings cover eight classes, not one each.** `Fire`, `Lantern` and
+`Burst` share `effectLightFireOffset` (15.0); `Glow` and `Spark` take
+`effectLightGlowOffset`, which is **0.0** by default; `Lava`, `Other` and
+`Excluded` are not offset at all. So at stock settings this is the only class
+distinction that changes anything, and it separates fire from everything else —
+`Glow`, `Spark` and `Other` land on the same number (§3.1).
+
+### 5.4 The lantern — the one class with settings of its own
+
+**Link's lantern is exactly two effect ids and nothing else**, both spawned from
+`daAlink_c::setLight`: `ID_ZI_J_KANTERA_FIRE` = 0x2BC, the still flame
+(`d_a_alink.cpp:14883`), and `ID_ZI_J_KANTERA_SWINGFIRE` = 0x362, the swung one
+(`:14875`). Both go through `dComIfGp_particle_set` — the level path, one
+emitter per instance — at `mKandelaarFlamePos`, the lamp's flame point.
+
+**The identification is exact, not a heuristic.** カンテラ *kantera* is a
+loanword, so there is no kunrei/Hepburn variant to miss, and it matches **five**
+of the game's 3,205 effect names: the two above, plus `ZI_S_kantera_fire`
+(0x2BB), `ZI_S_fs_kantera_a` (0x18B) and `ZI_S_fs_kantera_b` (0x18C), **none of
+which has a caller anywhere in `src/` or `include/`** — grepped for both the
+`ID_*` constants and the hex ids. The English alternatives were sized before
+settling on the word: `lantern` and `ranpu` match zero names, `lamp` matches
+four and all four are `ZF_S_k_lampWater*`, which is water. World torches and
+candle stands do not share these effects; they use `ZI_J_O_fire_a/b` through the
+simple path. The only other actor that touches the lantern flame is the monkey,
+and it does it by handing its own matrix to *Link's* lantern
+(`d_a_npc_ks.cpp:6610-6621`), producing the same two ids at a different place.
+
+`rtx.dusklight.game.effectLightLanternSeparate` — **off by default**:
+
+- **Off** is today's behaviour, and it is the same code path rather than a copy
+  of it. A `Lantern` site is classified, merged, adopted and solved exactly like
+  a `Fire` site, **the three global multipliers included**, and its class weight
+  is `Fire`'s so the merge tie-break is unchanged too.
+- **On**, `effectLightLanternReach` / `Radius` / `Intensity` replace whatever the
+  shared chain would have produced, **raw**: the mass boost and all three global
+  multipliers are skipped. That is what "its own settings" has to mean to be
+  useful — a lantern tuned once stays put while the rest of the world is tuned
+  around it.
+- **The defaults are the undetermined branch's own** (400 / 8 / 1.0), which is
+  where the lantern lands today, so flipping the toggle and changing nothing else
+  leaves the light where it was apart from dropping the multipliers.
+- **The colour is not overridden either way.** `dKy_WolfEyeLight_set` puts a
+  `BOSS_LIGHT` in slot 0 at the same point as the emitter, well inside
+  `adoptRadius`, so the lantern adopts the game's own lamp colour — (181, 112,
+  40) from `daAlinkHIO_huLight_c0::m`. Nothing in the survey said that colour was
+  wrong, so nothing overrides it.
+
+**The trap this design exists to survive:** `dPa_control_c::set` reuses a handle
+only while the effect id is unchanged, so switching between the still and swung
+flame **destroys one emitter and creates another** (`d_particle.cpp:1755-1786`).
+Site identity matches on class and proximity, so a class that flipped on every
+swing would mint a new site id and a new Remix light hash each time, and the
+lantern would lose its temporal history whenever Link swung the lamp. Keying the
+class on the word rather than on an id list covers both ids for free.
+
+### 5.5 What the artists authored, and what is deliberately not read
+
+Two things are read off the loaded JPA blocks — `JPAResource::getBsp()` and
+`getDyn()`, parsed once at load and **immutable for the session** — rather than
+off the live emitter, whose fields are overwritten every frame by
+`JPAResource::calcKey` and by several hundred actor setters.
+
+**Hue, `effectLightAuthoredColor`, default ON.** The authored primary and
+environment ramps are `GXColor` tables of exactly `getClrAnmMaxFrm() + 1`
+entries, pre-interpolated at load (`JPABaseShape.cpp:1541-1583`) and `NULL`
+unless the matching flag is set. The most saturated entry is taken — a fire that
+ramps yellow → orange → black should report orange, because the black tail is
+the particle dying rather than the colour of the light. Three things move the
+*live* register and none of them is the fire changing colour:
+
+1. a global colour animation walking its key frame every frame;
+2. the kankyo time-of-day tint the game multiplies into any effect whose
+   authored user-work word carries bit 0x20 or 0x40 (`d_particle.cpp:1568-1620`),
+   so a torch's colour drifts from dawn to dusk;
+3. **the strongest argument** — the shared emitter behind every "simple" effect
+   is made continuous when it is created (`d_particle.cpp:807`), so its colour
+   cycle free-runs from level load and every torch in the world reads the same
+   unrelated phase of it, unconnected to when any of them was lit.
+
+This **changes hue only**: radiance is normalised to the colour's brightest
+channel, so no light gets brighter or dimmer from it. It also stops a light
+re-entering Remix's light manager every frame — a radiance that moves more than
+2% re-creates the light and costs its temporal history, and a fixed hue does not
+move. **It is on by default because the live value is actively wrong, not merely
+different**, and it has a kill switch for exactly the case where that judgement
+turns out to be wrong in game.
+
+**The live colour is still what the ACCEPT TEST reads**, and that must not be
+swapped. The game hides an effect by fading its global alpha and its global
+colour, so judging "is this drawing light right now" from an immutable authored
+value would light effects that are invisible.
+
+**Extent, `effectLightAuthoredRadius`, default OFF.** The authored particle base
+size, or the authored spawn volume where that is larger and the volume type is
+not `VOL_Point` (whose size means nothing — `JPAVolumePoint` zeroes the offset).
+The volume is in emitter-local units, transformed by the emitter's local and
+global scale matrices before use, so it is an **extent signal rather than an
+exact world measurement** — which is why it may only ever *grow* the sphere,
+never shrink it, and is capped at 64 units, the same bound the two configured
+radii carry. Radiance is solved to carry to the same reach whatever the radius
+is, so this changes softness and near-field falloff rather than range. It is off
+by default because that is a judgement about how a fire should look rather than a
+correctness fix.
+
+**Not folded in: the emitter's live global particle scale**, even though the
+drawn quad is multiplied by it. It is actor-driven at 50 call sites and one of
+them ramps it to zero as a fire dies (`d_a_e_db.cpp:1871-1877`), so including it
+would put an animating term into the radius — the exact mistake this section
+exists to avoid.
+
+**Persistence — measured, printed, and acted on by nothing.** The authored
+`maxFrame == 0` means "emits forever", and it is read from the dynamics block
+rather than the emitter because `becomeContinuousParticle` forces the live
+`mMaxFrame` to 0 on every simple emitter and `becomeImmortalEmitter` does the
+same at 42 more sites — so the live field says "persistent" for things that are
+not. It appears in the classification report as `persist=Y` and **feeds no
+decision**, because the decision it would feed is the `BombInsectSpark` question
+in §3.1, and that is a look change to take deliberately with a log in hand.
+
+**Deliberately not derived at all:**
+
+- **radiance from rate × lifetime × particle count.** All three are actor-driven
+  and none is photometric. This is the refusal the whole section rests on.
+- **the per-particle alpha envelope** (`JPAExtraShape`). Authored and stable, but
+  it is a *particle* curve — at emitter level it says nothing about output — and
+  `pEsp` is frequently `NULL`.
+- **flicker from `LIGHT_INFLUENCE::mFluctuation`.** It is 1.0 on every torch and
+  100 on bombs: no signal.
+- **`resUserWork` bit meanings.** The word is printed raw and undecoded; the two
+  facts already derived from it are used instead.
 
 ---
 
@@ -664,6 +901,8 @@ overlay's Dusklight tab:
 | `effLightsDerived` | how many adopted a vanilla light |
 | `effLightsOrphans` | vanilla lights with no site near them — **the number that decides whether §4.6's default is right** |
 | `effLightsCulled` | dropped by distance or budget |
+| `effLightsAuthored` | **whether the authored derivations are running at all**, as `colour N  radius N  lantern N`. A colour count of 0 in a room full of *registered* torches is correct — those adopt the game's colour, which wins over both (§5.1). A colour count of 0 with no game lights available means the resources carried no colour, which is a different failure from the setting being off |
+| `effLightsClasses` | this frame's sites split by what the game's own name says each effect **is**, as `other N  fire N  lantrn N  glow N  spark N  lava N  burst N  excl N`. `excl` is always 0 here — a refused effect never becomes a site, and `effLightsExcluded` counts those instead. A `lantrn` of 0 while the lamp is lit means the lantern's emitter failed §3's rule that frame, not that the classification is wrong |
 
 Bursts are recorded in the report even though they are excluded from lighting,
 because that report is the thing meant to settle whether excluding them is
@@ -680,10 +919,15 @@ that is a defect in the report rather than a question for the owner.
 | Section | What it settles |
 | :-- | :-- |
 | **counters** | the whole chain, plus the bridge's own `creates`/`destroys` — which were counted since the system landed and printed **nowhere** until 2026-08-07. `creates` counts light *updates*, so it is the number that prices an animating light |
-| **effects** | one line per distinct effect since the last press: name, blend configuration, colours, the **measured** chroma and luma the rule cut on, which **keyword** picked its class, and a verdict naming *which clause* refused it — `no(opaque)` / `no(colour)` / `no(name)` / `LIT-if-bursts`. Plus the **animation configuration**, so you can see whether an effect's colour is even *capable* of animating, and `maxFrame`/`life`/`age`/`particles` for how long it lives |
-| **sites** | every light this frame: position, how many emitters merged into it, and **the distance to the game light it adopted** — the one number the burst design turns on and which had never been measured |
+| **effects** | one line per distinct effect since the last press: name, blend configuration, colours, the **measured** chroma and luma the rule cut on, which **keyword** picked its class, and a verdict naming *which clause* refused it — `no(opaque)` / `no(colour)` / `no(name)` / `LIT-if-bursts`. Plus, since 2026-08-13, an **AUTHORED** group — the effect's own ramp colour, its authored extent and `persist=Y/n` — printed **beside** the live `prm`/`env` columns rather than instead of them, so the difference between what the artists wrote and what the emitter is holding is one subtraction. Plus the **animation configuration**, so you can see whether an effect's colour is even *capable* of animating, and `maxFrame`/`life`/`age`/`particles` for how long it lives |
+| **sites** | every light this frame: position, how many emitters merged into it, and **the distance to the game light it adopted** — the one number the burst design turns on and which had never been measured. Since 2026-08-13 each line also says **which source each value came from**: `colour=game/authored/live`, `radius=authored/default`, and `LANTERN` when the site was solved from the lantern's own settings. That is the per-site "authored or defaulted" answer, and without it a hue that came out wrong gave no way to tell whether the authored ramp had even been read |
 | **game lights** | every light the game registered and which effect took it. Adoption is **exclusive**, so this is what shows a short-lived effect stealing a torch's light and leaving the torch 19× dimmer |
 | **trace** | a rolling ring of how each light changed over the last few seconds |
+
+The **counters** section also prints, since 2026-08-13, this frame's sites split
+by class, the three authored-versus-defaulted counts, and **the whole chain from
+§5.0 with the session's live numbers substituted in** — so "is a multiplier being
+applied twice" is answerable from the log rather than from the source.
 
 Two properties worth knowing:
 
@@ -712,6 +956,20 @@ direction, the symptom is lights on smoke and water spray — look for sites
 whose class is `Other` and whose colour is grey. If it is wrong in the strict
 direction, the symptom is a fire with no light and `effLightsCandidates` far
 below `effLightsEmitters`; the report will name the effect that was rejected.
+
+**The 2026-08-13 rework's own signatures, stated per change so each is
+recognised rather than discovered:**
+
+| Symptom | What it means |
+| :-- | :-- |
+| Fires that were lit go out, or unlit things light up | the **classification** moved something between `Fire` and `Excluded`/`Other`. Only 26 names should have moved, all of them `Fire`→`Lantern` or `Glow`→`Spark`; `effLightsClasses` and the report's class column name them |
+| Every fire's hue goes flat, or subtly wrong across a whole area | the **authored ramp** read the wrong entry, or it replaced a colour that was legitimately carrying the kankyo time-of-day tint. Compare the report's AUTHORED rgb against the `prm`/`env` columns on the same line, and turn `effectLightAuthoredColor` off to confirm |
+| A light appears where the effect is invisible, in daylight only | the authored colour reached the **accept test**, which it must not — that test reads the live colour precisely because the game hides effects by fading it |
+| Lights pulse or strobe, and the bridge's `creates` counter climbs | a per-frame animating value has reached radiance. The authored derivations move this the *right* way, so a new strobe means an animating term was reintroduced, not removed |
+| The whole scene is uniformly too bright or too dark | a **multiplier chain applied twice**. The counters section prints the chain with live numbers; check that `reachScale`/`radiusScale`/`intensity` each appear once |
+| The lantern's light blinks or re-noises every time Link swings the lamp | the swing changed the site's class, minting a new site id and a new Remix light hash. `effLightsSites` stays flat while `creates` climbs |
+| Interiors get dimmer overall, with `effLightsDerived` still non-zero | something replaced the adopted `mPow` on the derived path. That is the one this rework must not do, and the non-zero counter is what makes it easy to miss |
+| Fires look softer everywhere | `effectLightAuthoredRadius` is on. It only grows spheres, so this is the expected direction, not a bug |
 
 ---
 
@@ -1037,16 +1295,23 @@ Remix. The overlay hosts them in the Dusklight tab.
 | Setting | Default | What it does |
 | :-- | :-- | :-- |
 | `effectLights` | on | the system |
-| `effectLightIntensity` | 1.0 | **multiplies every light this system makes**, derived and undetermined alike — the master brightness |
+| **`effectLightIntensity`** | 1.0 | **global multiplier — RADIANCE.** Every light this system makes, derived and undetermined alike. Does **not** reach a lantern being solved separately |
+| **`effectLightReachScale`** | 1.0 | **global multiplier — REACH.** Replaced `effectLightDerivedReach` on 2026-08-13: same default, same meaning, now applied to **both** branches. A value set for the old name is inert |
+| **`effectLightRadiusScale`** | 1.0 | **global multiplier — RADIUS.** Radiance is solved to the same reach whatever the radius, so this changes softness, not range |
 | `effectLightMassExponent` | 0.5 | how much a light grows with the amount of fire standing at it — see the note below |
 | `effectLightDerivedIntensity` | 19.0 | multiplier for sites that adopted a vanilla light (§5.1) |
-| `effectLightDerivedReach` | 1.0 | **multiplies** the reach the game authored, rather than replacing it — see the note below |
 | `effectLightDerivedRadius` | 10.0 | emitter radius for those, world units |
 | `effectLightUndeterminedIntensity` | 1.0 | multiplier for sites with no vanilla light |
 | `effectLightUndeterminedReach` | 400.0 | how far an undetermined light should reach, world units |
 | `effectLightUndeterminedRadius` | 8.0 | emitter radius for those |
-| `effectLightFireOffset` | 15.0 | upward offset for `Fire` **and `Burst`** sites |
-| `effectLightGlowOffset` | 0.0 | upward offset for `Glow` sites — at the default, `Glow` and `Other` are indistinguishable (§3.1) |
+| `effectLightAuthoredColor` | **on** | take the hue from the effect's own authored colour ramp instead of the emitter's live registers (§5.5). Hue only — nothing gets brighter |
+| `effectLightAuthoredRadius` | off | grow the sphere to the effect's authored extent where that is larger (§5.5). Capped at 64 units, never shrinks a light |
+| `effectLightLanternSeparate` | off | give Link's lantern its own three values, independent of the shared chain and of all three multipliers (§5.4) |
+| `effectLightLanternIntensity` | 1.0 | the lantern's brightness when separated. Ignored when it is not |
+| `effectLightLanternReach` | 400.0 | the lantern's reach when separated, world units |
+| `effectLightLanternRadius` | 8.0 | the lantern's emitter radius when separated, world units |
+| `effectLightFireOffset` | 15.0 | upward offset for `Fire`, **`Lantern` and `Burst`** sites |
+| `effectLightGlowOffset` | 0.0 | upward offset for `Glow` **and `Spark`** sites — at the default, all three of `Glow`, `Spark` and `Other` are indistinguishable (§3.1) |
 | `effectLightMergeRadius` | 60.0 | how close two emitters must be to become one site |
 | `effectLightAdoptRadius` | 250.0 | how close a vanilla light must be to be adopted |
 | `effectLightMaxLights` | 32 | per-frame budget |
@@ -1110,17 +1375,27 @@ that clipping is a radius problem, and the radius is bounded from above by it.
 Two consequences worth knowing before tuning, both read from the arithmetic
 rather than measured:
 
-- Radiance goes as `reach²`, so `derivedReach` at 2.0 is the same brightness as
-  `derivedIntensity` at 4×. They are **not** independent knobs on brightness.
+- Radiance goes as `reach²`, so `effectLightReachScale` at 2.0 is the same
+  brightness as `effectLightIntensity` at 4×. They are **not** independent knobs
+  on brightness.
 - They are not fully redundant either: reach also feeds the budget sort, so a
   light with more reach outranks a dimmer one when `maxLights` binds. Intensity
   does not enter that.
 
-`derivedReach` multiplies rather than replaces because the game's own `mPow` is
-the only thing distinguishing a bonfire from a candle — a fixed reach on the
-derived half would flatten every game-authored light onto one size. The
+`effectLightReachScale` multiplies rather than replaces because the game's own
+`mPow` is the only thing distinguishing a bonfire from a candle — a fixed reach
+on the derived half would flatten every game-authored light onto one size. The
 undetermined half has the opposite problem (there is nothing to scale), which is
-why `effectLightUndeterminedReach` is an absolute in world units.
+why `effectLightUndeterminedReach` is an absolute in world units and the
+multiplier scales *that*.
+
+**What retiring `effectLightDerivedReach` cost, stated rather than glossed:**
+there is no longer a way to scale the derived half's reach *alone*. That was its
+only capability the new option does not have, and `effectLightDerivedIntensity`
+covers the brightness half of it exactly (radiance goes as reach², so 2× reach ≡
+4× intensity) while differing only in the budget sort. If the split turns out to
+matter in practice, the honest fix is a second option, not a re-widening of this
+one.
 
 **`orphanPolicy` is deliberately not in that table.** §4.6 describes it and §10
 lists it under what is not built; it exists only as a field on the internal
@@ -1207,6 +1482,60 @@ content and order. `scripts/check_invariants.py` (`effect-light-keywords`) holds
 all three, and each of its arms was proved to fire by breaking the inputs
 deliberately. It changes no behaviour: **no keyword was added, removed or
 respelled.** §3.1 says why the dead ten stay.
+
+### The 2026-08-13 rework — what is verified and what is not
+
+**Verified by reading the source, cited in §3.1, §5.0, §5.4 and §5.5.** The
+authored colour tables and their exact length and NULL conditions
+(`JPABaseShape.cpp:1541-1583`, `:1686-1702`). `getMaxFrame` / `getVolumeSize` /
+`getVolumeType` and `VOL_Point == 4` (`JPADynamicsBlock.h:87-89`, `.cpp:143-150`).
+The lantern's two effect ids and their single spawn site
+(`d_a_alink.cpp:14875,14883`), and that only those two of the five `kantera`
+names have any caller in `src/` or `include/`. That `mVolumeSize` passes through
+the emitter's local and global scale matrices before use
+(`JPAResource.cpp:1342-1355`), which is why the extent is called a signal rather
+than a measurement.
+
+**Verified mechanically.** Both classifiers replayed over all 3,205 names before
+and after: **26 names move, all `Fire`→`Lantern` or `Glow`→`Spark`, none into or
+out of `Excluded`/`Burst`/`Lava`/`Other`.** `classKeyword`'s lists still match
+`classifyByName`'s in content and order — the invariants check parses both and
+was re-run. The ten dead keywords are unchanged and all ten are still live in the
+classifier, so `EFFECT_LIGHT_DEAD_KEYWORDS` needed no edit.
+
+**Verified by compiling.** `tools/syntax-check-remix.sh` (MinGW, the real
+headers) passes for `effect_lights.cpp`, `remix_bridge.cpp` and
+`d_particle.cpp`, and the protocol sweep passes at 14. **The fork half has no
+local compiler; CI is its first.**
+
+**NOT verified — nothing here has been run in game.** In particular:
+
+- **no authored colour has ever been read from a real `.jpa`.** The accessors and
+  the table's shape are read from source; that the ramp's most-saturated entry is
+  the *right* entry for a light is a design choice, not a measurement. It is the
+  single most likely thing to look wrong, and `effectLightAuthoredColor` is the
+  switch that isolates it in one press.
+- **no authored extent has been seen either**, which is part of why
+  `effectLightAuthoredRadius` is off.
+- the lantern toggle has not been flipped in game, and the claim that flipping it
+  with default values changes nothing but the multipliers is arithmetic, not
+  observation.
+- `Class::Spark` and `Class::Lantern` have never appeared in a real report.
+
+**Two survey findings deliberately left alone**, recorded so they are not
+rediscovered:
+
+- **`tests/effect_lights/run.sh` does not compile**, and has not since this
+  module gained its `JPADynamicsBlock.h` include — the stub headers have no such
+  file and the stub `JPAResource` has no `getDyn()`. Nothing runs it in CI. It is
+  **outside this change's file list**, so it was not fixed here, and this rework
+  widens the stub gap further: the module now also calls `getBsp()->isPrmAnm()`,
+  `getPrmClr(idx, …)`, `getClrAnmMaxFrm()`, `getMaxFrame()`, `getVolumeSize()`
+  and `getVolumeType()`. Repairing that harness is the cheapest way to test any
+  of this without a Windows machine and should be the next thing done here.
+- **`classify()` does not exist.** Two comments pointed at it; the rule is
+  written inline twice, in `collectEmitters` and `collectSimple`. The comments
+  are corrected in this change; the duplication is not.
 
 **CI-green on both sides** at the matching protocol-7 pair — dusklight
 `bf87551c`, dxvk-remix `70a6d482`. (dusklight's run reads "failure" because its

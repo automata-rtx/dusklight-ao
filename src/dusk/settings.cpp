@@ -86,13 +86,20 @@ UserSettings g_userSettings = {
         // docs/effect-lights.md section 10 says so plainly.
         .effectLights {"game.effectLights", true},
         .effectLightIntensity {"game.effectLightIntensity", 1.0f},
+        .effectLightReachScale {"game.effectLightReachScale", 1.0f},
+        .effectLightRadiusScale {"game.effectLightRadiusScale", 1.0f},
         .effectLightMassExponent {"game.effectLightMassExponent", 0.5f},
         .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
-        .effectLightDerivedReach {"game.effectLightDerivedReach", 1.0f},
         .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
         .effectLightUndeterminedIntensity {"game.effectLightUndeterminedIntensity", 1.0f},
         .effectLightUndeterminedReach {"game.effectLightUndeterminedReach", 400.0f},
         .effectLightUndeterminedRadius {"game.effectLightUndeterminedRadius", 8.0f},
+        .effectLightAuthoredColor {"game.effectLightAuthoredColor", true},
+        .effectLightAuthoredRadius {"game.effectLightAuthoredRadius", false},
+        .effectLightLanternSeparate {"game.effectLightLanternSeparate", false},
+        .effectLightLanternIntensity {"game.effectLightLanternIntensity", 1.0f},
+        .effectLightLanternReach {"game.effectLightLanternReach", 400.0f},
+        .effectLightLanternRadius {"game.effectLightLanternRadius", 8.0f},
         .effectLightFireOffset {"game.effectLightFireOffset", 15.0f},
         .effectLightGlowOffset {"game.effectLightGlowOffset", 0.0f},
         .effectLightMergeRadius {"game.effectLightMergeRadius", 60.0f},
@@ -359,13 +366,20 @@ void registerSettings() {
     Register(g_userSettings.game.remixRoomLightConeSoftness);
     Register(g_userSettings.game.effectLights);
     Register(g_userSettings.game.effectLightIntensity);
+    Register(g_userSettings.game.effectLightReachScale);
+    Register(g_userSettings.game.effectLightRadiusScale);
     Register(g_userSettings.game.effectLightMassExponent);
     Register(g_userSettings.game.effectLightDerivedIntensity);
-    Register(g_userSettings.game.effectLightDerivedReach);
     Register(g_userSettings.game.effectLightDerivedRadius);
     Register(g_userSettings.game.effectLightUndeterminedIntensity);
     Register(g_userSettings.game.effectLightUndeterminedReach);
     Register(g_userSettings.game.effectLightUndeterminedRadius);
+    Register(g_userSettings.game.effectLightAuthoredColor);
+    Register(g_userSettings.game.effectLightAuthoredRadius);
+    Register(g_userSettings.game.effectLightLanternSeparate);
+    Register(g_userSettings.game.effectLightLanternIntensity);
+    Register(g_userSettings.game.effectLightLanternReach);
+    Register(g_userSettings.game.effectLightLanternRadius);
     Register(g_userSettings.game.effectLightFireOffset);
     Register(g_userSettings.game.effectLightGlowOffset);
     Register(g_userSettings.game.effectLightMergeRadius);

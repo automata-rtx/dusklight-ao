@@ -42,7 +42,7 @@ on branch rules** — this file deliberately does not restate them.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **13**; skew in either direction has cost an
+   commit point. Protocol is at **14**; skew in either direction has cost an
    evening twice. The Dusklight tab reports which side is old — read it before
    debugging anything else.
 2. **Interactive approval prompts do not work in the owner's environment.**
@@ -666,6 +666,16 @@ bullet says so.
   light type so a sky is never NEE-sampled at all. Design, and the reasons the
   anchor is the JPA emitter rather than the actor or the particle:
   [`effect-lights.md`](effect-lights.md). **Tested in game 2026-08-07.**
+  **Reworked 2026-08-13, untested:** a light's *hue*, *extent* and *persistence*
+  now come from what the effect's own artists authored into the `.jpa` — values
+  that cannot change while you play — while its *brightness* still comes from
+  the game's light registry and from settings, because **nothing the artists
+  authored is a brightness and inventing one would be inference recorded as
+  finding**. The vocabulary gained `Class::Lantern` (カンテラ *kantera*, Link's
+  lamp, and nothing else in the game uses the word) and `Class::Spark`
+  (きらきら *kirakira*, glitter), there are now three global multipliers — one
+  each for brightness, reach and radius — and the lantern can be given settings
+  of its own. `effect-lights.md` §5.0 has the whole chain in one place.
 - **Local point lights** — the *previous* system, now off by default and kept
   only as the comparison path. It mirrored `g_env_light.pointlight[100]`
   (`dKy_plight_set`) — every torch, brazier, lantern, campfire, Midna glow and

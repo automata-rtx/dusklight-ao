@@ -241,14 +241,14 @@ implying it was tested.
 
 **The game and the Remix DLL are a single protocol.** The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol` in
-`showDusklightRemixTab`. **Protocol is at 13.** Build both sides from the same
+`showDusklightRemixTab`. **Protocol is at 14.** Build both sides from the same
 commit point, and when you bump one, bump the other in the same commit. Skew in
 either direction has already cost an evening twice — the Dusklight tab reports
 which side is old, so read it before debugging anything else.
 
 **12 is skipped and is not free.** It belongs to the unmerged
 `claude/kasumi-naming-correction-w3e204`, so 13 was taken beside it rather than
-on top of it. The next branch to need a number takes **14**. Nothing checks
+on top of it, and 14 beside both. The next branch to need a number takes **15**. Nothing checks
 this — no script can see an unmerged branch — so check the live `claude/*`
 branches yourself before taking one:
 `git show origin/claude/<name>:src/dusk/remix_bridge.cpp | grep env.protocol`.
@@ -360,6 +360,14 @@ recall does not surface.
     touching `src/` produced *no run at all*, hours apart, while the fork
     scheduled normally. That is why `build.yml` now has `workflow_dispatch` —
     when it happens again, dispatch a run rather than pushing again and hoping.
+- **Effect lights derive hue, extent and persistence from the authored JPA
+  data — and deliberately NOT radiance.** Nothing the original artists wrote is
+  photometric: the blocks carry a colour ramp, a size, a rate and a lifetime,
+  and the live copies of the last two are overwritten by 119 and 18 actor
+  setter call sites. Brightness therefore still comes from the game's own
+  `LIGHT_INFLUENCE::mPow` and from settings. If a future session finds itself
+  mapping rate × lifetime onto a radiance, that is the inference-as-finding trap
+  rule 3 exists for; `docs/effect-lights.md` §5 says so at length.
 - The game's own UI is **never drawn** in the fixed-function D3D9 mode. Any
   setting that needs to be reachable while running has to be hosted in the
   Remix overlay (`rtx.dusklight.game.*`) — see `documentation/DusklightOverlay.md`

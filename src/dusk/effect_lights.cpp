@@ -92,6 +92,30 @@ constexpr int kSiteGraceFrames = 6;
 // 0.0, which approaches rather than arrives).
 constexpr float kMinParticleScale = 0.001f;
 
+// The largest sphere the authored extent is allowed to ask for, in world units. Deliberately
+// the same 64 that bounds the two configured radii in the overlay, so switching the authored
+// radius on cannot leave the envelope those were tuned inside. An emitter whose authored volume
+// is larger than this is a wide area effect - a burning bridge, a lava field - and a 64 unit
+// sphere is already at the point where a light inside a wall sconce clips through the geometry.
+constexpr float kMaxAuthoredRadius = 64.0f;
+
+// Where a site's hue came from, in the order the solve prefers them. Printed by name in the
+// site report - a reader with only the log has to be able to tell an adopted lamp colour from
+// an authored ramp from the live register, because those three fail in different ways.
+enum ColorSource : uint8_t {
+    kColorGame = 0,      // a light the game itself registered near the effect
+    kColorAuthored = 1,  // the effect's own authored colour ramp - stable for the session
+    kColorLive = 2,      // the emitter's current registers - can animate, and can be tinted
+};
+
+const char* colorSourceName(uint8_t v) {
+    switch (v) {
+    case kColorGame: return "game";
+    case kColorAuthored: return "authored";
+    default: return "live";
+    }
+}
+
 struct Candidate {
     float pos[3];
     float color[3];   // 0..1, the effect's own colour
@@ -104,6 +128,15 @@ struct Candidate {
     float weight;
     Class cls;
     uint16_t effectId;
+
+    // The authored side, carried alongside the live side rather than instead of it. `color`
+    // above is the LIVE colour and stays that way, because the accept test and the report both
+    // have to keep asking their question of what is actually being drawn; this is what the
+    // light's hue is taken from when Params::authoredColor is on.
+    float authoredColor[3];
+    bool hasAuthoredColor;
+    float extent;        // emitter-local units, 0 when the resource said nothing
+    bool hasExtent;
 };
 
 struct SimpleRecord {
@@ -133,6 +166,11 @@ struct TrackedSite {
     float vanillaDistance;
     float mass;        // summed emitter alpha merged into this site
     float massBoost;   // what that multiplied reach by
+    // Which source each value was actually taken from this frame. Report-only, and the answer
+    // to "authored or defaulted" for this particular light.
+    uint8_t colorSource;
+    bool radiusAuthored;
+    bool lantern;
 };
 
 // One press of Log Effect Classification Report has to answer every open question at once, so
@@ -178,7 +216,16 @@ struct ReportEntry {
     float baseSizeX;
     float baseSizeY;
     float globalScale;
-    uint8_t keyIds;     // bitmask of JPAKeyBlock IDs present, 0 = no key blocks
+    uint16_t keyIds;    // bitmask of JPAKeyBlock IDs present, 0 = no key blocks
+
+    // What the artists authored, as opposed to what the emitter currently holds. These are the
+    // values the system now derives from, so the report has to print them beside the live ones
+    // - a hue that reads wrong in game is then one subtraction away from being explained.
+    bool hasAuthoredColor;
+    uint8_t authoredColor[3];
+    bool hasExtent;
+    float extent;       // emitter-local units; baseSize, or the spawn volume when that is larger
+    bool persistent;    // AUTHORED maxFrame == 0, which the live maxFrame column often is not
 
     // The effect's authored user-work word, printed raw and NOT interpreted.
     //
@@ -233,6 +280,13 @@ struct SiteReportEntry {
     uint32_t jumps;
     float mass;
     float massBoost;
+    // Authored or defaulted, per value, for this one light. The three of them together are the
+    // answer to "did the new derivation actually run here", which nothing else in the log can
+    // give: a site whose colour reads live and whose radius reads default was solved exactly
+    // the way it was before any of this landed.
+    uint8_t colorSource;
+    bool radiusAuthored;
+    bool lantern;
 };
 
 // A retrospective ring of site state over time. Retrospective is the point: you throw the bomb
@@ -357,7 +411,9 @@ bool nameHas(const char* haystack, const char* needle) {
 // gates, the vertical offset, the merge tie-break and cross-frame site identity; it does NOT
 // pick the fallback radius or reach, which keys on whether a vanilla light was adopted. The
 // full statement is on the enum in effect_lights.hpp. Apart from the Excluded gate it never
-// decides whether a light exists; that is the rule in classify() below.
+// decides whether a light exists; that is the additive-and-glow rule, which is written out
+// INLINE TWICE - once in collectEmitters and once in collectSimple. There is no classify()
+// function and there never was; two comments pointed at one until 2026-08-13.
 //
 // Reading the effect's own name is not "tagging" in the sense the project's
 // rules forbid: the name is the game's own identity for the effect, shipped in the game's own
@@ -385,6 +441,27 @@ Class classifyByName(uint16_t id) {
     //                    artefact, so it is held apart from Fire and off by default. Moving
     //                    Fire above Burst turns every explosion into a persistent fire; the
     //                    test suite catches it, which is how this comment came to exist.
+    //   Lantern > Fire   ALL FIVE kantera names contain "fire" too - ZI_J_kantera_fire and
+    //                    ZI_J_kantera_swingFire are Link's, the other three have no caller in
+    //                    the tree. Below Fire the branch would be unreachable and the report
+    //                    would go on printing keyword "fire" for the lantern, which is exactly
+    //                    the gap that made a lantern-only setting unbuildable before.
+    //   Burst > Lantern  no name collides today (no kantera name contains bomb/baku/explo),
+    //                    so this ordering is free; it is stated so that the invariant "one-shot
+    //                    violence outranks every steady flame" survives the new class.
+    //   Spark < Burst    THE 20 ZM_*_BombInsectSpark* NAMES STAY Class::Burst, and therefore
+    //                    stay dark by default. They are the electric bugs - persistent, not
+    //                    one-shot - so on the evidence they are misclassified, and moving Spark
+    //                    above Burst would fix it. That is deliberately NOT done here: it would
+    //                    light twenty effects that are dark today, which is a look change with
+    //                    no way to un-see it, and the authored persistence now printed in the
+    //                    report (maxFrame 0 = continuous) is the measurement that should decide
+    //                    it. docs/effect-lights.md section 3.1.
+    //
+    // Re-run over all 3205 names in d_particle_name.cpp on 2026-08-13, comparing every name's
+    // class before and after this revision: exactly 26 names move, 5 from Fire to Lantern and
+    // 21 from Glow to Spark, and NOT ONE name enters or leaves Excluded, Burst, Lava or Other.
+    // That is the whole blast radius of the vocabulary change.
     //
     // The negative list collides with Lava, Fire and Glow zero times today. If that ever stops
     // being true the order has to be revisited - re-run the collision scan, do not guess.
@@ -438,16 +515,31 @@ Class classifyByName(uint16_t id) {
         return Class::Burst;
     }
 
+    // Link's lantern, and nothing else in the game. カンテラ kantera is a loanword, so unlike
+    // most of this vocabulary there is no kunrei/Hepburn variant to miss - and every English
+    // alternative was sized before settling on it: "lantern" and "ranpu" match zero names and
+    // "lamp" matches four, all of them ZF_S_k_lampWater*, which is water.
+    if (nameHas(name, "kantera")) {
+        return Class::Lantern;
+    }
+
     if (nameHas(name, "fire") || nameHas(name, "honoo") || nameHas(name, "hono") ||
         nameHas(name, "kaen") || nameHas(name, "flame") || nameHas(name, "taimatsu") ||
-        nameHas(name, "maki") || nameHas(name, "kantera") || nameHas(name, "torch") ||
+        nameHas(name, "maki") || nameHas(name, "torch") ||
         nameHas(name, "ablaze") || nameHas(name, "kagarib")) {
         return Class::Fire;
     }
 
-    if (nameHas(name, "hikari") || nameHas(name, "light") || nameHas(name, "kira") ||
-        nameHas(name, "pika") || nameHas(name, "glow") || nameHas(name, "aura") ||
-        nameHas(name, "shine") || nameHas(name, "spark")) {
+    // きらきら kirakira, glitter, and the non-explosive "spark" effects. Split off Glow because
+    // they are a different light: sub-second, high-frequency and tiny, where a glow is steady
+    // and soft. They keep Glow's offset and Glow's merge weight, so the split is visible in the
+    // report and inert in the picture until someone decides otherwise.
+    if (nameHas(name, "kira") || nameHas(name, "pika") || nameHas(name, "spark")) {
+        return Class::Spark;
+    }
+
+    if (nameHas(name, "hikari") || nameHas(name, "light") || nameHas(name, "glow") ||
+        nameHas(name, "aura") || nameHas(name, "shine")) {
         return Class::Glow;
     }
 
@@ -468,11 +560,13 @@ const char* classKeyword(uint16_t id) {
     static const char* const kLava[] = {"lava", "magma", "youdo", "yogan", "yougan", nullptr};
     static const char* const kExcluded[] = {"yoda", "taieki", nullptr};
     static const char* const kBurst[] = {"bakuha", "explo", "bomb", "baku", nullptr};
+    static const char* const kLantern[] = {"kantera", nullptr};
     static const char* const kFire[] = {"fire",   "honoo", "hono",  "kaen",   "flame", "taimatsu",
-                                        "maki",   "kantera", "torch", "ablaze", "kagarib", nullptr};
-    static const char* const kGlow[] = {"hikari", "light", "kira", "pika",
-                                        "glow",   "aura",  "shine", "spark", nullptr};
-    static const char* const* const kLists[] = {kLava, kExcluded, kBurst, kFire, kGlow};
+                                        "maki",   "torch", "ablaze", "kagarib", nullptr};
+    static const char* const kSpark[] = {"kira", "pika", "spark", nullptr};
+    static const char* const kGlow[] = {"hikari", "light", "glow", "aura", "shine", nullptr};
+    static const char* const* const kLists[] = {kLava,    kExcluded, kBurst, kLantern,
+                                                kFire,    kSpark,    kGlow};
 
     for (const char* const* list : kLists) {
         for (const char* const* w = list; *w != nullptr; w++) {
@@ -570,6 +664,174 @@ void pickColor(const float prm[3], const float env[3], float out[3]) {
     out[2] = prm[2];
 }
 
+// --- what the artists authored ------------------------------------------------------------
+//
+// TWO DIFFERENT THINGS get called "the emitter's values", and which one is read decides whether
+// a derivation is stable enough to put into a light:
+//
+//   the AUTHORED blocks - JPAResource::getBsp() / getDyn(), parsed once from the .jpa at load
+//     (JPABaseShape.cpp:1666-1703, JPADynamicsBlock::init). Nothing in the game tree writes
+//     through them. IMMUTABLE for the session.
+//   the LIVE emitter fields - seeded from those blocks in JPABaseEmitter::init and then
+//     overwritten every frame by JPAResource::calcKey (JPAResource.cpp:1304-1339) and by
+//     several hundred actor setters: setRate 119 call sites, setGlobalAlpha 58,
+//     setGlobalParticleScale 50, setLifeTime 18, setVolumeSize 12.
+//
+// Everything below reads the first, and that is the point. A value that animates re-creates the
+// Remix light every frame it moves more than 2% and costs that light its temporal history - and
+// one class of that animation is not even the effect's own: the shared "simple" emitter is made
+// continuous when it is created (d_particle.cpp:807, becomeContinuousParticle) so its colour
+// cycle free-runs from level load, and every torch in the world reads the same unrelated phase
+// of it.
+//
+// The live values are still what the ACCEPT TEST reads - see collectEmitters. That is
+// deliberate and it is the one place these must not be swapped: the game hides an effect by
+// fading its global alpha and its global colour, so judging "is this drawing light right now"
+// from the authored colour would light effects that are invisible.
+
+// JPADynamicsBlock.cpp:143-150 - the volume type enum is anonymous and local to that file, so
+// the value is repeated here with its citation rather than included. VOL_Point is the one type
+// whose volume size means nothing: JPAVolumePoint zeroes the offset outright (:7-13).
+constexpr u32 kVolumePoint = 4;
+
+// Direct-mapped, one slot per low 9 bits of the effect id, validated on BOTH the id and the
+// resource pointer. A room reload rebinds an id to a different JPAResource, and a collision
+// between two ids sharing those bits costs a recompute rather than a wrong answer - which is
+// the property worth having, because the wrong answer here is a light in the wrong colour with
+// nothing in any log to say so.
+constexpr int kAuthoredSlots = 512;
+
+struct Authored {
+    const JPAResource* res;
+    uint16_t id;
+    bool valid;
+    bool hasColor;
+    bool hasExtent;
+    bool persistent;   // authored maxFrame == 0: emits forever rather than for a window
+    float color[3];    // hue, already through pickColor
+    float extent;      // emitter-local units, 0 when unknown
+};
+
+Authored s_authored[kAuthoredSlots];
+
+// Walk one authored colour ramp and return its most saturated entry.
+//
+// The table is exactly getClrAnmMaxFrm() + 1 entries, allocated at load and pre-interpolated
+// per frame by makeColorTable (JPABaseShape.cpp:1541-1583, allocation at :1543), and it is NULL
+// unless the matching flag is set (:1686-1702). Taking the most saturated entry rather than the
+// first or the mean is what makes a fire that ramps yellow -> orange -> black report as orange:
+// the black tail is the particle dying, not the colour of the light.
+bool rampColor(const JPABaseShape* bsp, bool anim, const GXColor* table, bool primary,
+               float out[3]) {
+    if (bsp == nullptr) {
+        return false;
+    }
+
+    if (!anim || table == nullptr) {
+        GXColor c;
+        if (primary) {
+            bsp->getPrmClr(&c);
+        } else {
+            bsp->getEnvClr(&c);
+        }
+        byteColor(c, out);
+        return true;
+    }
+
+    // Bounded twice: by the authored frame count, and by a cap of its own. maxFrm is an s16 out
+    // of a file, so a corrupt or unexpected value must not turn one cache miss into a walk of
+    // thirty thousand entries on the frame path.
+    const int frames = std::min<int>(std::max<int>(bsp->getClrAnmMaxFrm(), 0), 1024);
+    float best[3] = {0.0f, 0.0f, 0.0f};
+    float bestChroma = -1.0f;
+    float bestLuma = -1.0f;
+    for (int i = 0; i <= frames; i++) {
+        float c[3];
+        byteColor(table[i], c);
+        const float chroma = chromaOf(c);
+        const float luma = lumaOf(c);
+        if (chroma > bestChroma || (chroma == bestChroma && luma > bestLuma)) {
+            bestChroma = chroma;
+            bestLuma = luma;
+            best[0] = c[0];
+            best[1] = c[1];
+            best[2] = c[2];
+        }
+    }
+
+    out[0] = best[0];
+    out[1] = best[1];
+    out[2] = best[2];
+    return true;
+}
+
+const Authored& authoredFor(uint16_t effectId, const JPABaseEmitter* emitter) {
+    const uint16_t key = effectId & kIdMask;
+    Authored& slot = s_authored[key % kAuthoredSlots];
+
+    const JPAResource* res = (emitter != nullptr) ? emitter->pRes : nullptr;
+    if (slot.valid && slot.id == key && slot.res == res) {
+        return slot;
+    }
+
+    slot = Authored {};
+    slot.res = res;
+    slot.id = key;
+    slot.valid = true;
+    if (res == nullptr) {
+        return slot;
+    }
+
+    const JPABaseShape* bsp = res->getBsp();
+    if (bsp != nullptr) {
+        float prm[3] = {1.0f, 1.0f, 1.0f};
+        float env[3] = {0.0f, 0.0f, 0.0f};
+        const bool haveP =
+            rampColor(bsp, bsp->isPrmAnm() != 0, bsp->mpPrmClrAnmTbl, true, prm);
+        const bool haveE =
+            rampColor(bsp, bsp->isEnvAnm() != 0, bsp->mpEnvClrAnmTbl, false, env);
+        if (haveP || haveE) {
+            pickColor(prm, env, slot.color);
+            slot.hasColor = true;
+        }
+
+        // Authored particle size. NOT multiplied by the emitter's live global particle scale,
+        // even though the drawn quad is: that scale is actor-driven at 50 call sites and one of
+        // them ramps it to zero every frame a fire dies (d_a_e_db.cpp:1871-1877). Folding it in
+        // would put an animating term into the radius, which is the exact mistake this whole
+        // section exists to avoid.
+        const float size = std::max(bsp->getBaseSizeX(), bsp->getBaseSizeY());
+        if (std::isfinite(size) && size > 0.0f) {
+            slot.extent = size;
+            slot.hasExtent = true;
+        }
+    }
+
+    const JPADynamicsBlock* dyn = res->getDyn();
+    if (dyn != nullptr) {
+        // maxFrame 0 is the format's "emit forever". This is the AUTHORED window, which is why
+        // it is read here and not off the emitter: becomeContinuousParticle forces the live
+        // mMaxFrame to 0 on every simple emitter and becomeImmortalEmitter does the same at 42
+        // more call sites, so the live field says "persistent" for effects that are not.
+        slot.persistent = dyn->getMaxFrame() == 0;
+
+        // The spawn volume, in emitter-local units - it is transformed by the emitter's local
+        // and global scale matrices before use (JPAResource.cpp:1342-1355), so this is an
+        // extent signal rather than an exact world measurement, and it is only ever allowed to
+        // GROW a radius that already has a working default.
+        if (dyn->getVolumeType() != kVolumePoint) {
+            const float vol = static_cast<float>(dyn->getVolumeSize());
+            if (std::isfinite(vol) && vol > slot.extent) {
+                slot.extent = vol;
+                slot.hasExtent = true;
+            }
+        }
+    }
+
+    return slot;
+}
+
+
 void noteForReport(uint16_t effectId, const JPABaseShape* shape, const float prm[3],
                    const float env[3], Class cls, bool additive, bool glow, bool simple,
                    const JPABaseEmitter* emitter, const float decided[3]) {
@@ -635,12 +897,30 @@ void noteForReport(uint16_t effectId, const JPABaseShape* shape, const float prm
             const JPAKeyBlock* kb = res->ppKey[k];
             if (kb != nullptr) {
                 const u8 id = static_cast<u8>(kb->getID());
-                if (id < 8) {
-                    entry.keyIds |= static_cast<uint8_t>(1u << id);
+                // 11, not 8. calcKey writes emitter fields for IDs 0,1,3,4,6,7,8,9,10
+                // (JPAResource.cpp:1304-1339) and this mask stopped at 8 until 2026-08-13, so
+                // three of them were dropped silently - including ID 10, mScaleOut, an
+                // emitter-level scale curve that seeds every new particle (JPAParticle.cpp:96-101).
+                // An effect that grows or shrinks over its life showed nothing in this column.
+                if (id < 11) {
+                    entry.keyIds |= static_cast<uint16_t>(1u << id);
                 }
             }
         }
     }
+
+    // The authored side, cached per effect id. Printed beside the live columns rather than
+    // instead of them: the pair is what says whether an effect's live colour has drifted from
+    // what its artists wrote, which is the whole reason the derivation moved.
+    const Authored& authored = authoredFor(effectId, emitter);
+    entry.hasAuthoredColor = authored.hasColor;
+    for (int i = 0; i < 3; i++) {
+        entry.authoredColor[i] = static_cast<uint8_t>(
+            std::min(255.0f, std::max(0.0f, authored.color[i] * 255.0f)));
+    }
+    entry.hasExtent = authored.hasExtent;
+    entry.extent = authored.extent;
+    entry.persistent = authored.persistent;
 
     entry.effectId = effectId;
     entry.blendMode = shape != nullptr ? static_cast<uint8_t>(shape->getBlendMode()) : 0xFF;
@@ -764,6 +1044,9 @@ void snapshotSites(const std::vector<TrackedSite>& tracked) {
             s.jumps = t.jumps;
             s.mass = t.mass;
             s.massBoost = t.massBoost;
+            s.colorSource = t.colorSource;
+            s.radiusAuthored = t.radiusAuthored;
+            s.lantern = t.lantern;
         }
     }
 
@@ -808,16 +1091,18 @@ const char* anmTypeName(uint8_t v) {
 // Which authored curves land on the EMITTER (JPAResource::calcKey dispatches on block ID and
 // writes emitter fields directly). Anything not listed here animates per particle only, where
 // this system cannot see it.
-void formatKeyIds(uint8_t mask, char* out, size_t cap) {
-    static const char* const kNames[8] = {"rate", "volsz", "?2",   "volrad",
-                                          "life", "?5",    "away", "axis"};
+void formatKeyIds(uint16_t mask, char* out, size_t cap) {
+    // Eleven, not eight. IDs 8, 9 and 10 were dropped by both this table and the mask that
+    // feeds it until 2026-08-13; 10 is the one that mattered, an emitter-level scale curve.
+    static const char* const kNames[11] = {"rate", "volsz", "?2",     "volrad", "life",  "?5",
+                                           "away", "axis",  "dirspd", "spread", "scale"};
     size_t n = 0;
     out[0] = '\0';
     if (mask == 0) {
         std::snprintf(out, cap, "-");
         return;
     }
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 11; i++) {
         if ((mask & (1u << i)) == 0) {
             continue;
         }
@@ -893,6 +1178,30 @@ void emitReport(const Params& params) {
              s_stats.excluded);
     Log.info("    game lights available (point/spot) {}/{}", s_stats.vanillaPoint,
              s_stats.vanillaSpot);
+    // Where this frame's sites got their values. This is the "authored versus defaulted"
+    // question asked of the whole frame at once, so a look change can be attributed before
+    // anybody reads a single site line.
+    Log.info("    values taken from: colour authored {} of {} sites   radius authored {}   "
+             "lantern solved separately {}",
+             s_stats.authoredColor, s_stats.sites, s_stats.authoredRadius, s_stats.lantern);
+    {
+        char classes[192];
+        size_t n = 0;
+        classes[0] = '\0';
+        for (int c = 0; c < static_cast<int>(Class::Count); c++) {
+            const int w = std::snprintf(classes + n, sizeof(classes) - n, "%s%s %d",
+                                        n ? "  " : "", className(static_cast<Class>(c)),
+                                        s_stats.byClass[c]);
+            if (w <= 0 || static_cast<size_t>(w) >= sizeof(classes) - n) {
+                break;
+            }
+            n += static_cast<size_t>(w);
+        }
+        Log.info("    sites by class: {}", classes);
+        Log.info("    (excl never appears here - an excluded effect never becomes a site. A "
+                 "lantrn count of 0 while Link's lamp is lit means the lantern's emitter failed "
+                 "the rule, not that the class is wrong.)");
+    }
     Log.info("    drawn is the PREVIOUS frame's count. This report is emitted before the bridge "
              "draws, so this frame's is still zero at this point - it used to print 0 always.");
 
@@ -916,6 +1225,29 @@ void emitReport(const Params& params) {
              "{:.0f}  bursts {}  minChroma {:.2f}  minLuma {:.2f}",
              params.maxLights, params.maxDistance, params.mergeRadius, params.adoptRadius,
              params.bursts ? "on" : "off", params.minChroma, params.minLuma);
+    // The whole chain from an authored value to a radiance, in the order it is applied, with
+    // this session's numbers substituted in. Printing it here rather than only in the document
+    // is what lets a log answer "is a multiplier being applied twice" on its own.
+    Log.info("  the chain, authored value -> radiance, in the order it is applied:");
+    Log.info("    reach    = (game mPow | undetermined {:.0f}) x mass^{:.2f} x reachScale {:.2f}",
+             params.undeterminedReach, params.massExponent, params.reachScale);
+    Log.info("    radius   = (derived {:.1f} | undetermined {:.1f}, grown to the authored extent "
+             "when authoredRadius is on: {}) x radiusScale {:.2f}",
+             params.derivedRadius, params.undeterminedRadius,
+             params.authoredRadius ? "on" : "off", params.radiusScale);
+    Log.info("    radiance = reach^2 x {:.2f} / (pi x radius^2) x (derived {:.2f} | undetermined "
+             "{:.2f}) x intensity {:.2f}",
+             kNewLightEndValue, params.derivedIntensity, params.undeterminedIntensity,
+             params.intensity);
+    Log.info("    hue      = adopted game light, else the authored ramp when authoredColor is "
+             "on ({}), else the live registers. Radiance is normalised by its brightest channel, "
+             "so the hue never changes the brightness.",
+             params.authoredColor ? "on" : "off");
+    Log.info("    lantern  = separate {}: when on, a lantrn site takes reach {:.0f} radius {:.1f} "
+             "intensity {:.2f} RAW - no mass boost and none of the three multipliers above. When "
+             "off it goes through the same chain as every other fire.",
+             params.lanternSeparate ? "ON" : "off", params.lanternReach, params.lanternRadius,
+             params.lanternIntensity);
     if (s_stats.culled > 0) {
         Log.info("  NOTE culled > 0: the per-frame budget IS binding, so sites are competing. A "
                  "site the budget drops is destroyed and comes back with a new id and no "
@@ -926,8 +1258,18 @@ void emitReport(const Params& params) {
     Log.info("[effects] {} distinct effects seen since the last report{}", s_reportCount,
              s_reportOverflowed ? "  (CAPPED)" : "");
     Log.info("  id name | blend mode/src/dst | prm rgb | env rgb | chroma luma | class(keyword) "
-             "| verdict | anim: glbl/prm/env type maxfrm | maxFrame life age ptcls | size gscale "
-             "| uw | keys");
+             "| verdict | AUTHORED rgb extent persist | anim: glbl/prm/env type maxfrm | "
+             "maxFrame life age ptcls | size gscale | uw | keys");
+    Log.info("  AUTHORED is what the artists wrote into the .jpa and it CANNOT change while you "
+             "play: the rgb is the most saturated entry of the effect's own colour ramp, extent "
+             "is its particle size or spawn volume in emitter-local units, and persist=Y means "
+             "the authored emission window is 0 - it emits forever. Compare the authored rgb "
+             "against the prm/env columns beside it: those are the LIVE registers, which carry "
+             "the time-of-day tint and any colour animation, and a large difference between the "
+             "two is exactly what the authored-colour setting is choosing between.");
+    Log.info("  persist is read from the AUTHORED dynamics block, never from the live maxFrame "
+             "column further right - becomeContinuousParticle forces that one to 0 on every "
+             "simple effect, so the live column says 'forever' for things that are not.");
     Log.info("  verdict: LIT drawn. no(opaque) failed the additive test. no(colour) was additive "
              "but chroma < {:.2f} AND luma < {:.2f}. no(name) refused as a substance. "
              "LIT-if-bursts is one-shot, off by default.",
@@ -948,12 +1290,17 @@ void emitReport(const Params& params) {
         const ReportEntry& e = s_report[i];
         formatKeyIds(e.keyIds, buf, sizeof(buf));
         Log.info("  {:#06x} {:<32} | {}/{}/{} | {:3},{:3},{:3} | {:3},{:3},{:3} | {:.2f} {:.2f} | "
-                 "{:<5}({:<8}) | {:<13} | {}/{}/{} {:<7} {:<4} | {:<5} {:<5} {:<5} {:<4} | "
-                 "{:.0f}x{:.0f} {:.2f} | uw={:#010x} | {}{}",
+                 "{:<6}({:<8}) | {:<13} | {:3},{:3},{:3} {:6} {} | {}/{}/{} {:<7} {:<4} | "
+                 "{:<5} {:<5} {:<5} {:<4} | {:.0f}x{:.0f} {:.2f} | uw={:#010x} | {}{}",
                  e.effectId, effectName(e.effectId), blendModeName(e.blendMode),
                  blendFactorName(e.blendSrc), blendFactorName(e.blendDst), e.prm[0], e.prm[1],
                  e.prm[2], e.env[0], e.env[1], e.env[2], e.chroma, e.luma, className(e.cls),
-                 e.keyword, verdictOf(e), e.glblClrAnm ? 1 : 0, e.prmAnm ? 1 : 0,
+                 e.keyword, verdictOf(e),
+                 e.hasAuthoredColor ? e.authoredColor[0] : 0,
+                 e.hasAuthoredColor ? e.authoredColor[1] : 0,
+                 e.hasAuthoredColor ? e.authoredColor[2] : 0,
+                 e.hasExtent ? e.extent : 0.0f, e.persistent ? "Y" : "n",
+                 e.glblClrAnm ? 1 : 0, e.prmAnm ? 1 : 0,
                  e.envAnm ? 1 : 0, e.hasRes ? anmTypeName(e.anmType) : "?", e.anmMaxFrm,
                  e.maxFrame, e.lifeTime, e.age, e.particles, e.baseSizeX, e.baseSizeY,
                  e.globalScale, e.userWork, buf, e.simple ? " (simple)" : "");
@@ -968,10 +1315,19 @@ void emitReport(const Params& params) {
     // ---- 3. sites ----------------------------------------------------------------------
     Log.info("[sites] {} live this frame{}", s_siteReportCount,
              s_siteReportCount >= kMaxSiteReport ? "  (CAPPED)" : "");
-    Log.info("  id class effect | position | members | derived colourFromGame | reach radius "
-             "radiance | adoptDist | maxJump jumps | mass boost");
+    Log.info("  id class effect | position | members | derived colour=SOURCE radius=SOURCE | "
+             "reach radius radiance | adoptDist | maxJump jumps | mass boost");
     Log.info("  members > 1 means several emitters merged into one light. adoptDist -1 means it "
              "adopted nothing and is on the configured fallback.");
+    Log.info("  colour= says which of THREE sources this site's hue came from. game: a light the "
+             "game itself registered nearby, which always wins. authored: the effect's own "
+             "authored colour ramp, fixed for the session. live: the emitter's current "
+             "registers, which is what every site used before 2026-08-13 and what they all fall "
+             "back to when the authored setting is off or the resource carried no colour.");
+    Log.info("  radius= says whether the sphere grew to the effect's authored extent (authored) "
+             "or stayed on the configured value for its branch (default). LANTERN on a line "
+             "means that site was solved from the lantern's own reach, radius and intensity, "
+             "with no global multiplier and no mass boost applied to it.");
     Log.info("  maxJump is the largest single-frame move this site has made, in world units, and "
              "jumps counts the frames it moved more than {:.0f}. A light that follows an actor "
              "shows a small maxJump and jumps 0; a light snapping between emitters shows a "
@@ -979,10 +1335,12 @@ void emitReport(const Params& params) {
              "stuttering shadow looks like from here.", kJumpNotable);
     for (int i = 0; i < s_siteReportCount; i++) {
         const SiteReportEntry& s = s_siteReport[i];
-        Log.info("  {:<4} {:<5} {:#06x} | {:8.0f} {:8.0f} {:8.0f} | {:2} | {} {} | {:7.1f} "
-                 "{:5.1f} {:9.2f} | {:8.1f} | {:7.1f} {:<6} | {:5.2f} {:5.2f}",
+        Log.info("  {:<4} {:<6} {:#06x} | {:8.0f} {:8.0f} {:8.0f} | {:2} | {} colour={:<8} "
+                 "radius={:<8}{} | {:7.1f} {:5.1f} {:9.2f} | {:8.1f} | {:7.1f} {:<6} | {:5.2f} "
+                 "{:5.2f}",
                  s.id, className(s.cls), s.effectId, s.pos[0], s.pos[1], s.pos[2], s.members,
-                 s.derived ? "derived  " : "undetermd", s.colorFromGame ? "gameColour" : "effColour",
+                 s.derived ? "derived  " : "undetermd", colorSourceName(s.colorSource),
+                 s.radiusAuthored ? "authored" : "default", s.lantern ? " LANTERN" : "",
                  s.reach, s.radius, s.radiance, s.vanillaDistance, s.maxJump, s.jumps, s.mass,
                  s.massBoost);
     }
@@ -1053,28 +1411,71 @@ void emitReport(const Params& params) {
     s_reportOverflowed = false;
 }
 
+// --- the class table -------------------------------------------------------------------
+//
+// One row per Class, and the ONLY place any of the three things a class decides is written
+// down. It replaced three separate switch statements that had to be kept in step by hand and
+// had already drifted once (the enum's own comment described a fallback-radius rule that no
+// branch implemented).
+//
+// There is deliberately no per-class brightness column. Nothing the artists authored is a
+// brightness, so a per-class radiance number would be a number this project invented, and
+// inventing one and then citing the class table for it is precisely how a plausible mechanism
+// gets recorded as a finding. Brightness comes from the game's own LIGHT_INFLUENCE::mPow where
+// there is one, from the undetermined settings where there is not, and - for exactly one
+// class - from the lantern's own settings.
+enum OffsetSource : uint8_t { kOffsetNone = 0, kOffsetFire, kOffsetGlow };
+
+struct ClassProfile {
+    const char* name;      // what the report and the readouts print
+    float weight;          // merge tie-break; ties fall through to the lower effect id
+    uint8_t offset;        // which of the two configured vertical offsets it takes
+};
+
+// Indexed by Class. Order must match the enum in effect_lights.hpp.
+const ClassProfile kClassTable[static_cast<int>(Class::Count)] = {
+    /* Other    */ {"other",  1.0f, kOffsetNone},
+    /* Fire     */ {"fire",   4.0f, kOffsetFire},
+    // Same weight as Fire while the lantern is not separated, so that a lantern standing in a
+    // bonfire merges exactly as it did when it was Class::Fire. classWeight adds the bump that
+    // makes it lead only when the toggle is on and the site is therefore meant to be the
+    // lantern's.
+    /* Lantern  */ {"lantrn", 4.0f, kOffsetFire},
+    /* Glow     */ {"glow",   2.0f, kOffsetGlow},
+    // Deliberately identical to Glow: the split exists to be seen and to be tunable later, not
+    // to reorder merges today. Giving it a lower weight would change which member donates the
+    // colour in a mixed cluster, which is a look change bought for nothing.
+    /* Spark    */ {"spark",  2.0f, kOffsetGlow},
+    /* Lava     */ {"lava",   3.0f, kOffsetNone},
+    /* Burst    */ {"burst",  1.5f, kOffsetFire},
+    /* Excluded */ {"excl",   1.0f, kOffsetNone},
+};
+
+const ClassProfile& profileOf(Class cls) {
+    const int i = static_cast<int>(cls);
+    return kClassTable[(i >= 0 && i < static_cast<int>(Class::Count)) ? i : 0];
+}
+
 float classOffset(Class cls, const Params& params) {
-    switch (cls) {
-    case Class::Fire:
-    case Class::Burst:
-        return params.fireOffset;
-    case Class::Glow:
-        return params.glowOffset;
-    default:
-        return 0.0f;
+    switch (profileOf(cls).offset) {
+    case kOffsetFire: return params.fireOffset;
+    case kOffsetGlow: return params.glowOffset;
+    default: return 0.0f;
     }
 }
 
 // Weight decides which member of a merged site donates its position and colour. A core fire
-// beats a glow beats anything else; within a class, a bigger contribution wins.
-float classWeight(Class cls) {
-    switch (cls) {
-    case Class::Fire: return 4.0f;
-    case Class::Lava: return 3.0f;
-    case Class::Glow: return 2.0f;
-    case Class::Burst: return 1.5f;
-    default: return 1.0f;
+// beats a glow beats anything else; equal weights fall through to the lower effect id, which is
+// what keeps the choice stable frame to frame.
+float classWeight(Class cls, const Params& params) {
+    const float w = profileOf(cls).weight;
+    // The lantern outranks every other flame only while it is being solved separately. If it
+    // did not, Link standing at a bonfire would hand the site to the bonfire and his own
+    // settings would do nothing at the one moment he can see them.
+    if (cls == Class::Lantern && params.lanternSeparate) {
+        return w + 1.0f;
     }
+    return w;
 }
 
 // Radiance for a sphere light standing in for a light that was meant to reach `reach` units.
@@ -1271,6 +1672,19 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             c.cls = cls;
             c.effectId = effectId;
 
+            // Authored hue and extent, from the loaded resource rather than from the emitter's
+            // live registers. Read AFTER the accept test above on purpose: the test asks "is
+            // this drawing light right now", which only the live colour can answer.
+            {
+                const Authored& a = authoredFor(effectId, emitter);
+                c.hasAuthoredColor = a.hasColor;
+                c.authoredColor[0] = a.color[0];
+                c.authoredColor[1] = a.color[1];
+                c.authoredColor[2] = a.color[2];
+                c.hasExtent = a.hasExtent;
+                c.extent = a.extent;
+            }
+
             if (!isFinite3(c.pos)) {
                 continue;
             }
@@ -1360,6 +1774,21 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         c.weight = 1.0f;
         c.cls = cls;
         c.effectId = rec.effectId;
+
+        // The same authored read as the sweep. rec.emitter is the SHARED emitter for this
+        // effect id, and its RESOURCE is the right thing to ask - every instance of a simple
+        // effect is drawn from that one resource, so the authored colour is the same for all of
+        // them where the shared emitter's live colour is a free-running cycle none of them
+        // started (d_particle.cpp:807).
+        {
+            const Authored& a = authoredFor(rec.effectId, rec.emitter);
+            c.hasAuthoredColor = a.hasColor;
+            c.authoredColor[0] = a.color[0];
+            c.authoredColor[1] = a.color[1];
+            c.authoredColor[2] = a.color[2];
+            c.hasExtent = a.hasExtent;
+            c.extent = a.extent;
+        }
 
         if (!isFinite3(c.pos)) {
             continue;
@@ -1480,14 +1909,7 @@ int gatherVanillaLights(VanillaLight* out, int cap) {
 }  // namespace
 
 const char* className(Class cls) {
-    switch (cls) {
-    case Class::Fire: return "fire";
-    case Class::Glow: return "glow";
-    case Class::Lava: return "lava";
-    case Class::Burst: return "burst";
-    case Class::Excluded: return "excl";
-    default: return "other";
-    }
+    return profileOf(cls).name;
 }
 
 void setRecording(bool enabled) {
@@ -1591,6 +2013,14 @@ const std::vector<Site>& collect(const Params& params) {
         Class cls;
         uint16_t effectId;
         int members;
+        // Taken from the LEADING member, exactly like the position and the colour, and for the
+        // same reason: the lead is chosen without any animating term, so anything carried with
+        // it is stable for as long as the membership is. Extent is the one exception - it is
+        // the largest of the members', because a site is as big as the biggest thing in it.
+        float authoredColor[3];
+        bool hasAuthoredColor;
+        float extent;
+        bool hasExtent;
     };
 
     Cluster clusters[kMaxSites];
@@ -1626,12 +2056,22 @@ const std::vector<Site>& collect(const Params& params) {
             n.cls = c.cls;
             n.effectId = c.effectId;
             n.members = 1;
+            n.authoredColor[0] = c.authoredColor[0];
+            n.authoredColor[1] = c.authoredColor[1];
+            n.authoredColor[2] = c.authoredColor[2];
+            n.hasAuthoredColor = c.hasAuthoredColor;
+            n.extent = c.hasExtent ? c.extent : 0.0f;
+            n.hasExtent = c.hasExtent;
             continue;
         }
 
         Cluster& t = clusters[target];
         t.members++;
         t.mass += c.weight;
+        if (c.hasExtent && c.extent > t.extent) {
+            t.extent = c.extent;
+            t.hasExtent = true;
+        }
 
         // The leading member donates the position and colour rather than a centroid: a centroid
         // drifts as members come and go, and a light that drifts has visible shadow swim.
@@ -1645,10 +2085,16 @@ const std::vector<Site>& collect(const Params& params) {
         // jump, which is worse - a jump is what reads as a stuttering shadow.
         //
         // classWeight is a constant per class and effectId is fixed, so this is stable frame to
-        // frame for as long as the membership is. Strictly greater, so a tie keeps the incumbent
-        // rather than flapping on iteration order.
-        const bool leads = c.cls != t.cls ? classWeight(c.cls) > classWeight(t.cls)
-                                          : c.effectId < t.effectId;
+        // frame for as long as the membership is.
+        //
+        // Compared on the WEIGHT rather than on the class, which matters now that two classes
+        // can share a weight: Spark carries Glow's, and Lantern carries Fire's until it is
+        // being solved separately. Falling through to the lower effect id whenever the weights
+        // tie keeps that case decided by a fixed number instead of by sweep order - and for
+        // two members of the same class it is exactly the rule that was here before.
+        const float cw = classWeight(c.cls, params);
+        const float tw = classWeight(t.cls, params);
+        const bool leads = cw != tw ? cw > tw : c.effectId < t.effectId;
         if (leads) {
             t.pos[0] = c.pos[0];
             t.pos[1] = c.pos[1];
@@ -1658,6 +2104,10 @@ const std::vector<Site>& collect(const Params& params) {
             t.color[2] = c.color[2];
             t.cls = c.cls;
             t.effectId = c.effectId;
+            t.authoredColor[0] = c.authoredColor[0];
+            t.authoredColor[1] = c.authoredColor[1];
+            t.authoredColor[2] = c.authoredColor[2];
+            t.hasAuthoredColor = c.hasAuthoredColor;
         }
     }
 
@@ -1738,6 +2188,14 @@ const std::vector<Site>& collect(const Params& params) {
         int members;
         bool derived;         // reach came from the game
         bool colorFromGame;   // colour came from the game (a wider set - see gatherVanillaLights)
+        // Which of the three possible sources each value actually came from, so the site report
+        // can say "authored" or "defaulted" per site rather than leaving it to be inferred from
+        // the settings. This is the instrumentation half of the derivation change: without it a
+        // hue that came out wrong gives no way to tell whether the authored ramp was even read.
+        uint8_t colorSource;  // ColorSource below
+        bool radiusAuthored;  // the sphere grew to the effect's authored extent
+        bool lantern;         // solved from the lantern's own settings, not the shared ones
+        float intensity;      // the master multiplier this site gets - 1.0 for the lantern
         float priority;
         // Summed emitter alpha at this site, and what it multiplied reach by. Report-only, so a
         // log can show whether a bonfire actually measured as one rather than leaving the
@@ -1772,11 +2230,29 @@ const std::vector<Site>& collect(const Params& params) {
             p.color[1] = vanilla[v].color[1];
             p.color[2] = vanilla[v].color[2];
             p.colorFromGame = true;
+            p.colorSource = kColorGame;
+        } else if (params.authoredColor && clusters[i].hasAuthoredColor) {
+            // The effect's OWN authored colour, from the ramp its artists wrote, in preference
+            // to the register the emitter is holding this frame. Three things move the live
+            // register and none of them is the fire getting a different colour: a global colour
+            // animation walking its key frame, the kankyo time-of-day tint the game multiplies
+            // into effects carrying resUserWork bit 0x20 or 0x40 (d_particle.cpp:1568-1620), and
+            // the free-running cycle on a shared simple emitter that every instance reads the
+            // same unrelated phase of.
+            //
+            // Radiance is normalised by its brightest channel a few lines further down, so this
+            // changes HUE only - never how bright a light is.
+            p.color[0] = clusters[i].authoredColor[0];
+            p.color[1] = clusters[i].authoredColor[1];
+            p.color[2] = clusters[i].authoredColor[2];
+            p.colorFromGame = false;
+            p.colorSource = kColorAuthored;
         } else {
             p.color[0] = clusters[i].color[0];
             p.color[1] = clusters[i].color[1];
             p.color[2] = clusters[i].color[2];
             p.colorFromGame = false;
+            p.colorSource = kColorLive;
         }
 
         // The adoption distance, recorded whether or not the reach came with it. This is the
@@ -1815,12 +2291,14 @@ const std::vector<Site>& collect(const Params& params) {
 
         if (v >= 0 && vanilla[v].reachKnown) {
             p.derived = true;
-            // Scaled rather than replaced: the game's mPow is the only thing that distinguishes a
-            // bonfire from a candle, so a fixed reach here would flatten every derived light onto
-            // one size. Note the two places reach is read - solveIntensity, where radiance goes as
-            // its square, and p.priority below, which is why this is not simply derivedIntensity
-            // by another name: it also decides who survives maxLights.
-            p.reach = vanilla[v].reach * params.derivedReach * massBoost;
+            // The game's authored reach, scaled rather than replaced: LIGHT_INFLUENCE::mPow is
+            // the only genuinely photometric number the artists left anywhere, and the only
+            // thing that distinguishes a bonfire from a candle, so a fixed reach here would
+            // flatten every derived light onto one size. Note the two places reach is read -
+            // solveIntensity, where radiance goes as its square, and p.priority below, which is
+            // why the reach multiplier is not simply an intensity by another name: it also
+            // decides who survives maxLights.
+            p.reach = vanilla[v].reach * massBoost;
             p.radius = params.derivedRadius;
             p.scale = params.derivedIntensity;
         } else {
@@ -1828,6 +2306,44 @@ const std::vector<Site>& collect(const Params& params) {
             p.reach = params.undeterminedReach * massBoost;
             p.radius = params.undeterminedRadius;
             p.scale = params.undeterminedIntensity;
+        }
+
+        // The authored extent, where the artists made the effect bigger than the configured
+        // sphere. Only ever GROWS the radius, never shrinks it: the two configured radii are
+        // what every existing tuning was done against, so the worst this can do when it is
+        // switched on is soften a light that was already the right brightness. Radiance is
+        // solved to carry to the same reach whatever the radius is, so this changes softness
+        // and near-field falloff rather than how far the light travels.
+        p.radiusAuthored = false;
+        if (params.authoredRadius && clusters[i].hasExtent &&
+            clusters[i].extent > p.radius && clusters[i].extent <= kMaxAuthoredRadius) {
+            p.radius = clusters[i].extent;
+            p.radiusAuthored = true;
+        }
+
+        // The lantern, when it is being solved separately: its three values replace the
+        // branch's outright and the global multipliers do NOT apply, which is what makes them
+        // independent rather than merely additional. The mass boost does not apply either - the
+        // lantern is one emitter, so it would be 1 anyway, and leaving it out means the three
+        // settings are the whole story.
+        //
+        // The colour is untouched. The game registers a real lamp light at the flame point and
+        // that light's colour is the artists' own; nothing in the survey said it was wrong.
+        p.lantern = false;
+        p.intensity = params.intensity;
+        if (params.lanternSeparate && p.cls == Class::Lantern) {
+            p.lantern = true;
+            p.derived = false;
+            p.radiusAuthored = false;
+            p.reach = params.lanternReach;
+            p.radius = params.lanternRadius;
+            p.scale = params.lanternIntensity;
+            p.intensity = 1.0f;
+        } else {
+            // The two global multipliers, applied at one point to both branches. Defaulting to
+            // 1.0, so a stock configuration solves exactly the numbers the branch produced.
+            p.reach *= params.reachScale;
+            p.radius *= params.radiusScale;
         }
 
         // Closer and brighter first, so the budget drops the lights nobody will notice.
@@ -1927,9 +2443,12 @@ const std::vector<Site>& collect(const Params& params) {
         match->vanillaDistance = p.vanillaDistance;
         match->mass = p.mass;
         match->massBoost = p.massBoost;
+        match->colorSource = p.colorSource;
+        match->radiusAuthored = p.radiusAuthored;
+        match->lantern = p.lantern;
 
         const float intensity =
-            solveIntensity(p.reach, match->site.radius, p.scale * params.intensity);
+            solveIntensity(p.reach, match->site.radius, p.scale * p.intensity);
         const float brightest = std::max(p.color[0], std::max(p.color[1], p.color[2]));
         for (int c = 0; c < 3; c++) {
             match->site.radiance[c] =
@@ -1980,14 +2499,38 @@ const std::vector<Site>& collect(const Params& params) {
     const size_t cap = params.maxLights > 0 ? static_cast<size_t>(params.maxLights)
                                             : s_tracked.size();
 
+    // Counted here rather than in the solve loop above, so that these agree with s_stats.sites
+    // EXACTLY - the grace period returns sites that were not refreshed this frame, and those
+    // are still being drawn with the values they were last solved from. `derived` and
+    // `colorFromGame` are counted in the solve loop and therefore do not include grace-held
+    // sites; that predates this and is deliberately left alone rather than changed underneath
+    // a readout somebody may have been reading for a week.
+    const auto countSite = [](const TrackedSite& t) {
+        if (t.colorSource == kColorAuthored) {
+            s_stats.authoredColor++;
+        }
+        if (t.radiusAuthored) {
+            s_stats.authoredRadius++;
+        }
+        if (t.lantern) {
+            s_stats.lantern++;
+        }
+        const int ci = static_cast<int>(t.site.cls);
+        if (ci >= 0 && ci < static_cast<int>(Class::Count)) {
+            s_stats.byClass[ci]++;
+        }
+    };
+
     for (const TrackedSite& t : s_tracked) {
         if (t.seen && s_sites.size() < cap) {
             s_sites.push_back(t.site);
+            countSite(t);
         }
     }
     for (const TrackedSite& t : s_tracked) {
         if (!t.seen && s_sites.size() < cap) {
             s_sites.push_back(t.site);
+            countSite(t);
         }
     }
 
