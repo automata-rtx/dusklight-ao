@@ -21,7 +21,7 @@ statement: `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 below exists **only in our dxvk-remix fork**
 (`src/dxvk/rtx_render/rtx_dusklight_*`). Stock Remix will run the game and
 path-trace it, but those keys are simply unknown to it. The game and the DLL are
-also a single protocol — currently **14** — so build both from the same commit
+also a single protocol — currently **15** — so build both from the same commit
 point and read the Dusklight tab's protocol line before debugging anything else.
 
 The complete design, GX→D3D9 mapping spec, architecture notes, and the living

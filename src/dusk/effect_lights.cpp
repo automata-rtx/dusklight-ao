@@ -449,14 +449,24 @@ Class classifyByName(uint16_t id) {
     //   Burst > Lantern  no name collides today (no kantera name contains bomb/baku/explo),
     //                    so this ordering is free; it is stated so that the invariant "one-shot
     //                    violence outranks every steady flame" survives the new class.
-    //   Spark < Burst    THE 20 ZM_*_BombInsectSpark* NAMES STAY Class::Burst, and therefore
-    //                    stay dark by default. They are the electric bugs - persistent, not
-    //                    one-shot - so on the evidence they are misclassified, and moving Spark
-    //                    above Burst would fix it. That is deliberately NOT done here: it would
-    //                    light twenty effects that are dark today, which is a look change with
-    //                    no way to un-see it, and the authored persistence now printed in the
-    //                    report (maxFrame 0 = continuous) is the measurement that should decide
-    //                    it. docs/effect-lights.md section 3.1.
+    //   Spark < Burst    THE 20 ZM_*_BombInsectSpark* NAMES STAY Class::Burst, and the reason
+    //                    RECORDED HERE UNTIL 2026-08-13 WAS FACTUALLY WRONG. It said they are
+    //                    "the electric bugs". They are not. They belong to d_a_nbomb - the
+    //                    BOMBLING, Link's crawling bomb-bug - and are its fuse spark:
+    //                    d_a_nbomb.cpp:488 `static u16 enemyBombID[] = {0xA0D..0xA11}`, set in
+    //                    daNbomb_c::setEffect and pinned to the bomb's own animation matrix.
+    //                    That is the ONLY reference to any of the 20 anywhere in src/ or
+    //                    include/; the other 15 (ZM_S_* and both SparkTornado sets) have no
+    //                    caller at all. So the conclusion survives for a better reason than the
+    //                    one given: a bomb's fuse belongs with the bomb, and Burst is where a
+    //                    bomb goes. Nothing here was reclassified.
+    //
+    //                    THE TWILIGHT BUG'S SPARK IS ZI_S_ym_elecAt_a..d (0x393-0x396), spawned
+    //                    by daE_YM_c::setElecEffect1/2 (d_a_e_ym.cpp:247-286) - 闇虫 yami mushi,
+    //                    the Shadow Insect. It was NEVER in Burst and was never gated: it sat in
+    //                    Class::Other, which is admitted on the additive-and-glow rule alone. It
+    //                    is in Spark below for its NAME, not to change whether it lights - see
+    //                    the Spark branch.
     //
     // Re-run over all 3205 names in d_particle_name.cpp on 2026-08-13, comparing every name's
     // class before and after this revision: exactly 26 names move, 5 from Fire to Lantern and
@@ -534,7 +544,32 @@ Class classifyByName(uint16_t id) {
     // they are a different light: sub-second, high-frequency and tiny, where a glow is steady
     // and soft. They keep Glow's offset and Glow's merge weight, so the split is visible in the
     // report and inert in the picture until someone decides otherwise.
-    if (nameHas(name, "kira") || nameHas(name, "pika") || nameHas(name, "spark")) {
+    //
+    // "elecat" and "yb_elec" are the two SHADOW INSECT sparks, added 2026-08-13. Blast radius
+    // replayed over all 3205 names in d_particle_name.cpp before and after: EXACTLY 8 names
+    // move, all Other -> Spark, and not one name enters or leaves Excluded, Burst, Lava, Fire,
+    // Lantern or Glow.
+    //
+    //   elecat   4  ZI_S_ym_elecAt_a..d   0x393-0x396  daE_YM_c   (d_a_e_ym.cpp:257-282)
+    //   yb_elec  4  ZI_S_yb_elec_a..d     0x630-0x633  daE_YMB_c  (d_a_e_ymb.cpp:146-149)
+    //
+    // BOTH SPELLINGS ARE DELIBERATELY NARROW, and bare "elec" is deliberately NOT used. "elec"
+    // takes 15 names: the 8 above plus ZI_S_dk_elec_a..f (0x4BE-0x4C3, no caller anywhere in
+    // the tree) and ZI_S_elecGate_a (0x9F2), which is a dungeon gate (d_a_obj_lv6egate.cpp:192)
+    // and not a creature's spark. Widening to "elec" to save two keywords buys one live false
+    // positive, so it was not done - counts measured, not estimated.
+    //
+    // THIS DOES NOT DECIDE WHETHER THEY LIGHT. All 8 were Class::Other before, and Other is
+    // ungated exactly as Spark is - both are admitted on the additive-and-glow rule alone. What
+    // the reclassification buys is that the report NAMES them (keyword `elecat`/`yb_elec`
+    // instead of `-`), that the Spark gate and the Spark hold below reach them, and that the
+    // class-split readout counts them. The one thing it does change in the picture is the merge
+    // tie-break, 1.0 -> 2.0, and for these 8 that is inert: the four elecAt ids always
+    // co-locate with each other on one body joint, and setDigEffect reuses the SAME two emitter
+    // handles (field_0xad8/0xadc, d_a_e_ym.cpp:242-243 vs :257-260), so the dig markers and the
+    // spark cannot be alive at once to compete for the site.
+    if (nameHas(name, "kira") || nameHas(name, "pika") || nameHas(name, "spark") ||
+        nameHas(name, "elecat") || nameHas(name, "yb_elec")) {
         return Class::Spark;
     }
 
@@ -563,7 +598,7 @@ const char* classKeyword(uint16_t id) {
     static const char* const kLantern[] = {"kantera", nullptr};
     static const char* const kFire[] = {"fire",   "honoo", "hono",  "kaen",   "flame", "taimatsu",
                                         "maki",   "torch", "ablaze", "kagarib", nullptr};
-    static const char* const kSpark[] = {"kira", "pika", "spark", nullptr};
+    static const char* const kSpark[] = {"kira", "pika", "spark", "elecat", "yb_elec", nullptr};
     static const char* const kGlow[] = {"hikari", "light", "glow", "aura", "shine", nullptr};
     static const char* const* const kLists[] = {kLava,    kExcluded, kBurst, kLantern,
                                                 kFire,    kSpark,    kGlow};
@@ -1149,6 +1184,8 @@ void accumulatePeak() {
     hi(s_peak.vanillaSpot, s_stats.vanillaSpot);
     hi(s_peak.droppedCandidates, s_stats.droppedCandidates);
     hi(s_peak.droppedSites, s_stats.droppedSites);
+    hi(s_peak.sparkSeen, s_stats.sparkSeen);
+    hi(s_peak.sparkLit, s_stats.sparkLit);
 }
 
 void emitReport(const Params& params) {
@@ -1216,6 +1253,20 @@ void emitReport(const Params& params) {
     Log.info("    dropped: candidates {}  sites {}   (hard array limits, not the budget - a "
              "non-zero here means lights went missing with every other counter healthy)",
              s_peak.droppedCandidates, s_peak.droppedSites);
+    // Class::Spark reached the rule / earned a light, peak and this frame. This is the line that
+    // settles the shadow insect on its own, so it says how to read itself: the bug's spark is
+    // ZI_S_ym_elecAt_a..d (0x393-0x396) and the big one's is ZI_S_yb_elec_a..d (0x630-0x633),
+    // and every one of those ids has its own row with a verdict in the [effects] section below.
+    Log.info("    spark: seen {} lit {} (this frame {} / {})   gate {}  hold +{} frames on top "
+             "of the {}-frame base grace",
+             s_peak.sparkSeen, s_peak.sparkLit, s_stats.sparkSeen, s_stats.sparkLit,
+             params.sparks ? "on" : "OFF", params.sparkHold, kSiteGraceFrames);
+    Log.info("      seen counts Spark emitters the game was DRAWING, lit counts those the "
+             "additive-and-glow rule then accepted. seen>0 with lit==0 is the negative result: "
+             "the shadow insect sparked in view and the rule refused it, which is a property of "
+             "the .jpa's blend/colour and NOT something a classification change can fix - read "
+             "the 0x393-0x396 rows' verdict for which clause said no. seen==0 means none was "
+             "ever in view (or its draw group is filtered), a different question entirely.");
 
     Log.info("  SINCE LAUNCH - never reset, so compare two presses by subtracting:");
     Log.info("    bridge: creates {}  destroys {}   (creates is per light UPDATE, not per light "
@@ -1642,6 +1693,12 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
             noteForReport(effectId, shape, prm, env, cls, additive, glow, false, emitter,
                           color);
 
+            // Counted BEFORE the rule, so that "the shadow insect was sparking in front of the
+            // camera and the rule refused it" is a readable outcome rather than an absence.
+            if (cls == Class::Spark) {
+                s_stats.sparkSeen++;
+            }
+
             if (!additive || !glow) {
                 continue;
             }
@@ -1657,6 +1714,13 @@ void collectEmitters(const Params& params, Candidate* candidates, int& count) {
 
             if (cls == Class::Burst && !params.bursts) {
                 continue;
+            }
+
+            if (cls == Class::Spark) {
+                if (!params.sparks) {
+                    continue;
+                }
+                s_stats.sparkLit++;
             }
 
             Candidate c;
@@ -1749,6 +1813,13 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
         noteForReport(rec.effectId, shape, prm, env, cls, additive, glow, true, rec.emitter,
                       color);
 
+        // Same two counters as the sweep, and they must exist on BOTH paths: collectSimple
+        // applying none of the sweep's gates is exactly the defect that had wolf-only dig
+        // markers lighting Hyrule Field on 2026-08-07.
+        if (cls == Class::Spark) {
+            s_stats.sparkSeen++;
+        }
+
         if (!additive || !glow) {
             continue;
         }
@@ -1762,6 +1833,13 @@ void collectSimple(const Params& params, Candidate* candidates, int& count) {
 
         if (cls == Class::Burst && !params.bursts) {
             continue;
+        }
+
+        if (cls == Class::Spark) {
+            if (!params.sparks) {
+                continue;
+            }
+            s_stats.sparkLit++;
         }
 
         Candidate c;
@@ -2478,11 +2556,24 @@ const std::vector<Site>& collect(const Params& params) {
     // game are re-set every few frames rather than continuously, so without this they would
     // strobe. The cost is that a fire that genuinely goes out lingers for the grace period,
     // which at this length is under a fifth of a second.
+    //
+    // Class::Spark is held for kSiteGraceFrames + params.sparkHold, and that extra is the
+    // periodicity answer for the shadow insect. Its spark is not a timer, it is a set of
+    // state-machine windows, and the shortest is 5-15 frames (d_a_e_ym.cpp:2624, initFireFly on
+    // a wall bounce) - shorter than the base grace itself. Without the extra hold a bug
+    // bouncing around a room destroys and re-creates its site repeatedly, and because a site's
+    // id is its Remix light hash, every re-creation throws away that light's RTXDI temporal
+    // history. The hold keeps ONE id alive across the gaps inside a burst. It does not extend
+    // the light indefinitely: when the sparking genuinely stops, the site still goes out.
     for (size_t i = s_tracked.size(); i-- > 0;) {
         if (s_tracked[i].seen) {
             continue;
         }
-        if (++s_tracked[i].missingFrames > kSiteGraceFrames) {
+        int limit = kSiteGraceFrames;
+        if (s_tracked[i].site.cls == Class::Spark && params.sparkHold > 0) {
+            limit += params.sparkHold;
+        }
+        if (++s_tracked[i].missingFrames > limit) {
             s_tracked.erase(s_tracked.begin() +
                             static_cast<std::vector<TrackedSite>::difference_type>(i));
         }

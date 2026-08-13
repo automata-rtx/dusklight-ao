@@ -1714,6 +1714,24 @@ void updateEffectLights() {
                                          game.effectLightMaxDistance.getValue());
     params.bursts = readOptionBool("rtx.dusklight.game.effectLightBursts",
                                    game.effectLightBursts.getValue());
+    // Class::Spark. `sparks` defaults ON because that is what the game already did - every
+    // Spark name was admitted before the gate existed - so it is an undo switch rather than a
+    // new light. `sparkHold` is clamped non-negative because a negative hold would shorten the
+    // base grace period every class relies on.
+    //
+    // Both carry a game-side ConfigVar fallback like every other effectLight* option above, so
+    // they can be preset from settings.json before Remix connects. The session that added them
+    // left literal fallbacks instead, because settings.{h,cpp} was outside its brief; that gap
+    // was closed immediately rather than left, since an option that behaves differently from its
+    // twenty siblings is a trap for whoever finds it next.
+    // The defaults live in TWO places - here via settings.cpp and in the fork's
+    // rtx_dusklight_game.h - and nothing checks that they agree. Keep them in step by hand.
+    params.sparks = readOptionBool("rtx.dusklight.game.effectLightSparks",
+                                   game.effectLightSparks.getValue());
+    params.sparkHold =
+        std::max(readOptionInt("rtx.dusklight.game.effectLightSparkHold",
+                               game.effectLightSparkHold.getValue()),
+                 0);
     params.minChroma = readOptionFloat("rtx.dusklight.game.effectLightMinChroma",
                                        game.effectLightMinChroma.getValue());
     params.minLuma = readOptionFloat("rtx.dusklight.game.effectLightMinLuma",
@@ -2497,7 +2515,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "14");
+    push("rtx.dusklight.env.protocol", "15");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -2751,6 +2769,17 @@ void pushLightStatus() {
             n += static_cast<size_t>(written);
         }
         push("rtx.dusklight.env.effLightsClasses", classes);
+    }
+
+    // Class::Spark seen vs lit, the shadow insect's readout. Two numbers because they answer
+    // two different failures: "seen 4 lit 0" means the bug sparked in view and the
+    // additive-and-glow rule refused it, "seen 0 lit 0" means no spark was ever in view. A
+    // single "lit" count could not tell those apart, and they have opposite fixes.
+    {
+        char sparks[64];
+        std::snprintf(sparks, sizeof(sparks), "seen %d  lit %d", s_effectDebug.stats.sparkSeen,
+                      s_effectDebug.stats.sparkLit);
+        push("rtx.dusklight.env.effLightsSparks", sparks);
     }
 
     // Room lights. found vs drawn is the same separation the mirror needed: "this room has no

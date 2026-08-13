@@ -107,6 +107,9 @@ UserSettings g_userSettings = {
         .effectLightMaxLights {"game.effectLightMaxLights", 32},
         .effectLightMaxDistance {"game.effectLightMaxDistance", 12000.0f},
         .effectLightBursts {"game.effectLightBursts", false},
+        // Both must stay in step with the fork's declared defaults in rtx_dusklight_game.h.
+        .effectLightSparks {"game.effectLightSparks", true},
+        .effectLightSparkHold {"game.effectLightSparkHold", 12},
         .effectLightMinChroma {"game.effectLightMinChroma", 0.50f},
         .effectLightMinLuma {"game.effectLightMinLuma", 0.70f},
         .effectLightVolumetric {"game.effectLightVolumetric", 1.0f},
@@ -387,6 +390,8 @@ void registerSettings() {
     Register(g_userSettings.game.effectLightMaxLights);
     Register(g_userSettings.game.effectLightMaxDistance);
     Register(g_userSettings.game.effectLightBursts);
+    Register(g_userSettings.game.effectLightSparks);
+    Register(g_userSettings.game.effectLightSparkHold);
     Register(g_userSettings.game.effectLightMinChroma);
     Register(g_userSettings.game.effectLightMinLuma);
     Register(g_userSettings.game.effectLightVolumetric);

@@ -364,7 +364,7 @@ The rule above decides **whether**. The effect's own name decides **what kind**:
 | `Burst` | `bakuha`, `explo`, `bomb`, `baku` | one-shot; **off by default**, because a two-frame light reads as a flicker |
 | `Lantern` | `kantera` | **Link's lamp, and only it.** カンテラ *kantera*. The one class that can be given settings of its own — §5.4 |
 | `Fire` | `fire`, `honoo`, `hono`, `kaen`, `flame`, `taimatsu`, `maki`, `torch`, `ablaze`, `kagarib` | wants a small upward offset — the emitter sits at the fuel, the light belongs in the flame |
-| `Spark` | `kira`, `pika`, `spark` | きらきら *kirakira*, glitter. Sub-second and tiny where a glow is steady and soft. **Takes Glow's offset and Glow's weight**, so the split moves nothing today |
+| `Spark` | `kira`, `pika`, `spark`, **`elecat`, `yb_elec`** | きらきら *kirakira*, glitter, plus the Shadow Insect's electric spark — §3.2. Sub-second and tiny where a glow is steady and soft. **Takes Glow's offset and Glow's weight**, so the split moves nothing today |
 | `Glow` | `hikari`, `light`, `glow`, `aura`, `shine` | no offset; usually smaller and cooler |
 | `Other` | anything else that passed §3 | global defaults |
 
@@ -472,20 +472,189 @@ the lists over all 3,205 names rather than chosen by ear:
 - **`Burst` outranks `Lantern`.** No name collides today; the ordering is stated
   so the invariant "one-shot violence outranks every steady flame" survives the
   new class.
-- **`Spark` sits below `Burst`, deliberately, and this one is a decision rather
-  than a fact.** The 20 `ZM_*_BombInsectSpark*` names — the electric bugs — are
-  claimed by `bomb` and are therefore `Burst`, and therefore **dark by default**.
-  On the evidence they are misclassified: they are persistent, not one-shot.
-  Moving `Spark` above `Burst` would fix it and would also light twenty effects
-  that are dark today, which is a look change nobody asked for and nobody can
-  un-see. The authored persistence now printed in the classification report
-  (`persist=Y`, from the authored `maxFrame`) is the measurement that should
-  settle it — **it is measured today and acted on by nothing.**
+- **`Spark` sits below `Burst`, and the reason recorded here until 2026-08-13
+  was factually wrong.** It said the 20 `ZM_*_BombInsectSpark*` names were "the
+  electric bugs", misclassified as `Burst`, and that moving `Spark` above `Burst`
+  would light twenty effects nobody had asked for.
+
+  **They are not the electric bugs.** They belong to `d_a_nbomb` — the
+  **Bombling**, Link's crawling bomb-bug — and they are its fuse spark. The only
+  reference to any of the 20 anywhere in `src/` or `include/` is
+  `d_a_nbomb.cpp:488`, `static u16 enemyBombID[] = {0xA0D, 0xA0E, 0xA0F, 0xA10,
+  0xA11}`, set in `daNbomb_c::setEffect` and pinned to the bomb's own animation
+  matrix. The other 15 — the `ZM_S_` set and both `SparkTornado` sets — have **no
+  caller at all**. What "Tornado" is could not be established from source and is
+  deliberately not guessed at here.
+
+  So the *conclusion* survives, for a better reason than the one given: a bomb's
+  fuse belongs with the bomb, and `Burst` is where a bomb goes. **Nothing was
+  reclassified, and no twenty effects lit.** The ordering stands unchanged.
+
+  This is the failure mode rule 3 exists for — a plausible reading of a name
+  recorded as a finding, and then load-bearing for a month. `BombInsect` reads as
+  "the insect that is electric"; it is "the insect that is a bomb". The names are
+  Japanese-team English and the actor is the authority, not the name.
 
 Reading the effect's *name* is not tagging in the sense rule 1 forbids: the
 name is the game's own identity for the effect, shipped in the game's own
 table, at exactly the granularity the game itself uses. Tagging is hashing an
 asset the game never named and hand-authoring an answer.
+
+### 3.2 The Shadow Insect — the one effect the game says is the *only* thing visible
+
+闇虫 *yami mushi*, the Shadow Insect (`d_a_e_ym.cpp:1-4`; the header calls it
+"Twilight Insect", `d_a_e_ym.h:18`; its own debug panel registers as 闇の虫,
+`:3618`). The twilight bug Wolf Link hunts.
+
+**Its spark is `ZI_S_ym_elecAt_a..d`, ids 0x393–0x396**, spawned by
+`setElecEffect1` (`_a`, `_b`) and `setElecEffect2` (all four) at
+`d_a_e_ym.cpp:247-286`, through the **level path** — one persistent emitter per
+key, re-positioned each call — at the model's own joint matrix, `getAnmMtx(8)`
+when flying and `getAnmMtx(0)` otherwise. So the emitter sits **on the insect's
+body**, which is exactly the anchor §1 wants and needs no special case.
+
+The large one, `d_a_e_ymb` (Twilit Bloat), has its own family:
+`ZI_S_yb_elec_a..d`, 0x630–0x633 (`d_a_e_ymb.cpp:146-149`).
+
+#### Why this one is worth stating separately
+
+**The body is not drawn in normal view, and the spark is.** `daE_YM_c::draw`
+(`d_a_e_ym.cpp:128-196`) ramps `field_0x6d4` — a 0–255 alpha — towards 255 while
+wolf senses are up (or the bug is knocked over, `ACT_DOWN`) and towards **zero**
+otherwise, and then:
+
+```cpp
+:143   if (field_0x710 != 0) {
+:144       if (!field_0x6d4) return 1;     // returns BEFORE entryDL() and before the shadow
+```
+
+That is a **rendering-list** hide, not a separate senses pass: the model never
+enters any draw list. The elec emitters are separate `JPABaseEmitter`s owned by
+`dPa_control_c` and drawn by the particle system's own pass, and **nothing in
+`d_a_e_ym.cpp` ever calls `stopDrawParticle`, `setGlobalAlpha`,
+`deleteAllParticle`, `setGlobalPrmColor` or `setGlobalParticleScale`** — grepped
+for all five, zero hits. Not one of the 20 `setElecEffect*` call sites is
+conditioned on `field_0x6d4` or on `checkNowWolfEyeUp`.
+
+**And the game goes further than "not suppressed" — it deliberately sparks
+*because* the bug is invisible** (`executeSurprise`, `:1401-1411`):
+
+```cpp
+if (!field_0x6d4 && cM_rnd() < 0.3f) {         // alpha exactly zero => invisible in normal view
+    if (field_0x6a1 == 1) setActionMode(ACT_ELECTRIC);   // the state whose content IS the spark
+```
+
+A 30% chance, taken **only** when the model's alpha is zero, to enter the state
+that emits `ym_elecAt`. That is the original team writing "when the player cannot
+see it, make it spark" into the state machine. **Verified from source**, and it
+is the strongest available argument for lighting it: the light *is* the gameplay
+cue.
+
+#### What was and was not changed
+
+**They were never gated, and they are not newly lit.** All eight names were
+`Class::Other`, and `Other` is admitted on the additive-and-glow rule alone —
+exactly as `Spark` is. Moving them to `Spark` (`elecat`, `yb_elec`) buys three
+things and changes no gate:
+
+1. the report and the readouts **name** them, instead of printing keyword `-`;
+2. the `effectLightSparks` switch and the `effectLightSparkHold` frames reach
+   them;
+3. a future glow offset or spark-specific setting reaches them.
+
+**Blast radius, replayed over all 3,205 names before and after: exactly 8 move,
+all `Other` → `Spark`, and not one name enters or leaves `Excluded`, `Burst`,
+`Lava`, `Fire`, `Lantern` or `Glow`.** Bare `elec` was measured and **rejected**:
+it takes 15 names, adding `ZI_S_dk_elec_a..f` (no caller anywhere) and
+`ZI_S_elecGate_a`, a dungeon gate (`d_a_obj_lv6egate.cpp:192`) — one live false
+positive to save one keyword.
+
+The only picture-affecting consequence is the merge tie-break, 1.0 → 2.0, and for
+these eight it is inert: the four `elecAt` ids always co-locate on one body joint,
+and `setDigEffect` reuses the **same two emitter handles** (`field_0xad8`/`0xadc`,
+`:242-243` vs `:257-260`), so the dig markers and the spark cannot be alive at
+once to compete for the site.
+
+#### Periodicity — what was done and why
+
+**There is no free-running "spark every N seconds" timer.** The spark is emitted
+in windows driven by the state machine, at the 30 Hz sim pace
+(`src/dusk/game_clock.h:8`):
+
+| Where | Window | Seconds |
+| :-- | --: | --: |
+| `executeEscape` after landing, `executeBackRail`, `executeSwitch` | `0x5A` = 90 frames | 3.0 s |
+| `executeFly` mode 10 (`:1914`) | `0x28` = 40 frames | 1.33 s |
+| **`initFireFly` on a wall bounce (`:2624`)** | **rnd 5–15 frames** | **0.17–0.5 s** |
+| `ACT_ELECTRIC` (`:2457-2506`) | ≥ 40 frames + the tail of BCK anim 9 | ≥ 1.33 s |
+
+The recurrence a player perceives is the **loop** — approach → surprise → flee
+(3 s spark on landing) → the 30% invisible-retrigger or a 4 s charge → electric
+attack → wait → repeat — not a period. Stated that way deliberately; quoting a
+period would be inventing one.
+
+**The last row is the problem, and it is a renderer problem rather than a look
+problem.** Site identity is matched on class and proximity, a new site takes a
+new id, and **a new id is a new Remix light hash with no RTXDI temporal
+history**. The base grace period is 6 frames; a 5-frame spark window is shorter
+than that, so a bug bouncing around a room would destroy and re-create its light
+repeatedly, each time re-accumulating its denoising reuse from nothing.
+
+`effectLightSparkHold` (**12 frames, 0.4 s**) is added to the base grace for
+`Class::Spark` sites only. It holds the site — with the values it last had,
+exactly as the base grace already does for effects the game re-sets every few
+frames — across the gaps **inside** a burst.
+
+**A brief spark is still a brief light, and that is intended.** This does not
+turn a burst into a steady lamp: when the bug stops sparking for good the site
+still goes out, 18 frames later rather than 6. The light also still fades with
+the last particle rather than snapping off, for free — `emitterIsLive` drops the
+candidate at `getParticleNumber() == 0`, and the `JPABaseEmitter` keeps running
+after the actor stops re-setting it. **Nothing was added to hold a light on; the
+only thing added holds an identity.**
+
+#### What is NOT known, and must come from a log
+
+**Whether they pass the additive-and-glow rule at all.** The `.jpa` assets are
+not in this repo (`find . -iname '*.jpa'` → empty), so the authored blend mode
+and colour ramp are unreadable here. If they fail, **classification is not the
+lever** and adding keywords cannot help — the correct response is to record what
+the rule saw and leave the names alone, not to special-case them, which is the
+tagging failure rule 1 forbids.
+
+`rtx.dusklight.env.effLightsSparks` answers it without anyone describing
+anything: `seen N  lit N`. `seen > 0, lit == 0` is the negative result — the bug
+sparked in view and the rule refused it. `seen == 0` is a different question
+entirely. The per-effect rows for 0x393–0x396 name the refusing clause.
+
+**Colour and brightness are also not known from source.** The effect is named
+`elecAt` — *electric attack* — and every state emitting it plays
+`Z2SE_EN_YM_ELECTRIC`, so "electric" is the game's own word for it; whether the
+ramp reads blue-white is a question for the report. Neither `d_a_e_ym`,
+`d_a_e_ymb` nor the Tear of Light calls `dKy_plight_set` (zero hits in all
+three), so there is **no authored `mPow`** and every one of them lands on the
+**undetermined** branch — intensity 1.0, reach 400, radius 8. Those are left
+alone deliberately: §5 is explicit that the undetermined branch exists for
+exactly this case, and inventing a number for a spark would be citing the game
+for something it never said.
+
+#### The Tear of Light — measured, deliberately NOT built
+
+光の雫 *hikari no shizuku*, "drop of light" — the game's own debug strings name
+it (`d_a_obj_drop.cpp:115`, `:158`, and `:224`, literally "waiting for the 闇虫 to
+be created"). Body `ZI_S_hShizuku_a..f`, appearance `ZI_S_hShizukuAppGlow_a` /
+`AppLine_a`, collection `ZI_S_hShizukuRelLine_a`.
+
+**It is already a candidate and may already be lit.** `hShizukuAppGlow_a`
+classifies `Glow`; the six body emitters and the two line effects classify
+`Other`; **neither class is gated**, and the body emitters persist from
+appearance to collection rather than flashing. So the only open question is
+whether they pass the additive-and-glow rule — and that is a log, not a design.
+
+**Nothing was built for it, on purpose.** Bundling it with the spark would put
+two look changes behind one switch and make neither judgeable, and building a
+feature for something that may already work is how a no-op ships. The report
+already names every one of these ids. **Read those rows first.**
 
 ---
 
@@ -582,7 +751,18 @@ they are the ones most likely to be overruled:
    often a flicker artefact. Turn `effectLightBursts` on to include them.
    *This is the exclusion most likely to be wrong for this game*: TP's bomb
    and Ball-and-Chain impacts are dramatic enough that a flash may read well.
-7. **Vanilla lights with no effect at all are not forwarded.** §5 adopts a
+7. **Sparks can be switched off, and are ON by default.** `effectLightSparks`
+   gates `Class::Spark` — the 21 *kirakira* glitter effects and the 8 Shadow
+   Insect names (§3.2). **On is what the game already did**: every one of those
+   29 was admitted before this gate existed, 21 as `Spark` and 8 as `Other`, and
+   neither class was ever gated. So this is an **undo switch, not an enable** —
+   turning it on changes nothing, and turning it off is the visible change. It
+   exists because the Shadow Insect's spark is short and recurrent and is the
+   one candidate most likely to read as flicker, and a result nobody likes
+   should be one checkbox rather than a rebuild.
+   *Note what it takes with it*: the glitter effects share the class and go dark
+   too. Read `effLightsSparks` before deciding.
+8. **Vanilla lights with no effect at all are not forwarded.** §5 adopts a
    vanilla light's *parameters* when it corroborates an effect. A vanilla
    light with no effect near it is the case the old mirror got wrong — it is
    where the faked placements live — so by default nothing is emitted for it.
@@ -838,8 +1018,13 @@ rather than the emitter because `becomeContinuousParticle` forces the live
 `mMaxFrame` to 0 on every simple emitter and `becomeImmortalEmitter` does the
 same at 42 more sites — so the live field says "persistent" for things that are
 not. It appears in the classification report as `persist=Y` and **feeds no
-decision**, because the decision it would feed is the `BombInsectSpark` question
-in §3.1, and that is a look change to take deliberately with a log in hand.
+decision**. It was measured for the `BombInsectSpark` question in §3.1, and that
+question **dissolved on 2026-08-13** rather than being answered: those names are
+the Bombling's fuse, not the electric bug's spark, so there was never a
+persistent effect trapped in `Burst` for `persist` to rescue. It is kept because
+it is free, correct and the cheapest way to catch the next name whose class and
+whose lifetime disagree — but nothing reads it, and that is now a statement about
+there being no such case rather than about a decision being deferred.
 
 **Deliberately not derived at all:**
 
@@ -903,6 +1088,7 @@ overlay's Dusklight tab:
 | `effLightsCulled` | dropped by distance or budget |
 | `effLightsAuthored` | **whether the authored derivations are running at all**, as `colour N  radius N  lantern N`. A colour count of 0 in a room full of *registered* torches is correct — those adopt the game's colour, which wins over both (§5.1). A colour count of 0 with no game lights available means the resources carried no colour, which is a different failure from the setting being off |
 | `effLightsClasses` | this frame's sites split by what the game's own name says each effect **is**, as `other N  fire N  lantrn N  glow N  spark N  lava N  burst N  excl N`. `excl` is always 0 here — a refused effect never becomes a site, and `effLightsExcluded` counts those instead. A `lantrn` of 0 while the lamp is lit means the lantern's emitter failed §3's rule that frame, not that the classification is wrong |
+| `effLightsSparks` | **the Shadow Insect readout** (§3.2), as `seen N  lit N`. `seen` counts `Class::Spark` emitters the game was actually **drawing**, so non-zero means a bug was sparking in front of the camera; `lit` counts how many the additive-and-glow rule then accepted. Two numbers because they separate two failures with **opposite fixes**: `seen 4  lit 0` means the rule refused it, which is a property of the `.jpa` and cannot be fixed by classification — read the verdict on ids 0x393–0x396. `seen 0  lit 0` means none was ever in view. `lit` is 0 by construction when `effectLightSparks` is off |
 
 Bursts are recorded in the report even though they are excluded from lighting,
 because that report is the thing meant to settle whether excluding them is

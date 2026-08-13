@@ -244,6 +244,14 @@ struct UserSettings {
         ConfigVar<int> effectLightMaxLights;
         ConfigVar<float> effectLightMaxDistance;
         ConfigVar<bool> effectLightBursts;
+        // Sparks: kirakira glitter and the Shadow Insect's electric crackle. ON is what the game
+        // already did - every spark effect was lit before the switch existed - so this is an undo,
+        // and OFF is the visible change. SparkHold is a RENDERER setting, not a look setting: the
+        // insect's shortest spark window is shorter than the base grace period, so without it a
+        // bouncing bug destroys and re-creates its site every burst, and a new site id is a new
+        // Remix light hash with no temporal history.
+        ConfigVar<bool> effectLightSparks;
+        ConfigVar<int> effectLightSparkHold;
         ConfigVar<float> effectLightMinChroma;
         ConfigVar<float> effectLightMinLuma;
         ConfigVar<float> effectLightVolumetric;

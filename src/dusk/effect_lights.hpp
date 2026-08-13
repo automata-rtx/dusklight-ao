@@ -159,6 +159,40 @@ struct Params {
     bool bursts = false;                 // include one-shot effects
     int orphanPolicy = 0;                // 0 none, 1 unadopted only, 2 all - see Stats::orphans
 
+    // --- Class::Spark, the 29 glitter and creature-spark effects ---------------------------
+    //
+    // THE DEFAULT IS TODAY'S BEHAVIOUR, not a new light. Every Spark name was admitted before
+    // this gate existed - 21 of them as Class::Spark and the 8 shadow-insect names as
+    // Class::Other, and NEITHER class was ever gated. `sparks` is therefore an UNDO switch: it
+    // is on because that is what the game already did, and it exists so that a result nobody
+    // likes is one checkbox rather than a rebuild. Turning it off is a visible change; leaving
+    // it on is not.
+    bool sparks = true;
+
+    // Extra frames a Spark site is held after its last live emitter, ON TOP of the six-frame
+    // grace every class gets (kSiteGraceFrames).
+    //
+    // This is the periodicity answer, and it is about the RENDERER rather than about the look.
+    // The shadow insect does not spark on a timer - it sparks in windows driven by its state
+    // machine, and the shortest of them is genuinely brief: daE_YM_c::initFireFly arms a spark
+    // of cM_rndF-chosen 5 to 15 frames on a wall bounce (d_a_e_ym.cpp:2624), i.e. 0.17-0.5 s at
+    // the 30 Hz sim pace (game_clock.h:8). A site that ends and restarts inside that gap is
+    // DESTROYED AND RE-CREATED: site identity is matched on class and proximity, a new site
+    // takes a new id, and a new id is a new Remix light hash with no RTXDI temporal history.
+    // So the cost of a gap is not one dark frame, it is the light re-accumulating its reuse
+    // from nothing every time the bug bounces.
+    //
+    // Holding the site across the gap keeps ONE light alive with ONE hash. It does not make the
+    // light brighter and it does not fill the gap in with anything - the site is held with the
+    // values it last had, exactly as the base grace period already does for effects the game
+    // re-sets every few frames.
+    //
+    // 12 frames = 0.4 s, chosen to bridge the 5-15 frame window rather than to be generous.
+    // A BRIEF SPARK IS STILL A BRIEF LIGHT: this bridges the gaps WITHIN a spark burst, it does
+    // not turn a burst into a steady lamp - when the bug stops sparking for good, the site
+    // still goes out, 18 frames later instead of 6. Set it to 0 for exactly the old behaviour.
+    int sparkHold = 12;
+
     // "reads as a glow" - saturated OR near white hot. Same shape and same defaults as the
     // fork's material self-illumination rule, which asks the same question of a surface.
     float minChroma = 0.50f;
@@ -221,6 +255,19 @@ struct Stats {
     // visible the moment it happens rather than at the next report.
     int byClass[static_cast<int>(Class::Count)] = {};
 
+    // Class::Spark, counted at the two points that actually answer the question - and they are
+    // DIFFERENT questions, which is why one number would not have done.
+    //
+    // sparkSeen is every Spark emitter that reached the additive-and-glow rule: the game was
+    // drawing it, so the shadow insect WAS sparking in front of the camera. sparkLit is how
+    // many of those passed. seen>0 with lit==0 is the whole negative result in one line - the
+    // bug sparked and the rule refused it - and it is the one outcome that no amount of
+    // classification work can fix, because the refusal is the .jpa's blend mode or its colour.
+    // seen==0 means we never saw one at all, which is a different failure and points at the
+    // draw-group filter rather than at the rule.
+    int sparkSeen = 0;
+    int sparkLit = 0;
+
     bool ran = false;
 };
 
@@ -244,6 +291,8 @@ struct StatsPeak {
     int vanillaSpot = 0;
     int droppedCandidates = 0;
     int droppedSites = 0;
+    int sparkSeen = 0;
+    int sparkLit = 0;
     uint32_t frames = 0;   // frames the system ran since the last report - the denominator
 };
 

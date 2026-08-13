@@ -147,7 +147,7 @@ problem**, and `dx9.draws` is where you look.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 14.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 15.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit. (This line has been stale twice — it
 said 6 until 2026-08-09 and 7 until 2026-08-11 — which is exactly the skew the
 coupling warning exists to prevent. The fork's `CLAUDE.md` and the tab's readout
