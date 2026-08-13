@@ -1832,12 +1832,41 @@ Added **2026-08-07**:
     reverts by setting `fogRampMode = 0`, which restores the previous
     behaviour exactly.
 
-    **Deliberately NOT done: the exposure-relative fog level**, the remaining
-    half of ledger C10. The palette's fog colour is a *display* colour used as a
-    radiance; outdoors the dome measurement now supplies a real one, but indoors
-    the flat colour still stands and can still lift a dark room's blacks. The
-    machinery exists — `AutoExposureDebugStats` already carries `exposure` and
-    already has a host ring — and it is a separate change by the owner's call.
+    **The exposure-relative fog level landed straight after, also untested.**
+    `fog_col` is a *display* colour — the game blended it over an already-exposed
+    image — so used raw in a linear frame its level means nothing. It is now
+    divided by the exposure the tonemapper is about to apply, which is what a
+    display colour means, under `rtx.dusklight.atmosphere.exposureFogMode`:
+    **Off / Indoors only (default) / Always**. Only the palette's share is
+    corrected; anything taken from the dome is already a real radiance. It
+    cannot feed back into eye adaptation — `(C / exposure) * exposure = C`, so
+    the fog's *display* contribution is invariant to exposure by construction.
+    Closes ledger C10. Expect a dark room's fog to stop lifting the blacks, and
+    fog brightness to stop drifting the wrong way as your eyes adapt walking
+    into a cave.
+
+17. **Dusklight panel settings never persisted — fixed 2026-08-13, UNTESTED.**
+    Raised by the owner: everything in the F1 panel had to be re-adjusted every
+    run. **Cause read from source, not inferred.** An option edit is routed to a
+    layer by the current edit target; the default is `Derived`, which is never
+    written to disk. Remix's own menus set the `User` target themselves, but the
+    Dusklight overlay is drawn from `ImGUI::update`, which does not — so every
+    control in it wrote to `Derived`. The value took effect, the widget read
+    back what you set, and `writeOption` then found nothing to serialise. No
+    error, no log line, nothing to notice.
+
+    Three changes: the overlay sets the `User` edit target (one line, and
+    `NoSave` still overrides it so `rtx.dusklight.env.*` readouts stay out of
+    configs); the window carries its own **Save / Discard** row with an
+    unsaved-changes indicator, so persisting a tweak does not mean finding
+    another menu; and `rtx.conf` is now written **sorted**, with every
+    `rtx.dusklight.*` in a labelled block after everything stock. It used to be
+    `unordered_map` iteration order, so the file's line order changed between
+    runs and diffing two configs was useless.
+
+    **What to check first:** set something in the panel, click Save, restart, and
+    confirm it held. Then open `rtx.conf` — the Dusklight banner should be there
+    with the option under it.
 
 #### Built and CI-green but NEVER RUN
 
