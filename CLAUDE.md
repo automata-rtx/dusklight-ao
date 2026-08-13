@@ -63,6 +63,7 @@ ordinary English. The convention applies to the code we *read*, not the code we
 | `docs/code-conventions.md` | how to mark Dusk changes inside game code |
 | `docs/building.md` | building the port |
 | `docs/modding.md` | the mod API |
+| `docs/character-model-replacement.md` | how character skeletons, submesh swapping and the model pipeline work, for model-replacement work |
 
 The companion documents live in the other two repos and cover only what each does
 with the finding: `dusklight-mods/docs/japanese-naming.md` (the mods, and the
