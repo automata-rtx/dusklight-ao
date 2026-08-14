@@ -345,18 +345,27 @@ recall does not surface.
 - `mods/shadow_mod` and `mods/ao_mod` are third-party demonstration mods —
   **ignore them entirely.**
 - The owner tests via the GitHub Actions **"Build Windows (MSVC x86_64)"**
-  artifact. Keep CI green on the dev branch. Dusklight's workflow has path
-  filters, so a docs-only commit correctly produces no run — that is not a
-  failure.
+  artifact, and since 2026-08-14 **that is the only build job this line runs.**
+  A Remix/DX9 build is Windows x86_64 only, so `build-linux`, `build-apple` and
+  `build-android` are switched off with `if: ${{ false }}` and the Windows
+  matrix is down to its one x86_64 entry. They are switched off rather than
+  deleted — the recipes stay in the file and re-enabling one is a one-line diff.
+  Keep CI green on the dev branch. Dusklight's workflow has path filters, so a
+  docs-only commit correctly produces no run — that is not a failure. (The
+  `Invariants` workflow is untouched and has no path filter, by design.)
 - **Two CI states that look like failures and are not.** Both cost time on
   2026-08-06 and neither is a code problem:
-  - **A *cancelled* job makes the whole run read "failure".** The scarce
-    runner is **Windows MSVC arm64**: on 2026-08-06 it sat 15 minutes with no
-    runner assigned, executed **zero steps**, and was killed — while every
-    other config, x86_64 included, passed and uploaded its artifact. Before
-    treating a red run as broken code, list its jobs: `conclusion: cancelled`
-    with an empty `runner_name` and no steps is capacity, not a compile error,
-    and the x86_64 artifact from that same run is real and testable.
+  - **A *cancelled* job makes the whole run read "failure".** Before treating
+    a red run as broken code, list its jobs: `conclusion: cancelled` with an
+    empty `runner_name` and no steps is capacity, not a compile error, and any
+    artifact from that same run is real and testable. This bit twice through
+    **Windows MSVC arm64**, the scarce runner, which on 2026-08-06 sat 15
+    minutes with no runner assigned, executed **zero steps** and was killed
+    while every other config passed. That entry is now out of the matrix, so
+    this particular instance cannot recur here — but `fail-fast` produces the
+    same shape whenever one config really does fail, and it did on the fork on
+    2026-08-14: one real compile error in `debug` cancelled the other two
+    mid-build and made the failure look config-specific when it was not.
   - **GitHub sometimes drops push events entirely.** Three consecutive pushes
     touching `src/` produced *no run at all*, hours apart, while the fork
     scheduled normally. That is why `build.yml` now has `workflow_dispatch` —

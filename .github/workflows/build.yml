@@ -33,8 +33,24 @@ env:
   SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
   SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
+# WINDOWS x86_64 ONLY ON THIS LINE (2026-08-14, owner's instruction). A build we put out
+# for Remix/DX9 is Windows x86_64, so that is the only job left active: build-linux,
+# build-apple and build-android are switched off below, and the Windows matrix has been
+# cut to its MSVC x86_64 entry.
+#
+# Switched off with `if: ${{ false }}` rather than deleted or commented out, on purpose.
+# The jobs stay in the file, keep being parsed, and show up as skipped rather than
+# vanishing - so nobody has to reconstruct 150 lines of Apple and Android setup to get
+# them back, and the diff that turns one back on is one line. This lineage does not ship
+# those platforms; it does not follow that the recipes for them should be thrown away.
+#
+# The Invariants workflow is untouched - it is a check, not a build, it runs in seconds,
+# and CLAUDE.md is explicit that doc-only commits are exactly when it earns its place.
+
 jobs:
   build-linux:
+    # See the note above jobs:. Delete this line to re-enable.
+    if: ${{ false }}
     name: Build Linux (${{matrix.name}})
     runs-on: ${{matrix.runner}}
 
@@ -95,6 +111,8 @@ jobs:
             build/install/sdk/
 
   build-apple:
+    # See the note above jobs:. Delete this line to re-enable.
+    if: ${{ false }}
     name: Build Apple (${{matrix.name}})
     runs-on: macos-latest
     strategy:
@@ -164,6 +182,8 @@ jobs:
             build/install/sdk/
 
   build-android:
+    # See the note above jobs:. Delete this line to re-enable.
+    if: ${{ false }}
     name: Build Android (${{matrix.name}})
     runs-on: ubuntu-latest
 
@@ -253,12 +273,18 @@ jobs:
             msvc_arch: amd64
             vcpkg_arch: x64
             artifact_arch: x86_64
-          - name: MSVC arm64
-            runner: windows-latest
-            preset: arm64-msvc
-            msvc_arch: amd64_arm64
-            vcpkg_arch: arm64
-            artifact_arch: arm64
+          # arm64 removed from the matrix 2026-08-14 (owner's instruction: Remix/DX9
+          # builds are Windows x86_64). It had a second, independent cost that CLAUDE.md
+          # already records: it is the scarce runner, and on 2026-08-06 it sat 15 minutes
+          # with no runner assigned, executed zero steps and was cancelled - which makes
+          # the whole run read "failure" while the x86_64 artifact beside it was fine.
+          # That misreading cost time twice.
+          # - name: MSVC arm64
+          #   runner: windows-latest
+          #   preset: arm64-msvc
+          #   msvc_arch: amd64_arm64
+          #   vcpkg_arch: arm64
+          #   artifact_arch: arm64
           # - name: Clang x86_64
           #   runner: windows-latest
           #   preset: clang
