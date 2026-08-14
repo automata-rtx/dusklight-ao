@@ -1868,6 +1868,35 @@ Added **2026-08-07**:
     confirm it held. Then open `rtx.conf` — the Dusklight banner should be there
     with the option under it.
 
+18. **The sand worm carried a light the original never had — fixed 2026-08-13,
+    UNTESTED.** Reported by the owner in Gerudo Desert and the first room of
+    Arbiter's Grounds, and pre-dating the fog work. The actor is `daE_SW_c`
+    (`d_a_e_sw.cpp`) — **sw is sand worm**, and the enum at the top of that file
+    aliases its effects to misleading names like `ZLM_SAND00_IA_1`. Masking
+    those IDs with `kIdMask` gives 0x36F–0x380, which `d_particle_name.h` names
+    in full: `ZM_S_SandWormDive00..03`, `SandWormJump00/01`,
+    `SandWormRun00..02`, `SandWormStruggle00`, `SandWormHide00..02`,
+    `SandWormAttackSign00/01`.
+
+    **Not one of the fifteen matches any positive keyword**, so all of them
+    landed in `Class::Other` — which is admitted on the additive-and-glow rule
+    alone, and a cloud of sun-lit sand is exactly the thing that rule cannot
+    tell from a flame. **This last step is inference, not finding:** the `.jpa`
+    assets are not in the repo, so the blend mode and colour that made the rule
+    say yes have not been read. The exclusion makes it moot either way, which is
+    why it is the fix rather than a threshold change.
+
+    Sized before adding, as that list requires: `sandworm` 15, `sand` 121,
+    `suna` 1, `dust` 14 — **136 names, and the intersection with Lava, the
+    existing exclusions, Burst, Lantern, Fire, Spark and Glow is zero for all
+    seven.** Three candidates were measured and rejected: `tsubu` (2 names, both
+    treasure sparkles, which plausibly *should* glow), `iwa` (2 names, both
+    `uchiwawind` — 団扇 *uchiwa* is a **fan**, not 岩 rock) and `smoke` (161,
+    already ruled out on size).
+
+    **Regression signature:** a sand or dust effect that genuinely should light
+    something going dark. None is known.
+
 #### Built and CI-green but NEVER RUN
 
 *This list was five items long on 2026-07-28 and is two on 2026-07-29. It had

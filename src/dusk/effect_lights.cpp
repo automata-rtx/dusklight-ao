@@ -514,7 +514,35 @@ Class classifyByName(uint16_t id) {
     // effects and silently leaves the rest lighting the room. Droplet is the live example:
     // shizuku matches 29 names, sizuku 26, and the two sets are disjoint - 55 together.
     // docs/japanese-naming.md section 3, and docs/effect-lights.md section 4.
-    if (nameHas(name, "yoda") || nameHas(name, "taieki")) {
+    //
+    // SAND AND DUST joined it on 2026-08-13, from a reported defect: the sand worm in Gerudo
+    // Desert and the first room of Arbiter's Grounds carried an "insanely bright" light that the
+    // original never had. The actor is daE_SW_c (d_a_e_sw.cpp) - sw is 砂 worm, and the enum at
+    // the top of that file aliases its effects to misleading names like ZLM_SAND00_IA. Masking
+    // those IDs with kIdMask gives 0x36F-0x380, which d_particle_name.h names in full:
+    // ZM_S_SandWormDive00..03, SandWormJump00/01, SandWormRun00..02, SandWormStruggle00,
+    // SandWormHide00..02 and SandWormAttackSign00/01. Not one of them matches any positive
+    // keyword, so every one landed in Class::Other - which is admitted on the additive-and-glow
+    // rule alone, and a cloud of sun-lit sand is exactly the thing that rule cannot tell from a
+    // flame. INFERENCE, not finding: the .jpa assets are not in this repo, so the blend mode and
+    // colour that made the rule say yes have not been read. The exclusion makes it moot either
+    // way, which is why it is the fix rather than a threshold change.
+    //
+    // Sized over all 3206 names in d_particle_name.h before adding, as this list requires:
+    // sandworm 15, sand 121, suna 1, dust 14 - 136 names between them, and the intersection with
+    // Lava, the existing exclusions, Burst, Lantern, Fire, Spark and Glow is ZERO for all seven.
+    // So the entire blast radius is 136 names moving Other -> Excluded.
+    //
+    // Three candidates were measured and REJECTED, and the reasons are worth keeping:
+    //   tsubu  2 - it_jn_arwg_tsubu00 and it_jn_takara_tsubu. 宝 takara is treasure; a treasure
+    //              sparkle is a thing that plausibly should glow. Grain is not worth taking it.
+    //   iwa    2 - both are ak_jn_uchiwawind, and 団扇 uchiwa is a FAN. Zero of the two are 岩
+    //              rock. A two-name keyword that matches nothing it means is the exact trap this
+    //              file's ten dead words document from the other direction.
+    //   smoke  161 - the existing comment already rules it out on size, and it stays ruled out.
+    if (nameHas(name, "yoda") || nameHas(name, "taieki") ||
+        nameHas(name, "sandworm") || nameHas(name, "sand") || nameHas(name, "suna") ||
+        nameHas(name, "dust")) {
         return Class::Excluded;
     }
 
@@ -593,7 +621,8 @@ const char* classKeyword(uint16_t id) {
         return "(unnamed)";
     }
     static const char* const kLava[] = {"lava", "magma", "youdo", "yogan", "yougan", nullptr};
-    static const char* const kExcluded[] = {"yoda", "taieki", nullptr};
+    static const char* const kExcluded[] = {"yoda",     "taieki", "sandworm", "sand",
+                                            "suna",     "dust",   nullptr};
     static const char* const kBurst[] = {"bakuha", "explo", "bomb", "baku", nullptr};
     static const char* const kLantern[] = {"kantera", nullptr};
     static const char* const kFire[] = {"fire",   "honoo", "hono",  "kaen",   "flame", "taimatsu",
