@@ -1228,6 +1228,12 @@ void updateMods() {
         const char* native = "none";
         switch (mod.nativeStatus) {
         case dusk::mods::NativeModStatus::None:               native = "none"; break;
+        // Unknown with nothing loaded is the start-disabled policy holding the library back, not
+        // a failure. Reported distinctly so the tab can say "native, not yet loaded" rather than
+        // implying we tried and could not.
+        case dusk::mods::NativeModStatus::Unknown:
+            native = mod.native ? "unknown" : "native-deferred";
+            break;
         case dusk::mods::NativeModStatus::Loaded:             native = "loaded"; break;
         case dusk::mods::NativeModStatus::BuildDisabled:      native = "build-disabled"; break;
         case dusk::mods::NativeModStatus::ModMissingPlatform: native = "no-platform"; break;

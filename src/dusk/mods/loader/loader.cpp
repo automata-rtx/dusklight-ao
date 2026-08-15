@@ -755,12 +755,31 @@ void ModLoader::try_load_mod(
     const auto [dllEntry, runtimeEntries, anyLibs] = locate_native_runtime(*mod.bundle);
     if (anyLibs || (mod.inPlace && !external_native_lib_path(mod).empty())) {
         mod.nativeStatus = NativeModStatus::Unknown;
-        load_native(mod, dllEntry, runtimeEntries);
-        if (mod.nativeStatus != NativeModStatus::Loaded) {
-            Log.error("Native mod '{}' failed to load, disabling", mod.metadata.id);
-            fail_mod(mod, MOD_ERROR, native_status_message(mod.nativeStatus));
+
+        // Under the start-disabled policy the library is NOT loaded here. Discovery would
+        // otherwise dlopen every mod's native code before anything is enabled, and the note that
+        // switched mods off under D3D9 in the first place says a native mod touching the renderer
+        // "takes the process down on load" - on load, not on activate. Holding a mod disabled is
+        // worth nothing if its code is mapped and its static constructors have already run.
+        //
+        // Deferring costs nothing: activate_mod goes through ensure_native_loaded, which loads it
+        // then if mod.native is still null. So enabling a mod from the Mods tab picks up exactly
+        // the same library, at the point the user asked for it.
+        //
+        // nativeStatus stays Unknown with mod.native null, which is the honest description of
+        // "this mod has native code and we have not looked at it yet" - the Mods tab reports that
+        // distinctly rather than as a load failure.
+        if (m_startDisabled) {
+            log::write(mod.metadata.id, LOG_LEVEL_INFO,
+                "has native code; load deferred until it is enabled (start-disabled policy)");
         } else {
-            mod.manifestInfo = build_manifest_info(mod.native->parsed);
+            load_native(mod, dllEntry, runtimeEntries);
+            if (mod.nativeStatus != NativeModStatus::Loaded) {
+                Log.error("Native mod '{}' failed to load, disabling", mod.metadata.id);
+                fail_mod(mod, MOD_ERROR, native_status_message(mod.nativeStatus));
+            } else {
+                mod.manifestInfo = build_manifest_info(mod.native->parsed);
+            }
         }
     }
 
