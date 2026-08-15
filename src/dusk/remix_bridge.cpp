@@ -17,6 +17,7 @@
 #include "f_op/f_op_camera_mng.h"
 #include "dusk/map_loader_definitions.h"
 #include "dusk/action_bindings.h"
+#include "dusk/mod_loader.hpp"
 
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_keyboard.h>
@@ -1202,6 +1203,130 @@ std::string bindApply(int actionIndex, u32 port, int button, bool keyboard) {
         status += " (displaced " + displaced + ")";
     }
     return status;
+}
+
+// Mods, protocol 16.
+//
+// The game's own mod window is never drawn under the fixed-function backend, so the Remix
+// overlay's Mods tab is the only way to reach a mod. This publishes the inventory and turns the
+// tab's answer back into loader requests. Nothing about *deciding* what a mod is lives on the
+// Remix side; it shows what is sent and returns a list of ids.
+//
+// Startup state is not negotiated here. ModLoader::set_start_disabled has already held every mod
+// off (m_Do_main.cpp), and rtx.dusklight.game.modsEnabled is NoSave so it cannot arrive carrying
+// anything on the first frame either. Both halves say the same thing on purpose: a mod that takes
+// the process down on load must not be able to make that permanent from either side.
+void updateMods() {
+    auto& loader = dusk::mods::ModLoader::instance();
+
+    // The inventory. Rebuilt each frame and pushed only when it changes - a mod loading, failing
+    // or being unloaded all change it, and none of them are frame-rate events.
+    std::string inventory;
+    int count = 0;
+
+    for (const auto& mod : loader.mods()) {
+        const char* native = "none";
+        switch (mod.nativeStatus) {
+        case dusk::mods::NativeModStatus::None:               native = "none"; break;
+        case dusk::mods::NativeModStatus::Loaded:             native = "loaded"; break;
+        case dusk::mods::NativeModStatus::BuildDisabled:      native = "build-disabled"; break;
+        case dusk::mods::NativeModStatus::ModMissingPlatform: native = "no-platform"; break;
+        case dusk::mods::NativeModStatus::ApiVersionMismatch: native = "abi-mismatch"; break;
+        case dusk::mods::NativeModStatus::MissingExport:      native = "missing-export"; break;
+        case dusk::mods::NativeModStatus::InvalidMetadata:    native = "bad-metadata"; break;
+        default:                                              native = "unknown"; break;
+        }
+
+        if (!inventory.empty()) {
+            inventory += ';';
+        }
+        // id | display name | native status | active | failed. The delimiters are the two the
+        // rest of this wire already uses, so the tab's splitPipes does half the parsing.
+        inventory += mod.metadata.id;
+        inventory += '|';
+        inventory += mod.metadata.name.empty() ? mod.metadata.id : mod.metadata.name;
+        inventory += '|';
+        inventory += native;
+        inventory += '|';
+        inventory += mod.active ? '1' : '0';
+        inventory += '|';
+        inventory += mod.loadFailed ? '1' : '0';
+        ++count;
+    }
+
+    static std::string s_lastInventory;
+    static int s_lastCount = -1;
+
+    if (inventory != s_lastInventory || count != s_lastCount) {
+        s_lastInventory = inventory;
+        s_lastCount = count;
+        push("rtx.dusklight.env.modCount", std::to_string(count));
+        // An empty string never crosses (parseOptionValue returns false at size() == 0), so a
+        // build with no mods sends the sentinel rather than nothing at all - otherwise the tab
+        // would go on showing whatever the last non-empty push said.
+        push("rtx.dusklight.env.modList", inventory.empty() ? std::string("-") : inventory);
+        push("rtx.dusklight.env.modsRunning", "1");
+        BridgeLog.info("dusk.mods: published {} mod(s) to the Remix overlay", count);
+    }
+
+    // The answer. "-" is "nothing enabled"; see kModsNoneSentinel in the fork's
+    // rtx_dusklight_game.h for why it cannot be the empty string.
+    std::string wanted;
+    if (!readOption("rtx.dusklight.game.modsEnabled", wanted)) {
+        return;
+    }
+    if (wanted == "-") {
+        wanted.clear();
+    }
+
+    // Latch the first value seen without acting on it, the same way every other commit on this
+    // wire does. Connecting to a Remix that outlived a game restart would otherwise enable
+    // whatever was ticked in the previous session - which is exactly the startup guarantee this
+    // feature is supposed to make impossible.
+    static bool s_primed = false;
+    static std::string s_lastWanted;
+
+    if (!s_primed) {
+        s_primed = true;
+        s_lastWanted = wanted;
+        return;
+    }
+    if (wanted == s_lastWanted) {
+        return;
+    }
+    s_lastWanted = wanted;
+
+    const auto listed = [&wanted](const std::string& id) {
+        size_t start = 0;
+        while (start <= wanted.size()) {
+            const size_t next = wanted.find('|', start);
+            const size_t len = next == std::string::npos ? std::string::npos : next - start;
+            if (wanted.compare(start, len, id) == 0 && (len == id.size() || len == std::string::npos)) {
+                return true;
+            }
+            if (next == std::string::npos) {
+                break;
+            }
+            start = next + 1;
+        }
+        return false;
+    };
+
+    for (const auto& mod : loader.mods()) {
+        const bool shouldRun = listed(mod.metadata.id);
+        // Diffed against the loader's own view rather than against the previous string, so a mod
+        // that failed to load and was disabled underneath us is not left looking enabled.
+        if (shouldRun == mod.cvarIsEnabled->getValue()) {
+            continue;
+        }
+        if (shouldRun) {
+            BridgeLog.info("dusk.mods: enabling '{}' at the overlay's request", mod.metadata.id);
+            loader.request_enable(mod.metadata.id);
+        } else {
+            BridgeLog.info("dusk.mods: disabling '{}' at the overlay's request", mod.metadata.id);
+            loader.request_disable(mod.metadata.id);
+        }
+    }
 }
 
 void updateControls() {
@@ -2515,7 +2640,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "15");
+    push("rtx.dusklight.env.protocol", "16");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -3040,6 +3165,7 @@ void tick() {
     updateRoomLights();
     updateWarp();
     updateControls();
+    updateMods();
     pushLightStatus();
 #endif
 }

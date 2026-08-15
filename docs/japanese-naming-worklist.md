@@ -88,7 +88,7 @@ wrong, the tag was mis-assigned: say so, retag it, and fix the code.
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 15.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
+**Protocol is at 16.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
 branch until those merged on 2026-08-11; 11 was the merged number, 12 is taken by the
 unmerged `claude/kasumi-naming-correction-w3e204`, this worklist's P18 took 13
 beside it rather than on top of it, and the effect-light vocabulary rework took 14

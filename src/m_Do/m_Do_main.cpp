@@ -899,15 +899,24 @@ int game_main(int argc, char* argv[]) {
 #endif
 #endif
         if (auroraInfo.backend == BACKEND_D3D9) {
-            // The D3D9 fixed-function backend never initializes WebGPU, so mod
-            // graphics stages are inert and a native mod that touches the
-            // renderer takes the process down on load. Drop every search dir
-            // instead, which lands on the same "no mods found" path a clean
-            // install takes. Deliberately not written back to config.json:
-            // switching between a modded build and a D3D9 test build should
-            // need no config edits.
-            DuskLog.info("D3D9 backend: mods are unsupported here, skipping mod discovery");
-            modDirs.clear();
+            // Discovery runs, but nothing starts. Until 2026-08-15 this dropped every search dir
+            // instead, because the D3D9 fixed-function backend never initializes WebGPU: mod
+            // graphics stages are inert and a native mod that touches the renderer takes the
+            // process down as it loads. That made a mod unreachable rather than unsafe, and the
+            // game's own mod window is never drawn in this mode either, so there was no way to
+            // test one at all.
+            //
+            // What makes discovery safe again is that nothing is enabled until it is asked for by
+            // name, one mod at a time, from the Remix overlay's Mods tab - which also shows a
+            // mod's native status before it is ticked. The risky instant is the tick, not the
+            // scan.
+            //
+            // Still deliberately not written back to config.json - set_start_disabled uses a
+            // config override, which is documented as never saved, so switching between a modded
+            // build and a D3D9 test build needs no config edits in either direction.
+            DuskLog.info("D3D9 backend: mods discovered but all held disabled; enable them from the "
+                         "Remix overlay's Mods tab");
+            dusk::mods::ModLoader::instance().set_start_disabled(true);
         }
         dusk::mods::ModLoader::instance().set_search_dirs(std::move(modDirs));
     }

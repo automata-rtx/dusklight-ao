@@ -241,15 +241,16 @@ implying it was tested.
 
 **The game and the Remix DLL are a single protocol.** The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol` in
-`showDusklightRemixTab`. **Protocol is at 15.** Build both sides from the same
+`showDusklightRemixTab`. **Protocol is at 16.** Build both sides from the same
 commit point, and when you bump one, bump the other in the same commit. Skew in
 either direction has already cost an evening twice — the Dusklight tab reports
 which side is old, so read it before debugging anything else.
 
 **12 is skipped and is not free.** It belongs to the unmerged
 `claude/kasumi-naming-correction-w3e204`, so 13 was taken beside it rather than
-on top of it, 14 beside both, and 15 beside all three (the Shadow Insect spark
-work). The next branch to need a number takes **16**. Nothing checks
+on top of it, 14 beside both, 15 beside all three (the Shadow Insect spark
+work), and **16 beside all four (the Mods tab, 2026-08-15)**. The next branch to
+need a number takes **17**. Nothing checks
 this — no script can see an unmerged branch — so check the live `claude/*`
 branches yourself before taking one:
 `git show origin/claude/<name>:src/dusk/remix_bridge.cpp | grep env.protocol`.

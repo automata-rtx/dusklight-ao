@@ -923,6 +923,17 @@ void ModLoader::init() {
     std::stable_sort(m_mods.begin(), m_mods.end(),
         [](const auto& a, const auto& b) { return a->searchDirIndex > b->searchDirIndex; });
 
+    // Before the subscriptions, so forcing the start state does not queue a lifecycle request for
+    // every mod on the first tick - at this point nothing has been activated yet, so there is
+    // nothing to shut down.
+    if (m_startDisabled) {
+        Log.info("start-disabled policy: {} mod(s) discovered, all held off until asked for by name",
+            m_mods.size());
+        for (auto& mod : mods()) {
+            mod.cvarIsEnabled->setOverrideValue(false);
+        }
+    }
+
     Log.info("initializing {} mod(s)...", m_mods.size());
     for (auto& mod : mods()) {
         mod.enabledSubscription = Register(*mod.cvarIsEnabled,

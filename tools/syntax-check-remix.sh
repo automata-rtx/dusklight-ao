@@ -77,6 +77,21 @@ for h in "$fmtdir"/*; do ln -s "$h" "$shim/fmt/$(basename "$h")"; done
 [ -f "$shim/fmt/base.h" ] || echo '#pragma once
 #include <fmt/core.h>' > "$shim/fmt/base.h"
 
+# nlohmann/json, reached through dusk/config.hpp. Needed since the mod wire (protocol 16) made
+# remix_bridge.cpp include dusk/mod_loader.hpp, which pulls in the config system. The MinGW cross
+# compiler does not search /usr/include, so the host copy has to be linked into the shim root the
+# same way fmt is.
+jsondir=""
+for d in /usr/include/nlohmann /usr/local/include/nlohmann; do
+    [ -f "$d/json.hpp" ] && jsondir="$d" && break
+done
+if [ -z "$jsondir" ]; then
+    echo "nlohmann/json.hpp not found - apt-get install nlohmann-json3-dev" >&2
+    exit 1
+fi
+mkdir -p "$shim/nlohmann"
+for h in "$jsondir"/*; do ln -s "$h" "$shim/nlohmann/$(basename "$h")"; done
+
 # -fpermissive and the neutered __declspec are for the game's own dllimport
 # annotations, which MSVC accepts on definitions and GCC does not. They relax
 # nothing about the code under test.
@@ -86,6 +101,7 @@ check() {
             -DTARGET_PC=1 -DWIDESCREEN_SUPPORT=1 '-D__declspec(x)=' \
             -include global.h -include helpers/endian.h -include dolphin/os/OSRtc.h \
             -I"$stub" -I"$shim" -I"$root/include" -I"$root/src" -I"$root/libs/JSystem/include" \
+            -I"$root/sdk/include" \
             -I"$aurora/include" -I"$aurora/include/dolphin" \
             -I"$root/libs/dolphin/include" -I"$root/libs/dolphin/include/dolphin" \
             -I"$root/libs/revolution/include" \

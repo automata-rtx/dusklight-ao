@@ -198,6 +198,20 @@ public:
     static ModLoader& instance();
 
     void set_search_dirs(std::vector<ModSearchDir> dirs) { m_searchDirs = std::move(dirs); }
+
+    // Discover mods normally, but start every one of them disabled whatever config.json says.
+    //
+    // For the D3D9/Remix backend, where the game's own mod window is never drawn and the only way
+    // to reach a mod is the Remix overlay's Mods tab. Mods were switched off entirely here until
+    // 2026-08-15 because the D3D9 path never initializes WebGPU and a native mod that touches the
+    // renderer takes the process down as it loads. Starting disabled is what makes discovery safe
+    // again: nothing loads until someone asks for it by name, one mod at a time.
+    //
+    // Implemented as a config OVERRIDE rather than by writing false, because an override is
+    // documented as never being saved (config_var.hpp) - so a D3D9 session cannot quietly rewrite
+    // the mod selection a WebGPU session is using. request_enable's setValue clears the override
+    // for that one mod, which is exactly the intent: an explicit request outranks the policy.
+    void set_start_disabled(bool startDisabled) { m_startDisabled = startDisabled; }
     void set_cache_dir(std::filesystem::path dir) { m_cacheDir = std::move(dir); }
     void init();
     void tick();
@@ -238,6 +252,8 @@ private:
     std::vector<RetiredNative> m_retiredNatives;
     bool m_initialized = false;
     bool m_startupComplete = false;
+    // See set_start_disabled. Applied once in init(), before the enabled subscriptions register.
+    bool m_startDisabled = false;
 
     void try_load_mod(const std::filesystem::path& modPath, bool fromDir, uint32_t searchDirIndex);
     void load_native(LoadedMod& mod, const std::string& dllEntry,
