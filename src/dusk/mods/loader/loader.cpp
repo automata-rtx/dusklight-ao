@@ -923,21 +923,32 @@ void ModLoader::init() {
     std::stable_sort(m_mods.begin(), m_mods.end(),
         [](const auto& a, const auto& b) { return a->searchDirIndex > b->searchDirIndex; });
 
-    // Before the subscriptions, so forcing the start state does not queue a lifecycle request for
-    // every mod on the first tick - at this point nothing has been activated yet, so there is
-    // nothing to shut down.
-    if (m_startDisabled) {
-        Log.info("start-disabled policy: {} mod(s) discovered, all held off until asked for by name",
-            m_mods.size());
-        for (auto& mod : mods()) {
-            mod.cvarIsEnabled->setOverrideValue(false);
-        }
-    }
-
     Log.info("initializing {} mod(s)...", m_mods.size());
     for (auto& mod : mods()) {
         mod.enabledSubscription = Register(*mod.cvarIsEnabled,
             [this, &mod](const bool&, const bool&) { on_enabled_changed(mod); });
+    }
+
+    // AFTER the loop above, and that ordering is the whole of this block.
+    //
+    // Register() is what marks a CVar registered, and every setter opens with checkRegistered(),
+    // which calls abort() outright rather than throwing. The first version of this ran before the
+    // loop - to avoid the subscriptions firing - and aborted the process during startup on the
+    // first machine that had a mods directory. It survived CI and the MinGW syntax check because
+    // neither runs the game.
+    //
+    // Doing it here means each override does fire on_enabled_changed for a mod whose config had
+    // it enabled, which queues a lifecycle request. Those are meaningless: nothing has been
+    // activated yet, so there is nothing to shut down, and the startup loop below reads
+    // cvarIsEnabled directly rather than draining the queue. Dropping them keeps the first tick
+    // clean instead of having it process a disable for nine mods that were never running.
+    if (m_startDisabled) {
+        for (auto& mod : mods()) {
+            mod.cvarIsEnabled->setOverrideValue(false);
+        }
+        m_pendingRequests.clear();
+        Log.info("start-disabled policy: {} mod(s) discovered, all held off until asked for by name",
+            m_mods.size());
     }
 
     init_services();
