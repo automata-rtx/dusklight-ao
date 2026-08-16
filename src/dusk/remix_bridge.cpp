@@ -536,6 +536,25 @@ void updateTextureReplacements() {
         info.hash = kTexRepHandleBase | static_cast<uint64_t>(entry.remixIndex);
         info.albedoTexture = widePath.c_str();
 
+        // DUSK_TEXREP_TRACE=1 names every file immediately before it is handed over, so a pack
+        // that takes the process down inside the driver leaves the culprit as the last line of
+        // the log rather than a silent stop partway through.
+        //
+        // Off by default because it is one line per replacement and a pack is thousands, which
+        // is exactly the kind of log this project has a rule against. On demand it is the only
+        // thing that names the file: the create call goes into Remix and then into the Vulkan
+        // driver, so when it faults there is nothing left to log it from. On 2026-08-16 a pack
+        // of 5457 died mid-creation with an access violation at 0x0 inside nvoglv64.dll and the
+        // last usable line was "5457 selected" - six hours of bisecting the wrong repositories
+        // followed, and this line is what would have ended it in one run.
+        static const bool s_texRepTrace = [] {
+            const char* v = std::getenv("DUSK_TEXREP_TRACE");
+            return v != nullptr && v[0] == '1';
+        }();
+        if (s_texRepTrace) {
+            BridgeLog.info("texrep.trace [{}/{}] {}", s_texRepNext, s_texRepQueue.size(), entry.path);
+        }
+
         remixapi_MaterialHandle handle = nullptr;
         const remixapi_ErrorCode err = s_interface.CreateMaterial(&info, &handle);
         if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
