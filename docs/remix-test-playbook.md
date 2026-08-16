@@ -319,7 +319,21 @@ skeleton.
 | `capture.merge` absent entirely | The game published nothing. Check 0g's export line first. |
 | `capture.geometry meshes=… skinnedMeshes=… bones=[1:… 2-4:… 5-16:… 17+:…] maxBones=…` piled up at `1:` | Still the old per-chunk single-bone shape — the merge did not take. |
 | In Blender: one mesh, named bones in a hierarchy | Working as intended. |
-| In Blender: the body is right **when posed** but the unposed rest pose has pieces piled near the origin | **Expected, and already diagnosed** — a merged character's vertices are in two spaces (rigid packets joint-local, envelope packets model-space). Deformation is correct; only the rest pose is wrong. The fix is worked out and deliberately not built until this confirms it is real: `remix-open-issues.md` issue 15. |
+
+**The per-group line is what actually diagnoses a broken body**, and the two
+failure shapes look similar in Blender but are different numbers:
+
+```
+capture.merge   model=0x… groupHash=0x… members=N MERGED joints=N verts=N
+                materials=N rigidMembers=N envelopeMembers=N unplacedJoints=N
+```
+
+| Field | Reading |
+| :-- | :-- |
+| `unplacedJoints=0` | Every joint the geometry references got a matrix. |
+| `unplacedJoints=N` (N > 0) | **N pieces of the body are pinned to the capture origin**, posed or not, while the rest sit correctly — the body looks shattered and stretched. This was the 2026-08-09 defect: rigid packets carry no bone array, so their joint kept an identity matrix. If it recurs, the member supplying that joint had neither bones nor a usable transform. |
+| `rigidMembers` and `envelopeMembers` **both** non-zero | The mixed-space case. The body deforms correctly and looks right *posed*, but its unposed rest pose is wrong — rigid packets are joint-local, envelope packets model-space. Known, diagnosed, and deliberately not fixed yet: `remix-open-issues.md` issue 15. |
+| `rejected` with a per-group `reason="…"` | A refusal, not an approximation — that group keeps its original per-draw meshes, so the capture is no worse than before for it. |
 
 **The Geometry Hash debug view is the fastest check, as of 2026-08-09.** Every
 draw carrying a published identity reports the **group hash** there, so a

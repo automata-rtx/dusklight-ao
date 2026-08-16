@@ -1344,6 +1344,42 @@ Added **2026-08-08**:
     places and a patchwork elsewhere is showing you precisely which draws the
     game published no identity for.
 
+    **First capture opened in Blender, 2026-08-09: the body was split, stretched,
+    and pinned to the capture origin while the equipment sat where the character
+    actually was.** Two defects, both confirmed by reading the source, both from
+    one wrong assumption — that every member of a group is a skinned draw placed
+    by its bones. **Fixed the same day; the fix is untested.**
+
+    1. **A rigid member contributes no bone matrix at all.** `captureMesh` fills
+       `lssData.boneXForms` only when `skinData.numBones > 0`, and a J3D packet
+       welded to a single joint with no `PNMTXIDX` attribute is not skinned as
+       far as Remix is concerned. `mergeGroup` iterated that empty array, wrote
+       nothing, and left the joint holding the identity matrix it was
+       initialised with — so every vertex bound to it landed at the capture
+       origin while the bone-carrying packets landed correctly. That is the
+       reported shape exactly, stretching included: one mesh torn between two
+       placements. Such a member does carry its placement, in its own
+       `objectToWorld`, which for a rigid draw **is** that joint's world matrix
+       (aurora loads the joint into `WORLDMATRIX(0)` and nothing else).
+    2. **The transform-agreement check rejected any group mixing rigid and
+       skinned members**, so most characters never merged at all. A skinned
+       packet's `objectToWorld` is its bone-0 matrix — shared across a model now
+       that they share a global joint numbering — but a rigid packet's is its own
+       joint's matrix, differing by whole world units. Only bone-carrying members
+       are compared now.
+
+    A third, latent: the check used `GfIsClose(…, 1e-4)`, an **absolute**
+    element-wise tolerance. Float32 ULP at a translation of 12,000 units is
+    ~0.001, ten times that, so two transforms differing only by rounding could be
+    called different. **Measured, not assumed.** Now scaled to magnitude.
+
+    **The reason this needed a Blender session to find is a logging failure**, and
+    that is fixed too. `capture.merge` now emits one line per group — model key,
+    group hash, member counts split into `rigidMembers`/`envelopeMembers`, and
+    **`unplacedJoints`**, the count of joints that vertices reference but nothing
+    placed. That number *is* defect 1, made countable. Rejections print their
+    reason per group rather than one `firstReject` for the whole capture.
+
     **Still open, and it is the one that decides whether the Blender round trip
     is pleasant: a merged character's vertices are in two different spaces.**
     Found while fixing the crash, by reading `J3DMtxBuffer::calcDrawMtx`
