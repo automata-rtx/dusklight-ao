@@ -42,7 +42,7 @@ on branch rules** — this file deliberately does not restate them.
 **Two standing constraints that are easy to lose:**
 
 1. **The game and the Remix DLL are one protocol.** Build both from the same
-   commit point. Protocol is at **16**; skew in either direction has cost an
+   commit point. Protocol is at **17**; skew in either direction has cost an
    evening twice. The Dusklight tab reports which side is old — read it before
    debugging anything else.
 2. **Interactive approval prompts do not work in the owner's environment.**

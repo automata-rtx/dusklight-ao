@@ -93,18 +93,33 @@ inline u32 waterRoleForMaterialName(const char* name, int nameLength) {
     return GX_AURORA_DUSKLIGHT_WATER_NONE;
 }
 
+// Whether the name carries an MAxx tag at all, which is a different question from what that
+// tag's number is: MA00 is a real tag whose number is 0, so "the tag parsed" and "the tag is
+// nonzero" are not the same test. Split out so a caller wanting the first one cannot
+// accidentally write the second - see the layer gate in noteDusklightWaterMaterial
+// (libs/JSystem/src/J3DGraphBase/J3DMaterial.cpp), which did exactly that.
+//
+// Same three facts dKy_bg_MAxx_proc and waterRoleForMaterialName read: the convention puts
+// the tag at offset 3, so anything shorter than 7 characters cannot carry one.
+inline bool materialNameHasTag(const char* name, int nameLength) {
+    if (name == nullptr || nameLength < 7) {
+        return false;
+    }
+    if (name[3] != 'M' || name[4] != 'A') {
+        return false;
+    }
+    return name[5] >= '0' && name[5] <= '9' && name[6] >= '0' && name[6] <= '9';
+}
+
 // The MAxx tag as a number: 9 for MA09, 0 if the name carries none. Fed to the renderer
 // beside the role, because a body of water is drawn as several surfaces and telling them
 // apart is the only way to keep one of them - overlapping refracting interfaces are not
 // water, and Remix does not blend overlapping normal maps either.
+//
+// 0 is ambiguous by construction - it is both "no tag" and "MA00" - so anything deciding
+// whether a name is tagged must ask materialNameHasTag rather than compare this to 0.
 inline u32 waterTagForMaterialName(const char* name, int nameLength) {
-    if (name == nullptr || nameLength < 7) {
-        return 0;
-    }
-    if (name[3] != 'M' || name[4] != 'A') {
-        return 0;
-    }
-    if (name[5] < '0' || name[5] > '9' || name[6] < '0' || name[6] > '9') {
+    if (!materialNameHasTag(name, nameLength)) {
         return 0;
     }
     return (u32)((name[5] - '0') * 10 + (name[6] - '0'));
@@ -133,6 +148,10 @@ inline u32 waterTagForMaterialName(const char* name, int nameLength) {
 // what the blend state said, a session earlier.
 //
 // UNKNOWN is the safe answer and the default: a name nobody has classified stays visible.
+//
+// Unlike its two siblings this has no early-out - it is up to 14 whole-name strstr passes - so
+// the caller gates it on the MAxx tag having parsed. See noteDusklightWaterMaterial
+// (libs/JSystem/src/J3DGraphBase/J3DMaterial.cpp), which runs per material per frame.
 inline u32 waterLayerForMaterialName(const char* name) {
     if (name == nullptr) {
         return GX_AURORA_DUSKLIGHT_WATER_LAYER_UNKNOWN;
@@ -193,10 +212,22 @@ inline const char* waterRoleName(u32 role) {
 // are indistinguishable from the outside. Zero lines means the former; lines with no
 // role=surface among them means the latter, and says what the names actually are.
 //
-// Deduplicated by name pointer. Names live in the model's archive data, so the same
-// material re-drawn every frame reports once, while the same name in a second room reports
-// again - which is wanted, since that is how a room whose water is named differently shows
-// up. Capped, with a notice at the cap so a truncated list is never read as a short one.
+// Deduplicated by a hash of the name's TEXT, not by its address. It was the address, and an
+// address is not a safe key here: names live in the model's archive data, which is freed on a
+// room change, so an address retired with one room and later handed to a *different* material
+// would be treated as already seen and silently dropped - a hole with no counter, in the one
+// log written to catch a name nobody expected. No such drop has been observed; this is the
+// mechanism, not a finding, and it is the reason for the key rather than a bug report. The
+// hash is also strictly better on the case that is certain: one spelling reached through
+// several addresses now burns one of the slots below instead of several.
+//
+// What that deliberately gives up is the old behaviour of "the same name in a second room
+// reports again". A distinct spelling now reports exactly once for the run. Counting rooms was
+// never this line's job - enumerating distinct names is, and a silent omission defeats that. If
+// per-room repetition is wanted later, clear the set at a room boundary rather than relying on
+// the allocator to do it by accident.
+//
+// Capped, with a notice at the cap so a truncated list is never read as a short one.
 //
 // The cap was 192 and it bit: the 2026-08-08 22:38 session hit it in Hyrule Field, so Lake
 // Hylia - the one place the report was wanted - was entirely past the end of the list, and
@@ -204,11 +235,27 @@ inline const char* waterRoleName(u32 role) {
 // names, so this is sized for a session that visits several areas.
 inline constexpr std::size_t kMaxReportedNames = 512;
 
+// FNV-1a, 64-bit. A local implementation rather than a dependency: this is a dedup key for a
+// diagnostic, never a texture or material hash that has to agree with anything else.
+inline u64 materialNameHash(const char* name) {
+    u64 h = 14695981039346656037ull;
+    for (const char* p = name; *p != '\0'; ++p) {
+        h ^= (u64)(unsigned char)*p;
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
 inline void reportMaterialName(const char* name, u32 role, u32 tag, u32 layer) {
-    static std::unordered_set<const void*> s_seen;
+    static std::unordered_set<u64> s_seen;
     static bool s_truncated = false;
 
-    if (name == nullptr || s_seen.count(name) != 0) {
+    if (name == nullptr) {
+        return;
+    }
+
+    const u64 key = materialNameHash(name);
+    if (s_seen.count(key) != 0) {
         return;
     }
     if (s_seen.size() >= kMaxReportedNames) {
@@ -220,7 +267,7 @@ inline void reportMaterialName(const char* name, u32 role, u32 tag, u32 layer) {
         return;
     }
 
-    s_seen.insert(name);
+    s_seen.insert(key);
     DuskLog.info("dusk.matname name={} role={} tag=MA{:02} layer={}", name, waterRoleName(role),
                  tag, waterLayerName(layer));
 }

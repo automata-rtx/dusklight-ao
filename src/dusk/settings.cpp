@@ -71,9 +71,6 @@ UserSettings g_userSettings = {
         .remixSunIntensity {"game.remixSunIntensity", 5.0f},
         .remixMoonIntensity {"game.remixMoonIntensity", 0.3f},
         .remixCelestialAngle {"game.remixCelestialAngle", 2.0f},
-        .remixLocalLights {"game.remixLocalLights", false},
-        .remixLocalLightIntensity {"game.remixLocalLightIntensity", 19.0f},
-        .remixLocalLightRadius {"game.remixLocalLightRadius", 10.0f},
         // Room lights. Off by default: these are authored placements, which is exactly the
         // property the effect-light system exists because it distrusts, and whether they
         // double-count with it has to be settled from a log rather than argued.
@@ -81,8 +78,8 @@ UserSettings g_userSettings = {
         .remixRoomLightIntensity {"game.remixRoomLightIntensity", 19.0f},
         .remixRoomLightRadius {"game.remixRoomLightRadius", 10.0f},
         .remixRoomLightConeSoftness {"game.remixRoomLightConeSoftness", 1.0f},
-        // Effect lights. Every default below except the two inherited from the local light
-        // mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
+        // Effect lights. Every default below except the two inherited from the retired local
+        // light mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
         // docs/effect-lights.md section 10 says so plainly.
         .effectLights {"game.effectLights", true},
         .effectLightIntensity {"game.effectLightIntensity", 1.0f},
@@ -360,9 +357,6 @@ void registerSettings() {
     Register(g_userSettings.game.remixSunIntensity);
     Register(g_userSettings.game.remixMoonIntensity);
     Register(g_userSettings.game.remixCelestialAngle);
-    Register(g_userSettings.game.remixLocalLights);
-    Register(g_userSettings.game.remixLocalLightIntensity);
-    Register(g_userSettings.game.remixLocalLightRadius);
     Register(g_userSettings.game.remixRoomLights);
     Register(g_userSettings.game.remixRoomLightIntensity);
     Register(g_userSettings.game.remixRoomLightRadius);

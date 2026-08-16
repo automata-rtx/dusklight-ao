@@ -21,7 +21,7 @@ statement: `extern/aurora/docs/dx9/remix-material-interface.md` §0.
 below exists **only in our dxvk-remix fork**
 (`src/dxvk/rtx_render/rtx_dusklight_*`). Stock Remix will run the game and
 path-trace it, but those keys are simply unknown to it. The game and the DLL are
-also a single protocol — currently **16** — so build both from the same commit
+also a single protocol — currently **17** — so build both from the same commit
 point and read the Dusklight tab's protocol line before debugging anything else.
 
 The complete design, GX→D3D9 mapping spec, architecture notes, and the living
@@ -116,16 +116,10 @@ rtx.dusklight.game.disableFrustumCulling = True
 # which switch to reach for. Tested in game 2026-08-07.
 #rtx.dusklight.game.effectLights = True
 
-# Local point lights - the PREVIOUS system, and now the comparison path only.
-# It mirrors the game's registered lights where the game put them, which the
-# original shading could get away with (a GX point light casts no shadow, so it
-# could sit anywhere the shading looked best) and a path tracer cannot.
-#
-# LEAVE THIS FALSE. If you have True saved from before 2026-08-06, remove it:
-# running both gives every fire two lights, one in the old, wrong place, and
-# that reads exactly like the new placement being broken. The Effect Lights
-# section of the Dusklight tab says so when both are on.
-rtx.dusklight.game.localLights          = False
+# The local point-light mirror that preceded the effect lights was REMOVED at
+# protocol 17 (2026-08-16), on both sides. If an older rtx.conf of yours still
+# carries its keys, delete the lines - Remix no longer declares them, so they
+# do nothing but sit in the file looking like live settings.
 
 # Stops the game's sun/moon/star billboards. Tested 2026-07-29: this is what
 # fixes shadow coverage wandering with the camera at night. The billboards are
@@ -140,7 +134,12 @@ rtx.dusklight.game.hideSkyBillboards = True
 # hideSkyBillboards still True - to get the star field back while the moon quad
 # stays hidden. Only the sun packet draws that quad, so this separates the half
 # that was measured from the half that never was; the stars include a
-# hand-placed 13-star constellation. UNTESTED - the recipe is
+# hand-placed 13-star constellation.
+#
+# The overlay checkbox for this only started working at protocol 17 (2026-08-16):
+# the fork had declared the option and drawn the box since 2026-08-11, but the
+# bridge never read the name, so the control moved a value the game never saw.
+# It is read now and takes effect live. Still UNTESTED either way - the recipe is
 # remix-test-playbook.md section 4b, and the answer belongs back in this comment.
 #rtx.dusklight.game.hideStarBillboards = False
 
@@ -335,31 +334,33 @@ reach, from whatever light the game registered nearby. Keep
 Tested in game 2026-08-07. Design and settings:
 [`effect-lights.md`](effect-lights.md).
 
-**Local lights — the previous system. Leave it off.** Its switch is still
-`rtx.dusklight.game.localLights`, and it mirrors the same point-light list at
-the position the game put each light. That is where the faked placements live:
-under a rasterizer a point light casts no shadow, so the artists could offset
-it from the flame, sink it into geometry, or use one light for three, and none
-of it reads as wrong until a path tracer casts a real shadow from the exact
-point. It is kept only so the two can be compared. **Running both gives every
-fire two lights**, and if you tuned the old system you have `localLights = True`
-saved — remove it.
+**The local point-light mirror is gone — there is nothing to set.** It mirrored
+the same point-light list at the position the game put each light, which is
+where the faked placements live: under a rasterizer a point light casts no
+shadow, so the artists could offset it from the flame, sink it into geometry,
+or use one light for three, and none of it reads as wrong until a path tracer
+casts a real shadow from the exact point. It was superseded on 2026-08-06 and
+kept only so the two placements could be compared; that comparison was run and
+decided (effect lights tested in game 2026-08-07), and the mirror was **removed
+at protocol 17 on 2026-08-16** — game side, fork options and overlay section
+alike. Delete its keys from any `rtx.conf` you are carrying forward.
 
-**On the old system's numbers, which the new one inherited.** The
-intensity default of 1.0 uses `mPow` as the light's reach. It is not: `mPow` is
-where the game's attenuation curve falls to 1/11 of peak, so the light carries
-about 4.3× further, which is ~19× the radiance. Testing found 19 to be the
-minimum giving usable light — the derived number and the measured one agree.
-Radius 10 (default 4) clears the Forest Temple light posts without the emitter
-clipping through them.
+**Two of its numbers survive it, as effect-light defaults.** The intensity
+factor of 19 is the one to know: a naive reading uses `mPow` as the light's
+reach, and it is not — `mPow` is where the game's attenuation curve falls to
+1/11 of peak, so the light carries about 4.3× further, which is ~19× the
+radiance. Testing found 19 to be the minimum giving usable light, so the
+derived number and the measured one agree. Radius 10 clears the Forest Temple
+light posts without the emitter clipping through them. Both carried over
+unchanged into `effectLightDerivedIntensity` and `effectLightDerivedRadius`.
 
 Set them together: the radiance is solved so the light still reaches the same
 distance, so a larger emitter needs less of it, and changing one alone moves
 the brightness as well as the softness.
 
-Still unmeasured: the churn cost in a busy room. Still ignored: `mFluctuation`,
-the per-light flicker, because applying it would mean re-creating every
-flickering light every frame.
+Still ignored, and it was the mirror's gap too: `mFluctuation`, the per-light
+flicker, because applying it would mean re-creating every flickering light
+every frame.
 
 **Sky setup — use the generated sky, not texture tagging.** Tagging the vrbox —
 the game's word for its skybox dome, `d_a_vrbox.cpp` — by *texture* hash in the

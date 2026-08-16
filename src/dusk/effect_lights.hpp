@@ -240,6 +240,13 @@ struct Stats {
     int droppedCandidates = 0;
     int droppedSites = 0;
 
+    // Simple-effect records recordSimple refused because its fixed table was full. Counted here
+    // rather than warned per frame: the overflow condition persists for as long as the scene
+    // stays dense, so the warning it replaces was one line every frame indefinitely. Folded in
+    // where the records are consumed, not where they are refused - collect() resets this struct
+    // before the actor pass that writes them runs.
+    int droppedSimple = 0;
+
     // Where the values each site was solved from actually came from, counted per frame. These
     // are the "authored versus defaulted" question asked of the whole frame at once, so it can
     // be answered from the overlay without pressing the report button: authoredColor counts
@@ -291,6 +298,7 @@ struct StatsPeak {
     int vanillaSpot = 0;
     int droppedCandidates = 0;
     int droppedSites = 0;
+    int droppedSimple = 0;
     int sparkSeen = 0;
     int sparkLit = 0;
     uint32_t frames = 0;   // frames the system ran since the last report - the denominator

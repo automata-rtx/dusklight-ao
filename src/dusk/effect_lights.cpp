@@ -316,6 +316,17 @@ SimpleRecord s_simple[kMaxSimpleRecords];
 int s_simpleCount = 0;
 bool s_simpleOverflowed = false;
 
+// Records refused because s_simple was full, accumulated across the actor pass and folded into
+// s_stats.droppedSimple where the records are consumed. It cannot be counted straight into
+// s_stats: collect() assigns a fresh Stats at its head and recordSimple runs after that, so the
+// count would be wiped before accumulatePeak ever saw it.
+int s_simpleDroppedPending = 0;
+
+// 0->1 edge latch on the overflow warning. The counter above is the record of how bad and for
+// how long; this only exists so the first occurrence is visible in a log where nobody pressed
+// the report button.
+bool s_simpleOverflowWarned = false;
+
 std::vector<Site> s_sites;
 std::vector<TrackedSite> s_tracked;
 uint32_t s_nextSiteId = 1;
@@ -1213,6 +1224,7 @@ void accumulatePeak() {
     hi(s_peak.vanillaSpot, s_stats.vanillaSpot);
     hi(s_peak.droppedCandidates, s_stats.droppedCandidates);
     hi(s_peak.droppedSites, s_stats.droppedSites);
+    hi(s_peak.droppedSimple, s_stats.droppedSimple);
     hi(s_peak.sparkSeen, s_stats.sparkSeen);
     hi(s_peak.sparkLit, s_stats.sparkLit);
 }
@@ -1279,9 +1291,13 @@ void emitReport(const Params& params) {
              s_peak.excluded, s_peak.orphans);
     Log.info("    game lights available (point/spot) {}/{}", s_peak.vanillaPoint,
              s_peak.vanillaSpot);
-    Log.info("    dropped: candidates {}  sites {}   (hard array limits, not the budget - a "
-             "non-zero here means lights went missing with every other counter healthy)",
-             s_peak.droppedCandidates, s_peak.droppedSites);
+    Log.info("    dropped: candidates {}  sites {}  simple {}   (hard array limits, not the "
+             "budget - a non-zero here means lights went missing with every other counter "
+             "healthy. simple counts records recordSimple refused because its {}-slot table was "
+             "already full that frame, so a non-zero one means torches on the simple-effect path "
+             "went unlit.)",
+             s_peak.droppedCandidates, s_peak.droppedSites, s_peak.droppedSimple,
+             kMaxSimpleRecords);
     // Class::Spark reached the rule / earned a light, peak and this frame. This is the line that
     // settles the shadow insect on its own, so it says how to read itself: the bug's spark is
     // ZI_S_ym_elecAt_a..d (0x393-0x396) and the big one's is ZI_S_yb_elec_a..d (0x630-0x633),
@@ -1560,10 +1576,10 @@ float classWeight(Class cls, const Params& params) {
 
 // Radiance for a sphere light standing in for a light that was meant to reach `reach` units.
 //
-// Deliberately the same solve the local light mirror uses (Remix's own
+// Deliberately the same solve the retired local light mirror used (Remix's own
 // LightUtils::calculateIntensity, inverted): work out the radiance a sphere of this radius
-// needs to still be perceptible at that distance. Keeping it identical is what lets the
-// numbers tuned for that path carry over unchanged.
+// needs to still be perceptible at that distance. Keeping it identical is what let the
+// numbers tuned for that path carry over unchanged when it was removed at protocol 17.
 float solveIntensity(float reach, float radius, float scale) {
     if (reach <= 0.0f || radius <= 0.0001f) {
         return 0.0f;
@@ -2024,6 +2040,10 @@ void setRecording(bool enabled) {
     if (!enabled) {
         s_simpleCount = 0;
         s_simpleOverflowed = false;
+        s_simpleDroppedPending = 0;
+        // Re-arm the warning: the system being switched off and back on is a discontinuity, and
+        // an overflow after it is a new fact rather than a repeat of the old one.
+        s_simpleOverflowWarned = false;
     }
 }
 
@@ -2035,6 +2055,7 @@ void recordSimple(uint16_t effectId, const void* emitter, float x, float y, floa
 
     if (s_simpleCount >= kMaxSimpleRecords) {
         s_simpleOverflowed = true;
+        s_simpleDroppedPending++;
         return;
     }
 
@@ -2073,6 +2094,8 @@ void reset() {
     s_sites.clear();
     s_simpleCount = 0;
     s_simpleOverflowed = false;
+    s_simpleDroppedPending = 0;
+    s_simpleOverflowWarned = false;
 }
 
 const std::vector<Site>& collect(const Params& params) {
@@ -2100,9 +2123,32 @@ const std::vector<Site>& collect(const Params& params) {
     collectSimple(params, candidates, candidateCount);
 
     // The simple records are consumed here; the next actor pass refills them.
+    //
+    // The refusals are counted rather than warned about every frame. The line this replaces
+    // fired once per frame for as long as the scene stayed over the cap - a condition that
+    // persists by nature - which is the unbounded output the logging rule in CLAUDE.md forbids.
+    // droppedSimple now sits beside droppedCandidates and droppedSites in the on-demand report,
+    // where one button press answers "did it happen, how badly, and over how many frames"; the
+    // warn survives only as a 0->1 edge so the first occurrence is still visible in a log where
+    // nobody pressed it.
+    //
+    // How reachable this is has not been measured, and the read below is the arithmetic, not an
+    // observation. dPa_simpleEcallBack::create allocates 0x20 records per simple effect id and
+    // refuses past field_0xe (src/d/d_particle.cpp:775, :825), and at most 19 simple ids are ever
+    // registered (5 common at :1238, 14 scene at :1262), so the ceiling is ~608 against this
+    // 192-slot table: possible, but it takes roughly seven distinct simple effects near their own
+    // caps at once and nobody has recorded that happening. Silence here now means the counter is
+    // the thing to read, not that the overflow was fixed.
+    s_stats.droppedSimple = s_simpleDroppedPending;
+    s_simpleDroppedPending = 0;
     if (s_simpleOverflowed) {
-        Log.warn("simple effect records capped at {} this frame; some torches will be unlit",
-                 kMaxSimpleRecords);
+        if (!s_simpleOverflowWarned) {
+            s_simpleOverflowWarned = true;
+            Log.warn("simple effect records capped at {} ({} dropped this frame); some torches "
+                     "will be unlit. Later frames are counted, not logged - read 'dropped: ... "
+                     "simple' in the effect-light report for the high-water mark.",
+                     kMaxSimpleRecords, s_stats.droppedSimple);
+        }
         s_simpleOverflowed = false;
     }
     s_simpleCount = 0;

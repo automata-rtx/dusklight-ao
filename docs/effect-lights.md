@@ -24,7 +24,8 @@ Related reading, in the order it becomes useful:
 Until this system existed, the bridge mirrored the game's **own registered
 point lights** into Remix: everything an actor handed to `dKy_plight_set` or
 `dKy_efplight_set` became a sphere light at that light's position
-(`remix_bridge.cpp`, "Local point lights"). That works, in the sense that
+(`remix_bridge.cpp`, in a "Local point lights" section that no longer exists —
+see §8). That worked, in the sense that
 interiors stop being black.
 
 It also faithfully reproduces every **faked placement** the original lighting
@@ -41,7 +42,9 @@ So the placement has to come from something that is *physically* where the
 light is. In this game that thing exists and is exact: **the origin of the
 effect that draws the fire.**
 
-The old mirror is retained, off by default, as a comparison path. §8.
+The old mirror was retained, off by default, purely as a comparison path. That comparison
+has since been run and decided, and the mirror was **removed at protocol 17 on
+2026-08-16**. §8.
 
 ---
 
@@ -856,8 +859,8 @@ The readouts report the two separately (`effLightsDerived` counts reach,
 "took the game's colour" and "took the game's reach" are different amounts of
 trust and it should be visible which one a scene is running on.
 
-Radiance uses the same solve the local-light mirror already uses, so numbers
-tuned there carry over unchanged:
+Radiance uses the same solve the local-light mirror used, so the numbers tuned
+there carried over unchanged when it was removed:
 
 ```
 radiance = reach² · kNewLightEndValue / (π · radius²) · intensityMultiplier
@@ -1059,8 +1062,8 @@ light that drifts has visible shadow swim), and the colour of that member.
 
 Site identity has to be **stable across frames** or Remix re-creates the light
 every frame: a Remix light is keyed by hash, and a changing hash is a new
-light with no temporal history. Sites are therefore tracked like the existing
-local lights are — matched to last frame's sites by proximity and class, and
+light with no temporal history. Sites are therefore tracked the way the local
+light mirror tracked its lights — matched to last frame's sites by proximity and class, and
 given a persistent id on first sight. A site whose members all disappear is
 destroyed after a short grace period, which also stops a fire that is
 re-spawned every few frames from churning.
@@ -1191,26 +1194,35 @@ grade** is off by default and has never been reached in a test.
 
 An effect light is a **sphere** light, which is NEE-sampled like any other. So
 indoors, these are not a garnish on top of an existing lighting solution —
-between them and whatever the mirror is doing, they are the lighting solution.
+with the mirror gone, they are the lighting solution.
 That is the argument for getting their placement right, and also the reason
 `effLightsOrphans` matters: every registered light this policy drops in an
 interior is light nothing else replaces.
 
 ---
 
-## 8. What happens to the old mirror
+## 8. What happened to the old mirror
 
-`rtx.dusklight.game.localLights` stays exactly as it is, defaulting off. It is
-the comparison path: turning it on and this system off reproduces the previous
-behaviour, which is the only way to judge whether a placement improved.
+**Removed at protocol 17, 2026-08-16.** It was kept past its supersession on
+2026-08-06 for one reason — it was the comparison path, and turning it on with
+this system off reproduced the previous behaviour, which was the only way to
+judge whether a placement had improved. That A/B was run: the effect lights
+were tested in game on 2026-08-07 and merged, and the mirror had no second job.
 
-They are **not** meant to run together — every fire would get two lights, one
-of them in the wrong place. Nothing enforces it, because "both on" is a
-legitimate thing to look at once. But **inheriting** it is not: anyone who
-tuned the old mirror has `localLights = True` saved, and the first launch after
-this lands doubles every fire, which reads as the new placement being wrong.
-The overlay therefore says so loudly whenever both are enabled, rather than
-leaving it in a paragraph.
+What went, on both sides of the wire: game-side, the whole submission path in
+`remix_bridge.cpp` and the `remixLocalLight*` settings; fork-side, the
+`localLights` / `localLightIntensity` / `localLightRadius` options, the four
+`localLights*` readouts, and the overlay's "Local Point Lights (comparison)"
+section along with the warning it used to show when both systems were on.
+
+**If you are carrying an old `rtx.conf` or `config.json` forward, delete those
+keys.** Not because they will double every fire any more — nothing reads them —
+but because a dead key that looks live is the next hour someone spends
+wondering why toggling it does nothing.
+
+The numbers the mirror settled were **not** lost with it: the intensity factor
+of 19 and the radius of 10 carried over unchanged as the effect lights' derived
+defaults, and §5 and §10 are where the derivation now lives.
 
 ---
 
@@ -1220,7 +1232,7 @@ Landed 2026-08-12. **CI-green and syntax-checked; never run in game.** It is
 off by default and this section explains why that is a decision rather than
 caution.
 
-### What they are, and why they are not the mirror
+### What they are, and why they were never the mirror's lights
 
 `dScnKy_env_light_c::dungeonlight[8]` (`include/d/d_kankyo.h:259`) is refreshed
 **every frame** from the room the player is standing in, out of that room's
@@ -1236,16 +1248,16 @@ readers in the whole tree are the game's own debug draw
 (`d_kankyo_debug.cpp:788`) and its HIO sliders, and neither is compiled into
 any build of this port.
 
-These are **not** the lights §0 and §8 are about. That mirror reads
-`pointlight[]` and `efplight[]` — `LIGHT_INFLUENCE`s that *actors* register
-through `dKy_plight_set`: torches, lanterns, campfires, Midna. These are placed
-by whoever laid the **room** out, in its stage file, and are what lights a
-dungeon corridor with no fire in it at all. Three separate registries, and
-until now the bridge read two.
+These are **not** the lights §0 and §8 are about. Those are `pointlight[]` and
+`efplight[]` — `LIGHT_INFLUENCE`s that *actors* register through
+`dKy_plight_set`: torches, lanterns, campfires, Midna, which the retired mirror
+forwarded wholesale and which §5 still reads for colour and reach. These are
+placed by whoever laid the **room** out, in its stage file, and are what lights
+a dungeon corridor with no fire in it at all. Three separate registries.
 
 > **Do not route this through `DUNGEON_LIGHT::mInfluence`, and this is the one
 > trap worth spelling out.** `DUNGEON_LIGHT` embeds a `LIGHT_INFLUENCE` at
-> offset `0x2C` — the exact struct the mirror's forwarding loop already speaks,
+> offset `0x2C` — the exact struct `dKy_plight_set`'s registry is made of,
 > so reaching for it looks like a free ride. **The cone fields are at
 > `0x18`–`0x24`, outside it.** Routing through `mInfluence` drops the cone
 > *structurally*, before it ever reaches any shaping code, and nothing in a
@@ -1351,10 +1363,10 @@ light belongs to, for a difference the intensity knob already covers. So this
 uses the array whose entire purpose is to hold the current room's light state,
 and the discrepancy is written down here rather than chased.
 
-### The intensity derivation is weaker than the mirror's, and says so
+### The intensity derivation is weaker than `mPow`, and says so
 
-The mirror starts from `LIGHT_INFLUENCE::mPow`, which the game really does
-treat as a reach. This starts from `mRefDistance` — the room light's authored
+§5 starts from `LIGHT_INFLUENCE::mPow`, which the game really does treat as a
+reach. This starts from `mRefDistance` — the room light's authored
 `radius` — and that is a **nominal size, not a distance the light stops at**.
 
 The game loads it as `GXInitLightDistAttn(radius, 0.99999f, distFn)`
@@ -1374,8 +1386,8 @@ A path-traced sphere light falls off physically whatever we set, so **that wash
 is not reproducible from this data at any setting.** Expect a bright spot near
 the light where the game had an even fill. *That is inference read off the GX
 coefficients above, not a measurement* — the play session is what settles it.
-`rtx.dusklight.game.roomLightIntensity` starts at the mirror's 19 and is
-expected to move.
+`rtx.dusklight.game.roomLightIntensity` starts at the mirror's inherited 19 and
+is expected to move.
 
 ### The argument against, weighed rather than routed around
 
@@ -1416,7 +1428,7 @@ the threshold but `dungeonlight` is not refreshed until the kankyo process runs
 — reporting immediately would produce a log confidently describing the room
 just left.
 
-**Six readouts**, in the Dusklight tab beside the mirror's:
+**Six readouts**, in the Dusklight tab beside the effect lights':
 
 | Readout | Answers |
 | :-- | :-- |
@@ -1818,9 +1830,9 @@ neighbouring torches. That 32 lights is a sensible budget.
    from frame *k-1* while the lights submitted alongside it carry state *k*.
    For anything static this is invisible. For a swinging lantern the light
    leads the lamp by one frame — 16 to 33 ms — which is named here so it is
-   recognised rather than rediscovered. It applies to the local-light mirror
-   and the celestial light equally; it is a property of the frame, not of this
-   system.
+   recognised rather than rediscovered. It applied to the local-light mirror and
+   applies to the celestial light equally; it is a property of the frame, not of
+   this system.
 5. **`d_a_obj_lv3Candle` never calls `dKy_plight_set` at all** — it fills a
    `LIGHT_INFLUENCE` and only ever cuts it — and spawns its flame
    unconditionally. A permanently burning torch with no registered light is

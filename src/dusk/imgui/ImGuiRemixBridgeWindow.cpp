@@ -128,44 +128,6 @@ void DrawRemixBridgeWindow(bool& open) {
             "is the one that is actually reachable while the D3D9 backend is running.");
     }
 
-    ImGui::SeparatorText("Local point lights (comparison)");
-    {
-        auto& settings = getSettings().game;
-
-        bool localEnabled = settings.remixLocalLights.getValue();
-        if (ImGui::Checkbox("Local Lights", &localEnabled)) {
-            settings.remixLocalLights.setValue(localEnabled);
-        }
-
-        const remix::LocalLightsDebug& local = remix::localLightsDebug();
-        ImGui::SameLine();
-        if (localEnabled && !local.enabled) {
-            ImGui::TextUnformatted("waiting for the D3D9 device");
-        } else {
-            ImGui::Text("drawn: %d | tracked: %d", local.drawn, local.tracked);
-        }
-
-        float localIntensity = settings.remixLocalLightIntensity.getValue();
-        // Range reaches 19, which is where the game's own GX attenuation curve
-        // puts these lights - see localLightRadiance() in remix_bridge.cpp.
-        if (ImGui::SliderFloat("Local Intensity", &localIntensity, 0.0f, 32.0f, "%.2f")) {
-            settings.remixLocalLightIntensity.setValue(localIntensity);
-        }
-
-        float localRadius = settings.remixLocalLightRadius.getValue();
-        if (ImGui::SliderFloat("Local Radius", &localRadius, 0.5f, 64.0f, "%.1f units")) {
-            settings.remixLocalLightRadius.setValue(localRadius);
-        }
-
-        ImGui::Text("creates: %llu  destroys: %llu",
-                    static_cast<unsigned long long>(local.creates),
-                    static_cast<unsigned long long>(local.destroys));
-        ImGui::TextWrapped(
-            "Radius changes brightness as well as softness: intensity is solved so the light "
-            "still reaches as far as the game's own influence radius, so a bigger emitter needs "
-            "less radiance to get there.");
-    }
-
     ImGui::SeparatorText("Pushed variables");
     if (ImGui::BeginTable("remix_bridge_vars", 3,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {

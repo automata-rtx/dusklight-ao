@@ -554,50 +554,36 @@ Warp tab. No config.
 | Nothing happens, log line present | `dComIfGp_setNextStage` fired and the game ignored it — game-side |
 | Warps by itself on connect | commit priming failed — report immediately |
 
-### 3. Local point lights — RESOLVED, then SUPERSEDED
+### 3. Local point lights — RESOLVED, then SUPERSEDED, then REMOVED
 
-> **Do not run this section as a test of the current build.** The mirror it
-> exercises defaults **off** since 2026-08-06 and is kept only for A/B against
-> §3b. Turning it on without turning effect lights off gives every fire two
-> lights, one of them in the old place — which looks exactly like §3b being
-> broken. The Dusklight tab warns when both are on.
->
-> Kept in full because the A/B is the whole reason the mirror still exists, and
-> because the two numbers it settled are now effect lights' defaults too.
+> **There is nothing to run here, and no switch left to set.** The mirror this
+> section used to exercise was superseded by §3b on 2026-08-06, kept only so the
+> two placements could be A/B'd, and **removed outright at protocol 17 on
+> 2026-08-16** once that comparison had been run and decided. Its game-side
+> submission path, its three `rtx.dusklight.game.localLight*` options, its four
+> env readouts and its overlay section are all gone. The section is kept as the
+> record of what it settled.
 
-> **PASSED 2026-07-29.** Forest Temple, first room:
-> `Registered by the game: 5   drawn this frame: 4   tracked: 4`.
-> The lights work. Two settings had to move off their defaults and both are
-> now recommended values rather than experiments — see open issue 3:
-> **`localLightIntensity` 19** (the minimum that gives usable light, which is
-> the *derived* alternative reading of the attenuation curve, not a guess) and
-> **`localLightRadius` 10** (no clipping through the Forest Temple light posts).
->
-> Whatever was wrong in the first report is gone, and the diagnostics are the
-> reason this took one visit instead of an evening. The `found 5 / drawn 4` gap
-> is the one loose end — see issue 3.
+**PASSED 2026-07-29.** Forest Temple, first room:
+`Registered by the game: 5   drawn this frame: 4   tracked: 4`. The lights
+worked. Two settings had to move off their defaults, and **both numbers outlived
+the system that produced them** — they are the effect lights'
+`effectLightDerivedIntensity` and `effectLightDerivedRadius` defaults today:
 
-```ini
-rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working torch is unmistakable
-```
+- **19** — the minimum intensity giving usable light. It is also the *derived*
+  alternative reading of the game's attenuation curve rather than a guess, which
+  is why it is worth trusting: `mPow` is where the curve falls to 1/11 of peak,
+  not where the light ends, so applying Remix's own end threshold gives ~19×.
+  The measured number and the derived number agreed independently.
+- **10** — the emitter radius that clears the Forest Temple light posts without
+  clipping through them.
 
-Warp to **Forest Temple → Forest Temple** (`D_MN05`). `d_a_ep` — the torch
-actor; what `ep` abbreviates is not established, like many of the game's
-two-letter actor codes ([`japanese-naming.md`](japanese-naming.md) §5) —
-registers its light on actor init regardless of whether the flame is lit
-(`d_a_ep.cpp:935`), so `found` should be non-zero if the array is read at all.
-Ordon Village at night and the Kakariko bonfire are backups.
+The `found 5 / drawn 4` gap was the one loose end and was never chased; it went
+with the system.
 
-**Tick "Local Lights Enabled" and leave it ticked before reading.** `found` is
-counted before the enable gate but `running` is set after it, so reading with
-the box unticked always reports "not running its light submission" — expected,
-not the bug.
-
-Then read `Registered by the game: N   drawn this frame: N   tracked: N` and
-the paragraph under it. The three outcomes and what each means are in open
-issue 0. If `drawn > 0` but the room is still dark, that is intensity rather
-than plumbing — try **Local Intensity 19** (the alternative reading of the
-attenuation curve, `remix_bridge.cpp:640-670`).
+The room this was validated in, Forest Temple → Forest Temple (`D_MN05`), is
+still the right room for §3b, and for the same reason: its torch stands go
+through the shared-emitter spawn path.
 
 ### 3b. Effect lights — RAN 2026-08-07, PASSED; the diagnostics were not read
 
@@ -616,8 +602,9 @@ attenuation curve, `remix_bridge.cpp:640-670`).
 
 
 The system that replaced the mirror above. Design: [`effect-lights.md`](effect-lights.md).
-It defaults **on**, and `localLights` now defaults **off** — do not run both, or
-every fire gets two lights, one of them in the wrong place.
+It defaults **on**, and since protocol 17 it is the only light system of its kind
+left — the "do not run both" warning this section used to carry went with the
+mirror, because there is no longer a second one to run.
 
 ```ini
 rtx.fallbackLightMode = 0      # Never. An unlit room goes black, so a working fire is unmistakable
@@ -637,8 +624,8 @@ authors fire and glow with additive blending and smoke without — is read from
 the file format's semantics and has never been checked against this game's
 actual assets.
 
-**Warp to Forest Temple → Forest Temple (`D_MN05`)**, the same room the mirror
-was validated in. Its torch stands go through the *shared-emitter* spawn path,
+**Warp to Forest Temple → Forest Temple (`D_MN05`)**, the same room the retired
+mirror was validated in (§3). Its torch stands go through the *shared-emitter* spawn path,
 which is the half a naive sweep would get wrong, so a room where each torch has
 its own light is the headline result. Kakariko's bonfire (five emitters at one
 point, which must produce exactly one light) and Ordon at night with the lantern
@@ -725,13 +712,15 @@ uses:
 
 Nothing else changes, and it is one A/B from a single standing position.
 
-> **If the sub-switch does nothing, it is not your setup.** The overlay half and
-> the game half of this option landed separately: the checkbox and
-> `rtx.dusklight.game.hideStarBillboards` exist in the fork, and the game only
-> follows them once the bridge reads that name (and the protocol is bumped to
-> match). Until then the setting is reachable game-side only —
-> `game.remixHideStarBillboards = false` in the game's `config.json`, which
-> needs a relaunch but runs exactly the same test.
+> **The overlay checkbox now drives this — as of protocol 17 (2026-08-16).** The
+> two halves of the option landed separately: the checkbox and
+> `rtx.dusklight.game.hideStarBillboards` had existed in the fork since the
+> setting was split out on 2026-08-11, but nothing in the bridge read that name,
+> so the control moved a value the game never saw. The bridge reads it now, and
+> the checkbox takes effect live, without a relaunch. **UNTESTED on this path** —
+> if it appears to do nothing, check the Dusklight tab's protocol line first, and
+> `game.remixHideStarBillboards = false` in the game's `config.json` still runs
+> exactly the same test with a relaunch.
 
 **What you should see immediately: stars.** They come back and the moon does
 not. If the sky is still empty, the two sides are not talking — check the

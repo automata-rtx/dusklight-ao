@@ -147,13 +147,13 @@ problem**, and `dx9.draws` is where you look.
 release-only, so no container check sees it) and `hashStructByMemory`'s padding
 assert (this one *is* checkable locally). Listed in the fork's `CLAUDE.md`.
 
-**Protocol is at 16.** When you bump it, bump `kRequiredProtocol` in the fork's
+**Protocol is at 17.** When you bump it, bump `kRequiredProtocol` in the fork's
 `showDusklightRemixTab` in the same commit. (This line has been stale twice — it
 said 6 until 2026-08-09 and 7 until 2026-08-11 — which is exactly the skew the
 coupling warning exists to prevent. The fork's `CLAUDE.md` and the tab's readout
 are the authorities, not this file.) **12 is skipped, not free:** it belongs to
 the unmerged `claude/kasumi-naming-correction-w3e204`, so the next branch to
-need a number takes **14**.
+need a number takes **18**.
 
 **HD texture replacement packs work on the D3D9 backend — tested good
 2026-08-06, first try.** The pack's bytes never enter D3D9: the game hands each
@@ -349,10 +349,12 @@ Added **2026-07-29**:
   made the Phase C reading below trustworthy.
 - **Warp.** "Exactly as intended, no issues."
 - **Local point lights.** Forest Temple first room, `found 5 / drawn 4 /
-  tracked 4`. Needs `localLightIntensity` 19 and `localLightRadius` 10.
-  **Superseded 2026-08-07 by effect lights and now off by default** — its
-  placements are the game's, which a path tracer shows to be wrong. Kept as the
-  comparison path; do not run both.
+  tracked 4`. Needed `localLightIntensity` 19 and `localLightRadius` 10.
+  **Superseded 2026-08-07 by effect lights**, because its placements are the
+  game's, which a path tracer shows to be wrong. Kept off by default as the
+  comparison path until that A/B was decided, then **removed entirely at
+  protocol 17 on 2026-08-16**. Its two numbers live on as effect-light
+  defaults.
 - **`hideSkyBillboards`, and with it the night shadow wandering.** Works, and
   confirms the moon-quad cause.
 - **Aerial perspective under the physical sky.** Distant terrain reads
@@ -381,8 +383,10 @@ Added **2026-08-08**:
    supposed to *narrow* the bug appears to have carried it, most plausibly the
    `efplight[0..4]` array that the first implementation never read at all, or
    the NaN guards added at the same time. Recorded honestly: this closed without
-   a proven root cause, so if local lights ever regress, start by re-reading
-   both arrays rather than assuming the old diagnosis.
+   a proven root cause. The system itself was removed at protocol 17, but the
+   lesson transfers — effect lights read the same two arrays for colour and
+   reach, so if *those* ever go missing, re-read both arrays rather than
+   assuming the old diagnosis.
 
    **What the visit settled that matters more than the bug:**
 
@@ -395,7 +399,7 @@ Added **2026-08-08**:
    - **`localLightRadius` 10 is safe**, not just 4. No clipping through the
      Forest Temple light posts, and a larger emitter softens the falloff.
 
-   Both are still non-default. See issue 3.
+   Both later became the defaults, and outlived the system — see issue 3.
 
    **The loose end:** `found 5` but `drawn 4`. One light was seen and then
    rejected on the way through. Candidates, in order of likelihood: a light with
@@ -500,11 +504,12 @@ Added **2026-08-08**:
    there too, as `effectLightDerivedIntensity` and `effectLightDerivedRadius` —
    the solve is the same one, so the measurement did not have to be repeated.
 
-   The open question this entry used to carry — *should `localLights` default
-   on?* — is answered, and not the way it was leaning. It defaults **off**.
-   Effect lights replaced it (see the top of this document), because working was
-   exactly what exposed the problem: the mirror faithfully reproduces placements
-   that were authored for a renderer where a point light casts no shadow.
+   The open question this entry used to carry — *should the mirror default on?*
+   — was answered, and not the way it was leaning: it defaulted **off**, and on
+   2026-08-16 it was **removed altogether at protocol 17**. Effect lights
+   replaced it (see the top of this document), because working was exactly what
+   exposed the problem: the mirror faithfully reproduced placements that were
+   authored for a renderer where a point light casts no shadow.
 
 4. **CLOSED 2026-08-13 — the fog medium dimmed the generated sky.**
    `rtx.dusklight.atmosphere.skyFogMode = 1` (Exempt) was run in game and
@@ -1967,13 +1972,13 @@ everything tested now lives in "Confirmed working in-game" above.*
   is not blocked** and is how this should be tested: bloom tables 1/2 drive the
   same golden tint, 37.5 % desaturation and 0xD2 base dim.
 
-**Remaining unknowns for local lights**, now that they work — and these carried
-over to effect lights rather than being retired with the mirror: the churn cost
+**Two unknowns first raised against the local light mirror outlived it**, having
+carried over to effect lights rather than being retired with it: the churn cost
 in a busy room is still unmeasured, and `mFluctuation` — the per-light flicker
 amount, 1.0 on every torch and 100 on bombs — is still ignored, because applying
-it would mean a re-create every frame for every flickering light. Effect lights
-inherit both; [`effect-lights.md`](effect-lights.md) §10 "Not built yet" carries
-the current statement.
+it would mean a re-create every frame for every flickering light.
+[`effect-lights.md`](effect-lights.md) §10 "Not built yet" carries the current
+statement.
 
 **"The sun seems tied to Link" — investigated 2026-07-26, no tie found, and
 since narrowed.** Four things were checked and none can carry a dependency on

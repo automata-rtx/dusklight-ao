@@ -88,11 +88,13 @@ wrong, the tag was mis-assigned: say so, retag it, and fix the code.
 export LC_ALL=C.UTF-8      # or grep -P finds none of the game's Japanese, silently
 ```
 
-**Protocol is at 16.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
+**Protocol is at 17.** It was 7 on `Fixed-Function-dev` and 11 on the effect-lights
 branch until those merged on 2026-08-11; 11 was the merged number, 12 is taken by the
 unmerged `claude/kasumi-naming-correction-w3e204`, this worklist's P18 took 13
-beside it rather than on top of it, and the effect-light vocabulary rework took 14
-beside both on 2026-08-13 — so the next free number is **15**. Any prompt tagged
+beside it rather than on top of it, the effect-light vocabulary rework took 14
+beside both on 2026-08-13, the Shadow Insect sparks took 15, the Mods tab 16 on
+2026-08-15, and retiring the local point-light mirror took 17 on 2026-08-16 — so
+the next free number is **18**. Any prompt tagged
 [PROTOCOL] must check the other live `claude/*` branches before taking a number. Two
 branches claiming one number is a trap this project has already hit, and the merge
 conflict resolves *cleanly* into a wrong answer — **it hit again here**: the effect
@@ -403,10 +405,11 @@ merge. Keep it; it does not conflict with anything the branch does.
 DO NOT change effect-lights behaviour during this merge. If you find a defect, write it
 down and leave it - a merge that also fixes things cannot be reviewed.
 
-LOCAL LIGHTS: leave rtx.dusklight.game.localLights exactly as the branch has it, present
-and defaulting OFF, as the comparison path (docs/effect-lights.md section 8). Retiring it
-is a separate change, and doing it inside this merge would destroy the only way to A/B
-the new light placement. Verify the overlay's "both enabled" warning survived.
+LOCAL LIGHTS: SUPERSEDED 2026-08-16. This instruction was written while the mirror was
+still the only way to A/B the new light placement, and said to leave it present and
+defaulting OFF. That A/B has since been run and decided, and the mirror was REMOVED at
+protocol 17 - game side, fork options, readouts and overlay section alike. There is no
+longer anything here to preserve, and no "both enabled" warning to verify.
 
 DONE MEANS: the branch contains Fixed-Function-dev; check_invariants.py passes in
 dusklight-ao and aurora-ao; kRequiredProtocol matches; the aurora pin resolves; CI green
@@ -1675,9 +1678,9 @@ the SHADING looked best rather than where a light physically is, and that a path
 exposes that - which is why the effect-lights system derives placement from the effect
 that draws the fire instead. Room lights are authored placements and inherit that
 criticism. Your job is to weigh it honestly, not to route around it. What is different
-about these: they are a DIFFERENT registry from the one localLights mirrored, they are
-the only source with cone data, and interiors today are lit only by what the effect
-emitters and the fallback light supply.
+about these: they are a DIFFERENT registry from the pointlight[]/efplight[] list the
+retired localLights mirror forwarded, they are the only source with cone data, and
+interiors today are lit only by what the effect emitters and the fallback light supply.
 
 IF IT DOES NOT REPRODUCE: stop and report.
 
@@ -1700,8 +1703,10 @@ IN SCOPE:
  - Populate remixapi_LightInfoSphereEXT shaping from mCutoffAngle + mAngleX/mAngleY
    whenever mAngleAttenuation != GX_SP_OFF, and leave shaping off otherwise.
  - INSTRUMENT BEFORE SHIPPING, per project rule 4: push a roomLightsFound /
-   roomLightsDrawn pair the way localLightsFound/localLightsDrawn already work, so "this
-   room has none" and "we dropped them" stay distinguishable in a log.
+   roomLightsDrawn pair the way localLightsFound/localLightsDrawn worked (those four
+   readouts were removed with the mirror at protocol 17; the roomLights and effLights
+   pairs are the surviving examples), so "this room has none" and "we dropped them" stay
+   distinguishable in a log.
  - OFF BY DEFAULT. The double-counting question against effect lights must be settled
    from one log, not from an argument.
 
@@ -1710,9 +1715,10 @@ entries have a non-degenerate mPosition, what their mAngleAttenuation is, and th
 blended mColor. One session through two dungeons answers whether this is six lights per
 room or two, and whether they duplicate the emitter lights the bridge already sends.
 
-OUT OF SCOPE: touching localLights (being retired); changing effect-lights; the
-fallback light; anything about outdoor lighting. DO NOT do this at the same time as
-retiring local lights - two light changes at once cannot be judged from one test.
+OUT OF SCOPE: changing effect-lights; the fallback light; anything about outdoor
+lighting. (This used to also say "touching localLights (being retired)" and "DO NOT do
+this at the same time as retiring local lights". The mirror was retired on 2026-08-16, so
+neither clause has anything left to refer to.)
 
 PROTOCOL: wire change - bump both sides in one commit, and check the other live branches
 first. The sphere-lights branch is at 11.
@@ -1851,9 +1857,10 @@ Corrected 2026-08-11 — an earlier version of this paragraph called it "an unpa
 P0" and said every forwarded light discards its cone. **That was wrong**, and the real
 shape is worth stating precisely:
 
-- **Nothing is discarding a cone today.** `sphere.shaping_hasvalue = 0` appears at two
-  sites — `updateLocalLights` (`remix_bridge.cpp:1455`) and `updateEffectLights` (`:1702`)
-  — and it is **correct at both**, because neither path carries cone data to begin with.
+- **Nothing is discarding a cone today.** `sphere.shaping_hasvalue = 0` appeared at two
+  sites when this was written — `updateLocalLights` (`remix_bridge.cpp:1455`, removed at
+  protocol 17) and `updateEffectLights` — and it was **correct at both**, because neither
+  path carries cone data to begin with.
   `LIGHT_INFLUENCE` (`d_kankyo.h:17-23`) is position, colour, power, fluctuation, index:
   **no angle fields at all.** The effect-light `Site` (`effect_lights.hpp:41-55`) likewise.
 - **The one cone-bearing source the effect lights touch, they read for colour only, on

@@ -203,11 +203,9 @@ struct UserSettings {
         ConfigVar<float> remixSunIntensity;
         ConfigVar<float> remixMoonIntensity;
         ConfigVar<float> remixCelestialAngle;
-        ConfigVar<bool> remixLocalLights;
-        ConfigVar<float> remixLocalLightIntensity;
-        ConfigVar<float> remixLocalLightRadius;
         // Room lights: the room's own authored lights (dungeonlight), a third registry from
-        // either of the two the bridge already forwards, and the only one carrying a cone.
+        // either the effect emitters or the pointlight[]/efplight[] list the effect lights read
+        // colour and reach from, and the only one carrying a cone.
         // Off by default. docs/effect-lights.md section 8.1.
         ConfigVar<bool> remixRoomLights;
         ConfigVar<float> remixRoomLightIntensity;

@@ -60,7 +60,6 @@ CelestialLightDebug s_celestial = {};
 bool s_celestialFlip = false;
 bool s_celestialLock = false;
 
-LocalLightsDebug s_localDebug = {};
 EffectLightsDebug s_effectDebug = {};
 RoomLightsDebug s_roomDebug = {};
 
@@ -93,19 +92,75 @@ PFN_getRtxOptionValue s_getOption = nullptr;
 
 // Reads a Remix option, or returns false if this Remix build has no getter or
 // does not know the key.
+//
+// The exporter's contract (dxvk-remix rtx_option_manager.cpp getRtxOptionValue) is: return 0
+// for an unknown key, otherwise return strlen+1, and only copy when the caller's buffer is at
+// least that big. A fixed 64-byte buffer therefore turned "the value is longer than 63
+// characters" into the same answer as "this Remix does not know the key" - silently, and every
+// frame. rtx.dusklight.game.modsEnabled is the ticked mod ids joined with '|', and the three
+// bundles already in the tree reach that: dev.twilitrealm.ao_mod (22) + dev.twilitrealm.shadow_mod
+// (26) + com.example.mod (15) + two separators is 65 characters, 66 with the NUL. With the fixed
+// buffer, ticking all three made updateMods return before its enable/disable diff - the inventory
+// keeps publishing, so the tab still renders, but ticking a box stops doing anything.
+//
+// So it is reachable from this checkout, and what has kept it unobserved is a different fact:
+// mod discovery is off by default under the fixed-function backend, so loader.mods() is empty
+// and updateMods returns at its head before reading this key at all. Grow instead - nothing on
+// this wire should carry a ceiling that only a longer id walks into.
+//
+// Retried at most twice rather than looped. The exporter takes RtxOptionImpl::getUpdateMutex()
+// per call, so the value can change between the size query and the fetch; two disagreements is
+// already a value being rewritten under us and a third would be a spin, not a read.
 bool readOption(const char* key, std::string& outValue) {
     if (s_getOption == nullptr) {
         return false;
     }
 
     char buffer[64];
-    const uint32_t size = s_getOption(key, buffer, sizeof(buffer));
-    if (size == 0 || size > sizeof(buffer)) {
+    uint32_t size = s_getOption(key, buffer, sizeof(buffer));
+    if (size == 0) {
         return false;
     }
+    if (size <= sizeof(buffer)) {
+        outValue.assign(buffer);
+        return true;
+    }
 
-    outValue.assign(buffer);
-    return true;
+    // Only reached past the stack buffer. Static so a long value does not allocate every frame -
+    // updateMods reads through here from tick(), which is the only thread that calls any of
+    // this, the same assumption every other static in this file makes.
+    static std::string s_scratch;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        s_scratch.assign(size, '\0');
+        const uint32_t got = s_getOption(key, &s_scratch[0], size);
+        if (got == 0) {
+            return false;
+        }
+        if (got <= size) {
+            outValue.assign(s_scratch.c_str());
+            return true;
+        }
+        size = got;
+    }
+
+    // One line per key, capped, so a value that keeps growing cannot turn this into a
+    // per-frame log. Naming the key is the whole point: the failure it used to produce was a
+    // control in the Remix overlay that quietly stopped doing anything.
+    static std::vector<std::string> s_growFailed;
+    constexpr size_t kMaxGrowFailedKeys = 8;
+    const std::string keyText(key);
+    if (std::find(s_growFailed.begin(), s_growFailed.end(), keyText) == s_growFailed.end() &&
+        s_growFailed.size() < kMaxGrowFailedKeys) {
+        s_growFailed.push_back(keyText);
+        BridgeLog.warn("readOption({}): value kept changing size across 2 retries (last needed "
+                       "{} bytes); falling back to the game's own value",
+                       key, size);
+        if (s_growFailed.size() == kMaxGrowFailedKeys) {
+            BridgeLog.warn("readOption: further size-change reports suppressed (cap {} keys)",
+                           kMaxGrowFailedKeys);
+        }
+    }
+    return false;
 }
 
 bool readOptionBool(const char* key, bool fallback) {
@@ -353,7 +408,6 @@ void* s_registeredDevice = nullptr;
 // One per consumer. These are cleared by whoever reads them, and there is more than one
 // reader: a single flag meant whichever light system ran first in tick() swallowed the
 // notification and the other kept handles bound to a device that no longer exists.
-bool s_lightsNeedRecreate = false;        // the local light mirror
 bool s_effectLightsNeedRecreate = false;  // the effect lights
 bool s_roomLightsNeedRecreate = false;    // the room's authored lights
 bool s_celestialLightExists = false;
@@ -389,7 +443,6 @@ bool ensureDeviceRegistered() {
         // External lights live in the device's scene state; recreate them
         // against the new device.
         s_celestialLightExists = false;
-        s_lightsNeedRecreate = true;
         s_effectLightsNeedRecreate = true;
         s_roomLightsNeedRecreate = true;
         BridgeLog.info("registered D3D9 device with the Remix API");
@@ -427,14 +480,37 @@ constexpr uint64_t kTexRepHandleBase = 0xD05C000000000000ull;
 // extern/aurora/docs/dx9/texture-replacements.md §9.
 constexpr size_t kTexRepCreationsPerFrame = 16;
 
+// Per-reason message cap. One budget per reason rather than one shared between them: the
+// CreateMaterial failures used to be charged against the .dds skips' 32, so a pack that was
+// half wrong-extension and half unloadable could spend the whole budget on the first reason
+// and never say a word about the second.
+constexpr uint32_t kTexRepMessagesPerReason = 32;
+
 std::vector<aurora::texture::ReplacementDescriptor> s_texRepQueue;
 size_t s_texRepNext = 0;
 bool s_texRepEnumerated = false;
 uint32_t s_texRepCreated = 0;
-uint32_t s_texRepSkipped = 0;
-uint32_t s_texRepSkipLogged = 0;
+// The three distinct reasons an entry is consumed without producing a material, counted apart
+// so "N skipped" says which kind of wrong the pack is. They were one counter and one message
+// budget, which made a pack of unloadable .dds files and a pack of .png files read the same.
+uint32_t s_texRepSkippedName = 0;    // not a .dds - Remix's asset loader takes nothing else
+uint32_t s_texRepSkippedPath = 0;    // std::filesystem::absolute refused the path
+uint32_t s_texRepFailedCreate = 0;   // remixapi_CreateMaterial rejected the file
+uint32_t s_texRepNameLogged = 0;
+uint32_t s_texRepPathLogged = 0;
+uint32_t s_texRepFailLogged = 0;
+// Latched when the queue reaches its end, so the completion summary prints exactly once per
+// device. updateTextureReplacements runs every frame, so the drained condition is true forever
+// afterwards and an unlatched summary would be per-frame output.
+bool s_texRepDrained = false;
 void* s_texRepDevice = nullptr;
 std::vector<remixapi_MaterialHandle> s_texRepHandles;
+
+// What rtx.dusklight.env.texrepSkipped has always reported: every entry the queue consumed
+// without producing a material, whatever the reason.
+uint32_t texRepSkippedTotal() {
+    return s_texRepSkippedName + s_texRepSkippedPath + s_texRepFailedCreate;
+}
 
 bool endsWithNoCase(const std::string& value, const char* suffix) {
     const size_t n = std::strlen(suffix);
@@ -462,8 +538,13 @@ void destroyTextureReplacements() {
     s_texRepNext = 0;
     s_texRepEnumerated = false;
     s_texRepCreated = 0;
-    s_texRepSkipped = 0;
-    s_texRepSkipLogged = 0;
+    s_texRepSkippedName = 0;
+    s_texRepSkippedPath = 0;
+    s_texRepFailedCreate = 0;
+    s_texRepNameLogged = 0;
+    s_texRepPathLogged = 0;
+    s_texRepFailLogged = 0;
+    s_texRepDrained = false;
 }
 
 // Called every frame once the device is registered. Does nothing after the queue drains.
@@ -499,12 +580,14 @@ void updateTextureReplacements() {
         // Remix's asset loader accepts .dds only, while aurora's registry also accepts .png.
         // Skipping loudly here beats letting the fork log a per-draw failure for each one.
         if (entry.path.empty() || !endsWithNoCase(entry.path, ".dds")) {
-            ++s_texRepSkipped;
-            if (s_texRepSkipLogged < 32) {
-                ++s_texRepSkipLogged;
+            ++s_texRepSkippedName;
+            if (s_texRepNameLogged < kTexRepMessagesPerReason) {
+                ++s_texRepNameLogged;
                 BridgeLog.warn("texrep: skipping {} - Remix loads .dds only", entry.path);
-                if (s_texRepSkipLogged == 32) {
-                    BridgeLog.warn("texrep: further skip messages suppressed");
+                if (s_texRepNameLogged == kTexRepMessagesPerReason) {
+                    BridgeLog.warn("texrep: further non-dds skip messages suppressed (cap {}); "
+                                   "the totals still land in the completion line",
+                                   kTexRepMessagesPerReason);
                 }
             }
             continue;
@@ -516,7 +599,21 @@ void updateTextureReplacements() {
         const std::filesystem::path absolute = std::filesystem::absolute(
             std::filesystem::path(reinterpret_cast<const char8_t*>(entry.path.c_str())), ec);
         if (ec) {
-            ++s_texRepSkipped;
+            // Was a bare counter bump with no line at all - the only one of the three reasons
+            // that was silent by construction, and the one that most directly broke the
+            // contract rtx_dusklight_env.h states for texrepSkipped ("one bounded line per
+            // skipped entry with the reason").
+            ++s_texRepSkippedPath;
+            if (s_texRepPathLogged < kTexRepMessagesPerReason) {
+                ++s_texRepPathLogged;
+                BridgeLog.warn("texrep: skipping {} - could not resolve an absolute path ({})",
+                               entry.path, ec.message());
+                if (s_texRepPathLogged == kTexRepMessagesPerReason) {
+                    BridgeLog.warn("texrep: further path-resolution skip messages suppressed "
+                                   "(cap {}); the totals still land in the completion line",
+                                   kTexRepMessagesPerReason);
+                }
+            }
             continue;
         }
         const std::wstring widePath = absolute.wstring();
@@ -558,11 +655,16 @@ void updateTextureReplacements() {
         remixapi_MaterialHandle handle = nullptr;
         const remixapi_ErrorCode err = s_interface.CreateMaterial(&info, &handle);
         if (err != REMIXAPI_ERROR_CODE_SUCCESS) {
-            ++s_texRepSkipped;
-            if (s_texRepSkipLogged < 32) {
-                ++s_texRepSkipLogged;
+            ++s_texRepFailedCreate;
+            if (s_texRepFailLogged < kTexRepMessagesPerReason) {
+                ++s_texRepFailLogged;
                 BridgeLog.warn("texrep: CreateMaterial failed ({}) for {}", static_cast<int>(err),
                                entry.path);
+                if (s_texRepFailLogged == kTexRepMessagesPerReason) {
+                    BridgeLog.warn("texrep: further CreateMaterial failure messages suppressed "
+                                   "(cap {}); the totals still land in the completion line",
+                                   kTexRepMessagesPerReason);
+                }
             }
             continue;
         }
@@ -572,9 +674,28 @@ void updateTextureReplacements() {
         ++createdThisFrame;
     }
 
-    if (createdThisFrame > 0 && s_texRepNext >= s_texRepQueue.size()) {
-        BridgeLog.info("texrep: {} material(s) created, {} skipped, from {} selected",
-                       s_texRepCreated, s_texRepSkipped, s_texRepQueue.size());
+    // Latched on the queue COMPLETING, not on a material having been created this frame. The
+    // old guard was `createdThisFrame > 0`, and a skip does not increment that - so a pack
+    // whose tail after the last created material is all skips, or a pack that is all skips,
+    // drained in a frame that created nothing and the totals were never printed at all. That
+    // is the one line the feature exists to leave behind, suppressed in exactly the case a
+    // reader needs it. (It is NOT established that this is what silenced the 2026-08-16 run -
+    // that one died inside the driver mid-creation, which accounts for the silence on its own.
+    // The next step there is still one run with DUSK_TEXREP_TRACE=1.)
+    //
+    // Silent when nothing was selected: the "N replacement(s) selected by the registry" line
+    // above already says so, and every launch with no pack installed is that case.
+    //
+    // The leading "texrep: N material(s) created, M skipped" is kept verbatim - three documents
+    // quote it as the timing marker (aurora-ao/docs/dx9/texture-replacements.md,
+    // dxvk-remix/documentation/DusklightAtmosphere.md, docs/remix-test-playbook.md) and nothing
+    // checks that format string.
+    if (!s_texRepDrained && !s_texRepQueue.empty() && s_texRepNext >= s_texRepQueue.size()) {
+        s_texRepDrained = true;
+        BridgeLog.info("texrep: {} material(s) created, {} skipped ({} non-dds, {} path, "
+                       "{} create-failed), from {} selected",
+                       s_texRepCreated, texRepSkippedTotal(), s_texRepSkippedName,
+                       s_texRepSkippedPath, s_texRepFailedCreate, s_texRepQueue.size());
     }
 }
 
@@ -735,6 +856,53 @@ void updateCelestialLight() {
     const float angle = readOptionFloat("rtx.dusklight.game.celestialAngle",
                                         getSettings().game.remixCelestialAngle.getValue());
 
+    // Edge-latched in both directions, and it names which input failed.
+    //
+    // A latch rather than a rate limit, on the expectation - reasoning, not a measurement -
+    // that a NaN here persists rather than flickers: both of its sources are state, a
+    // degenerate kankyo orbit or a bad option value, rather than per-frame noise, so it should
+    // hold until that state changes. On that reading the unguarded warn this replaces emitted
+    // a line every frame for the duration. If it turns out to flicker instead, the pairing is
+    // what says so - each onset gets its own line - and a rate limit would then be the better
+    // shape. The recovery line is what makes the pair an interval rather than an onset, and it
+    // is what keeps a later, unrelated occurrence from being swallowed by the latch.
+    //
+    // Naming the input and printing its value is the other half: dir comes from the kankyo
+    // daytime orbit, radiance from sunIntensity/moonIntensity and angle from celestialAngle,
+    // all three through readOptionFloat - a reader who only gets "non-finite values" still has
+    // to ask the owner which to look at, which is the question rule 2 says should never need
+    // asking. Deliberately NOT modelled on the CreateLight handler below: that one gates on
+    // s_celestialLightExists, which starts false, so it is silent on a first-ever failure
+    // rather than latched. That is a separate gap, left alone here.
+    //
+    // Ahead of the `changed` computation below rather than after it. Cosmetic - NaN compares
+    // false, so the old order was harmless - but the guard now precedes the work it guards.
+    static bool s_nonFiniteWarned = false;
+    if (!isFinite3(dir) || !isFinite3(radiance) || !std::isfinite(angle)) {
+        if (!s_nonFiniteWarned) {
+            s_nonFiniteWarned = true;
+            if (!isFinite3(dir)) {
+                BridgeLog.warn("sun/moon light skipped: direction is non-finite ({}, {}, {}) - "
+                               "this one comes from the kankyo daytime orbit, not from a setting",
+                               dir[0], dir[1], dir[2]);
+            } else if (!isFinite3(radiance)) {
+                BridgeLog.warn("sun/moon light skipped: radiance is non-finite ({}, {}, {}) - "
+                               "check rtx.dusklight.game.sunIntensity / moonIntensity",
+                               radiance[0], radiance[1], radiance[2]);
+            } else {
+                BridgeLog.warn("sun/moon light skipped: angular diameter is non-finite ({}) - "
+                               "check rtx.dusklight.game.celestialAngle", angle);
+            }
+            BridgeLog.warn("sun/moon light: further non-finite frames are not logged until the "
+                           "values recover, which is reported on its own line");
+        }
+        return;
+    }
+    if (s_nonFiniteWarned) {
+        s_nonFiniteWarned = false;
+        BridgeLog.info("sun/moon light: values are finite again");
+    }
+
     // Re-creating with the same hash is the API's update mechanism; only do it
     // when something moved beyond quantization noise.
     const float kDirEps = 0.001f;   // ~0.06 degrees
@@ -747,11 +915,6 @@ void updateCelestialLight() {
                          std::fabs(radiance[1] - s_lastRadiance[1]) > kRadEps ||
                          std::fabs(radiance[2] - s_lastRadiance[2]) > kRadEps ||
                          std::fabs(angle - s_lastAngle) > 0.01f;
-
-    if (!isFinite3(dir) || !isFinite3(radiance) || !std::isfinite(angle)) {
-        BridgeLog.warn("sun/moon light had non-finite values this frame; skipping it");
-        return;
-    }
 
     if (changed) {
         remixapi_LightInfoDistantEXT distant = {};
@@ -805,113 +968,14 @@ void updateCelestialLight() {
     s_celestial.radiance[2] = radiance[2];
 }
 
-// --- Local point lights ------------------------------------------------------
-//
-// Mirrors the game's live point lights (g_env_light.pointlight and efplight, everything
-// registered through dKy_plight_set: torches, braziers, lanterns, campfires, Midna, bomb
-// flashes, dungeon lights) into Remix sphere lights. Tested in game 2026-07-29.
-//
-// This is not a nicety. Aurora's D3D9 backend deliberately does not forward GX lights to D3D9 -
-// the GC light model does not survive the translation and Remix relights everything anyway - so
-// Remix sees no game light of its own. Outdoors the sun/moon distant light covers that; indoors
-// and at night nothing does, and the scene is left on Remix's fallback light. These are the
-// lights that were meant to carry those scenes.
-//
-// Intensity is derived with Remix's own legacy-light conversion rather than a tuning constant,
-// so these land in the same range as lights in any other Remix title - see localLightRadiance().
-
-constexpr uint64_t kLocalLightHashBase = 0xD05C114E00000000ull;
-
-struct TrackedLocalLight {
-    uint64_t hash;
-    remixapi_LightHandle handle;
-    const LIGHT_INFLUENCE* source;
-    float position[3];
-    float radiance[3];
-    float radius;
-    bool seen;
-};
-
-std::vector<TrackedLocalLight> s_localLights;
-
-// Stable per-light identity. The LIGHT_INFLUENCE lives inside its actor, so the
-// address holds still for as long as the light does. If an actor is freed and
-// another lands on the same address the hash is reused, which is harmless: the
-// tracking below simply sees the parameters change and re-creates it.
-uint64_t localLightHash(const LIGHT_INFLUENCE* influence) {
-    uint64_t value = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(influence));
-
-    // Standard 64-bit finalizer; the low bits of an allocation address are the
-    // least distinctive, so mix before truncating.
-    value ^= value >> 33;
-    value *= 0xff51afd7ed558ccdull;
-    value ^= value >> 33;
-    value *= 0xc4ceb9fe1a85ec53ull;
-    value ^= value >> 33;
-
-    return kLocalLightHashBase | (value & 0xffffffffull);
-}
-
-// Radiance for a sphere light standing in for one of the game's point lights.
-//
-// Deliberately the same maths Remix applies to a legacy D3D9 light
-// (LightUtils::calculateIntensity): work out how far the original light was
-// meant to reach, then solve for the radiance a sphere light of a fixed radius
-// needs to still be perceptible at that distance.
-//
-//   radiance = reach^2 * kNewLightEndValue / (pi * radius^2)
-//
-// The reach used below is LIGHT_INFLUENCE::mPow, the game's own influence radius -
-// dKy_light_influence_id treats "closer than mPow" as "inside this light". Deriving from that
-// rather than a tuning constant is what puts these in the same intensity range as the lights of
-// every other Remix title.
-//
-// mPow is not where the light actually ends, though, and the difference is ~19x. The game loads
-// into GX with dKy_GXInitLightDistAttn(info, mPow * 0.001f, 0.99999f, GX_DA_STEEP), i.e.
-//   attenuation(D) = 1 / (1 + 10 * D^2 / mPow^2)
-// so mPow is where the light falls to 1/11 of peak. Applying Remix's own end threshold (1/255)
-// to that curve gives reach = mPow * sqrt((maxColorByte - 1) / 10), which is 4.3x mPow for a
-// torch (colour AF5D00) and so ~19x the radiance.
-//
-// game.remixLocalLightIntensity carries that factor: it defaults to 19, tested in game
-// 2026-07-29 alongside a radius of 10, and the two were settled together - the radiance is
-// solved to reach the same distance, so a larger radius needs less of it. Change one and
-// re-test both. docs/remix-open-issues.md.
-bool localLightRadiance(const LIGHT_INFLUENCE& influence, float radius, float scale,
-                        float outRadiance[3]) {
-    const float channel[3] = {static_cast<float>(influence.mColor.r),
-                              static_cast<float>(influence.mColor.g),
-                              static_cast<float>(influence.mColor.b)};
-    const float brightest = std::max(channel[0], std::max(channel[1], channel[2]));
-
-    if (brightest <= 0.0f || influence.mPow <= 0.01f || radius <= 0.0f) {
-        return false;
-    }
-
-    // Remix's threshold for "still perceptible" (kNewLightEndValue in
-    // rtx_lights.h). Kept as a literal because it is part of Remix's
-    // conversion, not a knob of ours.
-    constexpr float kNewLightEndValue = 0.01f;
-    constexpr float kPi = 3.14159265358979323846f;
-
-    const float reach = influence.mPow;
-    const float intensity =
-        (reach * reach) * kNewLightEndValue / (kPi * radius * radius) * scale;
-
-    for (int i = 0; i < 3; i++) {
-        outRadiance[i] = (channel[i] / brightest) * intensity;
-    }
-
-    return true;
-}
-
 // --- Effect lights -----------------------------------------------------------
 //
-// The replacement for the mirror above, and the reason it now defaults off. Instead of copying
-// the game's registered lights - which reproduces every faked placement the original shading
-// model got away with, because a GameCube point light casts no shadow and could sit anywhere -
-// this puts a sphere light at the origin of the effect that actually draws the fire, and takes
-// only the game's colour and reach from whatever light was authored nearby.
+// This replaced the local point-light mirror, which copied g_env_light.pointlight and efplight
+// straight into Remix and was removed at protocol 17 (2026-08-16) once the A/B had been decided.
+// Copying the game's registered lights reproduces every faked placement the original shading
+// model got away with, because a GameCube point light casts no shadow and could sit anywhere.
+// This instead puts a sphere light at the origin of the effect that actually draws the fire, and
+// takes only the game's colour and reach from whatever light was authored nearby.
 //
 // The decision is dusk::effect_lights; this half only owns the Remix API calls. Design,
 // citations and the exclusion policy: docs/effect-lights.md.
@@ -952,29 +1016,11 @@ void releaseEffectLights() {
     s_effectDebug.drawn = 0;
 }
 
-void destroyLocalLight(TrackedLocalLight& light) {
-    if (light.handle != nullptr && s_interface.DestroyLight != nullptr) {
-        s_interface.DestroyLight(light.handle);
-        s_localDebug.destroys++;
-    }
-
-    light.handle = nullptr;
-}
-
-void releaseLocalLights() {
-    for (TrackedLocalLight& light : s_localLights) {
-        destroyLocalLight(light);
-    }
-
-    s_localLights.clear();
-    s_localDebug.tracked = 0;
-    s_localDebug.drawn = 0;
-}
-
 // --- Room lights (the room's authored lights) --------------------------------
 //
-// A THIRD registry, separate from both of the above, and the only source in the game that
-// carries a cone.
+// A THIRD registry - distinct both from the effect emitters above and from the
+// pointlight[]/efplight[] list those take their colour and reach from - and the only source in
+// the game that carries a cone.
 //
 // g_env_light.dungeonlight[8] is refreshed every frame from the room the player is standing in,
 // out of that room's LightVec stage data (src/d/d_kankyo.cpp:8669-8675, inside
@@ -983,13 +1029,13 @@ void releaseLocalLights() {
 // this function existed nothing in the port read any of it - the only other readers in the whole
 // tree are the game's own debug draw and its HIO sliders, neither of which is compiled in.
 //
-// NOT the same lights the mirror above forwards. That one reads pointlight[] and efplight[],
-// which actors register through dKy_plight_set - torches, lanterns, campfires. These are placed
-// by whoever built the room, in the room's stage file, and are what lights a dungeon corridor
-// that has no fire in it at all.
+// NOT the pointlight[]/efplight[] lights that actors register through dKy_plight_set - torches,
+// lanterns, campfires. Those are what the retired local-light mirror forwarded and what the
+// effect lights still read colour and reach from. These are placed by whoever built the room, in
+// the room's stage file, and are what lights a dungeon corridor that has no fire in it at all.
 //
 // DO NOT ROUTE THIS THROUGH DUNGEON_LIGHT::mInfluence. It is a LIGHT_INFLUENCE embedded at offset
-// 0x2C, the exact struct the mirror above already speaks, and reaching for it is the obvious
+// 0x2C, the exact struct dKy_plight_set's registry is made of, and reaching for it is the obvious
 // move - but the cone fields live at 0x18-0x24, OUTSIDE it, so the transport that looks like a
 // free ride silently drops the one thing this registry has that the others do not. It is also
 // dead: mInfluence is written only by dungeonlight_init (d_kankyo.cpp:1157-1162) from a table of
@@ -1259,8 +1305,16 @@ void updateMods() {
         // Unknown with nothing loaded is the start-disabled policy holding the library back, not
         // a failure. Reported distinctly so the tab can say "native, not yet loaded" rather than
         // implying we tried and could not.
+        //
+        // Except when we did try and could not: load_native leaves nativeStatus at Unknown on
+        // every I/O failure path (loader.cpp - the LoadLibraryExW failure, the create_directories
+        // failures, the readFile failure, the two ofstream failures), so a mod whose DLL would
+        // not open reached here saying "not yet loaded". Every one of those paths is followed by
+        // fail_mod, which sets loadFailed - the same flag this record already carries as field 5
+        // two lines below - so the distinction is available without a new enum value or a change
+        // to the record's shape.
         case dusk::mods::NativeModStatus::Unknown:
-            native = mod.native ? "unknown" : "native-deferred";
+            native = mod.native ? "unknown" : (mod.loadFailed ? "load-failed" : "native-deferred");
             break;
         case dusk::mods::NativeModStatus::Loaded:             native = "loaded"; break;
         case dusk::mods::NativeModStatus::BuildDisabled:      native = "build-disabled"; break;
@@ -1567,197 +1621,6 @@ void updateWarp() {
                           static_cast<s8>(room.roomNo), static_cast<s8>(layer));
 }
 
-void updateLocalLights() {
-    s_localDebug.drawn = 0;
-    s_localDebug.found = 0;
-    s_localDebug.enabled = false;
-
-    if (s_interface.CreateLight == nullptr || s_interface.DrawLightInstance == nullptr ||
-        s_interface.dxvk_RegisterD3D9Device == nullptr) {
-        return;
-    }
-
-    if (!dusk::IsGameLaunched) {
-        releaseLocalLights();
-        return;
-    }
-
-    // Counted ahead of every gate below, so it stays truthful whichever one turns us back. A count
-    // of lights the game has registered, next to a count of lights we submitted, is what separates
-    // "there is nothing here" from "we are dropping them" - and those two are indistinguishable
-    // from a drawn count alone, which is what made the first report of this impossible to narrow.
-    const dScnKy_env_light_c* envForCount = dKy_getEnvlight();
-
-    for (int i = 0; i < 100; i++) {
-        if (envForCount->pointlight[i] != nullptr) {
-            s_localDebug.found++;
-        }
-    }
-
-    for (int i = 0; i < 5; i++) {
-        if (envForCount->efplight[i] != nullptr) {
-            s_localDebug.found++;
-        }
-    }
-
-    if (!readOptionBool("rtx.dusklight.game.localLights",
-                        getSettings().game.remixLocalLights.getValue())) {
-        releaseLocalLights();
-        return;
-    }
-
-    if (!ensureDeviceRegistered()) {
-        return;
-    }
-
-    s_localDebug.enabled = true;
-
-    if (s_lightsNeedRecreate) {
-        // Drop the handles without destroying them: they refer to a device that
-        // no longer exists, and its light manager went with it.
-        s_localLights.clear();
-        s_lightsNeedRecreate = false;
-    }
-
-    const float radius = std::max(
-        readOptionFloat("rtx.dusklight.game.localLightRadius",
-                        getSettings().game.remixLocalLightRadius.getValue()), 0.01f);
-    const float scale = std::max(
-        readOptionFloat("rtx.dusklight.game.localLightIntensity",
-                        getSettings().game.remixLocalLightIntensity.getValue()), 0.0f);
-
-    for (TrackedLocalLight& tracked : s_localLights) {
-        tracked.seen = false;
-    }
-
-    const dScnKy_env_light_c* env = envForCount;
-
-    // The game keeps its lights in two arrays, not one. pointlight is the big one that torches,
-    // braziers, candles and campfires register into; efplight is a separate five slot list used by
-    // chests, a couple of NPCs and the effect system. Only reading the first misses the second
-    // entirely, which is a quiet way to lose lights in exactly the rooms that have the fewest.
-    const LIGHT_INFLUENCE* candidates[105];
-    int candidateCount = 0;
-
-    for (int i = 0; i < 100; i++) {
-        if (env->pointlight[i] != nullptr) {
-            candidates[candidateCount++] = env->pointlight[i];
-        }
-    }
-
-    for (int i = 0; i < 5; i++) {
-        if (env->efplight[i] != nullptr) {
-            candidates[candidateCount++] = env->efplight[i];
-        }
-    }
-
-    for (int c = 0; c < candidateCount; c++) {
-        const LIGHT_INFLUENCE* influence = candidates[c];
-
-        float radiance[3];
-        if (!localLightRadiance(*influence, radius, scale, radiance)) {
-            continue;
-        }
-
-        const float position[3] = {influence->mPosition.x, influence->mPosition.y,
-                                   influence->mPosition.z};
-        if (!isFinite3(position) || !isFinite3(radiance)) {
-            continue;
-        }
-
-        const uint64_t hash = localLightHash(influence);
-
-        TrackedLocalLight* tracked = nullptr;
-        for (TrackedLocalLight& candidate : s_localLights) {
-            if (candidate.hash == hash) {
-                tracked = &candidate;
-                break;
-            }
-        }
-
-        if (tracked != nullptr && tracked->source != influence && tracked->seen) {
-            // Two live lights hashed to the same value. Vanishingly unlikely
-            // (~1e-7 for a roomful), but without this the two would fight over
-            // one Remix light and re-create it twice a frame forever, which
-            // costs far more than the light is worth. The incumbent keeps it.
-            continue;
-        }
-
-        if (tracked == nullptr) {
-            s_localLights.push_back(TrackedLocalLight {hash, nullptr, influence, {}, {}, 0.0f, false});
-            tracked = &s_localLights.back();
-        }
-
-        tracked->seen = true;
-        tracked->source = influence;
-
-        // Torches move with the actor carrying them and brighten as they catch,
-        // so re-create on any real change - but not on float noise, since every
-        // re-create crosses the API lock and re-enters the light manager.
-        constexpr float kPositionEpsilon = 0.5f;   // world units, ~6mm at TP's scale
-        constexpr float kRadianceEpsilon = 0.01f;
-
-        const bool changed =
-            tracked->handle == nullptr ||
-            std::fabs(position[0] - tracked->position[0]) > kPositionEpsilon ||
-            std::fabs(position[1] - tracked->position[1]) > kPositionEpsilon ||
-            std::fabs(position[2] - tracked->position[2]) > kPositionEpsilon ||
-            std::fabs(radiance[0] - tracked->radiance[0]) > kRadianceEpsilon ||
-            std::fabs(radiance[1] - tracked->radiance[1]) > kRadianceEpsilon ||
-            std::fabs(radiance[2] - tracked->radiance[2]) > kRadianceEpsilon ||
-            std::fabs(radius - tracked->radius) > 0.001f;
-
-        if (changed) {
-            remixapi_LightInfoSphereEXT sphere = {};
-            sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
-            sphere.position = {position[0], position[1], position[2]};
-            sphere.radius = radius;
-            sphere.shaping_hasvalue = 0;
-            sphere.volumetricRadianceScale = 1.0f;
-
-            remixapi_LightInfo info = {};
-            info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
-            info.pNext = &sphere;
-            info.hash = hash;
-            info.radiance = {radiance[0], radiance[1], radiance[2]};
-
-            remixapi_LightHandle handle = nullptr;
-            if (s_interface.CreateLight(&info, &handle) != REMIXAPI_ERROR_CODE_SUCCESS) {
-                tracked->handle = nullptr;
-                continue;
-            }
-
-            tracked->handle = handle;
-            tracked->position[0] = position[0];
-            tracked->position[1] = position[1];
-            tracked->position[2] = position[2];
-            tracked->radiance[0] = radiance[0];
-            tracked->radiance[1] = radiance[1];
-            tracked->radiance[2] = radiance[2];
-            tracked->radius = radius;
-            s_localDebug.creates++;
-        }
-
-        if (s_interface.DrawLightInstance(tracked->handle) == REMIXAPI_ERROR_CODE_SUCCESS) {
-            s_localDebug.drawn++;
-        }
-    }
-
-    // Lights whose actor is gone. Remix keeps an entry per created handle until
-    // it is destroyed, so dropping them here is what stops the light manager's
-    // map growing for the whole session as rooms load and unload.
-    for (size_t i = s_localLights.size(); i-- > 0;) {
-        if (!s_localLights[i].seen) {
-            destroyLocalLight(s_localLights[i]);
-            s_localLights.erase(
-                s_localLights.begin() +
-                static_cast<std::vector<TrackedLocalLight>::difference_type>(i));
-        }
-    }
-
-    s_localDebug.tracked = static_cast<int>(s_localLights.size());
-}
-
 void updateEffectLights() {
     s_effectDebug.enabled = false;
     // Carries the completed frame's draw count across to the next frame's report. See the
@@ -1982,9 +1845,9 @@ void updateEffectLights() {
         // a STOCK Remix runtime the old cost is back, and this epsilon is the only thing between
         // an animating flame and permanent temporal noise.
         //
-        // The radiance test is RELATIVE, unlike the local light mirror's. Radiance here is solved
-        // from a reach and a radius and routinely lands in the hundreds, so a fixed 0.01 would
-        // trip on the colour animation of every flame, every frame.
+        // The radiance test is RELATIVE, unlike the retired local light mirror's. Radiance here
+        // is solved from a reach and a radius and routinely lands in the hundreds, so a fixed
+        // 0.01 would trip on the colour animation of every flame, every frame.
         constexpr float kPositionEpsilon = 0.5f;   // world units
         // static, because std::max binds its arguments by const reference and MSVC will not
         // let a capture-less lambda odr-use a function-local constexpr.
@@ -2065,9 +1928,10 @@ void updateEffectLights() {
 
 // Radiance for one of the room's authored lights.
 //
-// The same conversion localLightRadiance uses - Remix's own legacy-light maths, solved so a
-// sphere light of a fixed radius is still perceptible at the reach - but the reach it starts
-// from is a much weaker claim than the mirror's mPow, and that has to be said out loud.
+// The same conversion effect_lights::solveIntensity uses - Remix's own legacy-light maths,
+// solved so a sphere light of a fixed radius is still perceptible at the reach - but the reach
+// it starts from is a much weaker claim than LIGHT_INFLUENCE::mPow, which is what that path
+// derives from, and that has to be said out loud.
 //
 // mRefDistance is the room light's authored radius, loaded into GX as
 // GXInitLightDistAttn(radius, 0.99999f, distFn) (d_kankyo.cpp:8607 and :8612 fill the slot,
@@ -2077,7 +1941,7 @@ void updateEffectLights() {
 // fall to 1/255. The game's room lights therefore barely attenuate at all, and the authored
 // radius is a nominal size rather than a distance the light stops at.
 //
-// So this is NOT "the game says it reaches this far", the way the mirror's mPow is. It is the
+// So this is NOT "the game says it reaches this far", the way mPow is. It is the
 // only distance the authors wrote down, used as a reach because there is nothing better, with
 // game.roomLightIntensity to correct it. A path-traced sphere light falls off physically
 // whatever we put here, so the flat room-wide wash the original hardware produced is not
@@ -2265,9 +2129,9 @@ void updateRoomLights() {
     const bool celestial = dKy_SunMoon_Light_Check() == TRUE;
 
     // Counted ahead of the option gate, so "this room has none" and "we dropped them" stay
-    // distinguishable - the same reason the mirror above counts before its gates. This is the
-    // count the GAME considers live, not ours: LightVec present, capped at six, minus the two
-    // slots the sun and moon take when they are up.
+    // distinguishable - the same reason the effect and local-light paths counted before their
+    // gates. This is the count the GAME considers live, not ours: LightVec present, capped at
+    // six, minus the two slots the sun and moon take when they are up.
     int liveCount = 0;
     if (hasVec) {
         liveCount = roomDt->getLightVecInfoNum();
@@ -2476,7 +2340,8 @@ void updateRoomLights() {
 
         // Room lights do not move, but their colour is re-blended from the palette every frame
         // as time of day advances, so this cannot be a "created once" path. The epsilons are the
-        // mirror's: a re-create crosses the API lock and re-enters the light manager.
+        // local-light mirror's, inherited when it was retired: a re-create crosses the API lock
+        // and re-enters the light manager.
         constexpr float kPositionEpsilon = 0.5f;
         constexpr float kRadianceEpsilon = 0.01f;
         constexpr float kAxisEpsilon = 0.001f;
@@ -2674,7 +2539,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "16");
+    push("rtx.dusklight.env.protocol", "17");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -2682,7 +2547,7 @@ void pushKankyoState() {
          formatBool(getSettings().game.remixTextureReplacements.getValue()));
     push("rtx.dusklight.env.texrepEntries", std::to_string(s_texRepQueue.size()));
     push("rtx.dusklight.env.texrepCreated", std::to_string(s_texRepCreated));
-    push("rtx.dusklight.env.texrepSkipped", std::to_string(s_texRepSkipped));
+    push("rtx.dusklight.env.texrepSkipped", std::to_string(texRepSkippedTotal()));
     // Diagnostic state. Neither drives any rendering; both exist so Remix's log can say
     // when something happened, in the same file as the material report. Read and cleared
     // rather than latched, so dismounting reads as not dashing instead of leaving the last
@@ -2862,15 +2727,6 @@ void pushLightStatus() {
     push("rtx.dusklight.env.sunElevation", formatFloat(roundTenth(s_celestial.elevation)));
 
     char buffer[16];
-    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.found);
-    push("rtx.dusklight.env.localLightsFound", buffer);
-    // Whether we got past every gate and actually ran the submit loop. Without this, an option
-    // that reads false and an area with no lights look identical from the other side.
-    push("rtx.dusklight.env.localLightsRunning", formatBool(s_localDebug.enabled));
-    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.drawn);
-    push("rtx.dusklight.env.localLightsDrawn", buffer);
-    std::snprintf(buffer, sizeof(buffer), "%d", s_localDebug.tracked);
-    push("rtx.dusklight.env.localLightsTracked", buffer);
 
     // Effect lights. Every one of these exists because the alternative was asking the owner to
     // describe what they saw; docs/effect-lights.md section 7 says which question each answers.
@@ -2941,8 +2797,9 @@ void pushLightStatus() {
         push("rtx.dusklight.env.effLightsSparks", sparks);
     }
 
-    // Room lights. found vs drawn is the same separation the mirror needed: "this room has no
-    // authored lights" and "it has them and we dropped them" both read as zero drawn otherwise.
+    // Room lights. found vs drawn is the same separation the local-light mirror needed: "this
+    // room has no authored lights" and "it has them and we dropped them" both read as zero
+    // drawn otherwise.
     // shaped and unshapeable are the pair that answers the cone question - whether the game
     // uses spotlights at all here, and whether any of them are the ring functions Remix cannot
     // express.
@@ -3024,8 +2881,8 @@ void tick() {
     }
 
     // Hoisted out of the light features. It used to be called only from inside the sun and
-    // local-light blocks, so with both of those off - indoors, or with the options disabled -
-    // the device was never registered and every other API call failed with
+    // (since removed) local-light blocks, so with both of those off - indoors, or with the
+    // options disabled - the device was never registered and every other API call failed with
     // REMIX_DEVICE_WAS_NOT_REGISTERED. Texture replacements need it independently of lights.
     if (ensureDeviceRegistered()) {
         updateTextureReplacements();
@@ -3050,6 +2907,17 @@ void tick() {
                            game.remixHideSkyBillboards.getValue());
         if (hideSky != game.remixHideSkyBillboards.getValue()) {
             game.remixHideSkyBillboards.setValue(hideSky);
+        }
+
+        // The sub-switch that decides whether hideSkyBillboards takes the star packet with it.
+        // The fork has declared this option and drawn its checkbox since it was split out on
+        // 2026-08-11, but nothing read it here, so the control moved a value nobody consumed -
+        // the game only ever saw its own config default. Wired at protocol 17.
+        const bool hideStars =
+            readOptionBool("rtx.dusklight.game.hideStarBillboards",
+                           game.remixHideStarBillboards.getValue());
+        if (hideStars != game.remixHideStarBillboards.getValue()) {
+            game.remixHideStarBillboards.setValue(hideStars);
         }
 
         const bool hideVrbox = readOptionBool("rtx.dusklight.game.hideVrbox",
@@ -3194,7 +3062,6 @@ void tick() {
     applyKankyoTuning();
     pushKankyoState();
     updateCelestialLight();
-    updateLocalLights();
     updateEffectLights();
     updateRoomLights();
     updateWarp();
@@ -3226,10 +3093,6 @@ bool& celestialLockDirection() {
 
 const EffectLightsDebug& effectLightsDebug() {
     return s_effectDebug;
-}
-
-const LocalLightsDebug& localLightsDebug() {
-    return s_localDebug;
 }
 
 const RoomLightsDebug& roomLightsDebug() {

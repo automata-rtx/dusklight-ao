@@ -738,12 +738,14 @@ the classification report of a real session. Measure-first, not a work item.
 
 See §3. The panel is a specification, not a shopping list.
 
-### Do not touch local lights
+### Do not touch local lights — gone as of 2026-08-16
 
-Being retired. Any finding that would deepen it is out of scope by definition. Note that
-the effect-lights branch already handles the transition correctly — it keeps
-`localLights` present and **off**, as the only way to A/B the new placement, and warns in
-the overlay when both are on. Deleting it is a separate, later cleanup.
+**Retired, and now deleted.** The effect-lights branch handled the transition
+correctly — it kept `localLights` present and **off**, as the only way to A/B the new
+placement, and warned in the overlay when both were on. That A/B was run and decided,
+and the separate, later cleanup this section anticipated happened at **protocol 17 on
+2026-08-16**: the mirror is gone from both repos. Any finding that would have deepened
+it is moot; findings about the *effect* lights are a different section.
 
 ### Do not "fix" the dead keywords by adding romanizations
 
