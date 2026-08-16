@@ -1238,6 +1238,15 @@ std::string bindApply(int actionIndex, u32 port, int button, bool keyboard) {
 void updateMods() {
     auto& loader = dusk::mods::ModLoader::instance();
 
+    // Nothing discovered means nothing to publish and nothing to act on, and with discovery off
+    // (the D3D9 default) that is every frame. Returning here rather than pushing an empty
+    // inventory keeps the default path byte-for-byte what it was before the mod wire existed,
+    // which matters while a save-load crash is still open and this is one of the last pieces of
+    // that wire left running. The Mods tab reports "no inventory published", which is true.
+    if (loader.mods().empty()) {
+        return;
+    }
+
     // The inventory. Rebuilt each frame and pushed only when it changes - a mod loading, failing
     // or being unloaded all change it, and none of them are frame-rate events.
     std::string inventory;
