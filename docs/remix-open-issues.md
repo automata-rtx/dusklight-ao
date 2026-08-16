@@ -2009,3 +2009,68 @@ rather than the game's shadow-light selection). Watch a dawn (daytime
 ~67.5–75) for the moon→sun crossfade. If shadows fall from the wrong side,
 tick Flip Direction; if that fixes it, the sign belongs in the code.
 
+
+---
+
+## Kakariko Village (F_SP109) crashes on entry — OPEN, 2026-08-16
+
+**Reproduction (100%, no save dependency):** load any save in Hyrule Field, warp
+to Kakariko Village. Crashes ~1.5 s after the camera cut. Loading a save that is
+*already* in Kakariko crashes the same way; a new game (Ordon, F_SP102/108) is
+fine.
+
+The owner reports this has been broken "for the longest time" on D3D9/Remix
+builds. **It was never written down anywhere in the three repos** — this entry is
+the first record, which is most of why it was never worked.
+
+### Signature
+
+```
+EXCEPTION_ACCESS_VIOLATION (0xc0000005)   Fault addr: 0x10
+Crash PC: d3d9.dll  rva=0x241513   (0x23ff53 in a build 0x15C0 smaller)
+4 frames in d3d9.dll, then KERNEL32 -> ntdll  = a Remix worker thread
+```
+
+Last Remix log lines are the warp itself: `Camera cut detected`, `Opacity
+Micromap: enabled`, `NRC Context initialized`, the `[Dusklight] fog:` state, then
+`CameraManager: FOV of a camera changed between frames`. Null dereference at
+offset 0x10 during scene build.
+
+### Ruled out — all by test, on 2026-08-16
+
+| Suspect | How it was excluded |
+| :-- | :-- |
+| Remix build | `f5790fc`, `283b6cf`, `3a99592` all identical; `3a99592` worked elsewhere the same day |
+| Game build | `4740c87b` (known good) crashes here too |
+| Driver | 610.88.0 in both working and crashing runs |
+| `rtx.conf` | crashes with full conf, minimal conf, and none at all |
+| Mods | discovery off (log-confirmed); also off with native load deferred |
+| HD texture pack | separate bug, fixed; texrep now completes `5456 created, 0 skipped` |
+| `dusklight.water/atmosphere/texrep/game.effectLights` | switched off, crash survives |
+| `dusklight.emissive` | switched off **after** the enable() fix below; crash survives |
+
+### Do not repeat these two mistakes
+
+1. **`rtx.dusklight.emissive.enable` did not disable the emissive path** until
+   2026-08-16 (`d3dbcd0` in the fork). It gated only the application, so
+   `isCandidate`/`accepts`/`logOnce` still ran and `dusklight.emis` still logged.
+   One round of testing produced a false negative because of it. The other
+   subsystem switches were checked and are honest.
+2. **The Remix build is named in its own log** — `DXVK_Remix: remix-main+<sha>`,
+   first lines. Use it. Inferring builds from crash-handler PDB GUIDs wasted
+   several rounds.
+
+### Next step
+
+Crash backtraces were **unsymbolized in every shipped build** — `DUSK_CRASH_DBGHELP`
+was gated on `CMAKE_BUILD_TYPE STREQUAL Debug` and CI builds RelWithDebInfo.
+Fixed 2026-08-16 (`fd10d57a`). **The next crash report names the faulting
+function by itself**, including inside `d3d9.dll` (the fork's PDB ships beside it
+in the CI artifact). One warp, one log, no debugger.
+
+Do not ask the owner to symbolize by hand. That was asked once and it was wrong.
+
+### Untried
+
+`rtx.opacityMicromap.enable = False` — OMM baking is worker-thread geometry work
+that re-initialises at the camera cut immediately before the fault.
