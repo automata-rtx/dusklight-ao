@@ -1720,17 +1720,27 @@ local compiler; CI is its first.**
   observation.
 - `Class::Spark` and `Class::Lantern` have never appeared in a real report.
 
-**Two survey findings deliberately left alone**, recorded so they are not
-rediscovered:
+**Two survey findings**, recorded so they are not rediscovered. The first was
+left alone when it was found and has since been actioned; the second still
+stands:
 
-- **`tests/effect_lights/run.sh` does not compile**, and has not since this
-  module gained its `JPADynamicsBlock.h` include — the stub headers have no such
-  file and the stub `JPAResource` has no `getDyn()`. Nothing runs it in CI. It is
-  **outside this change's file list**, so it was not fixed here, and this rework
-  widens the stub gap further: the module now also calls `getBsp()->isPrmAnm()`,
-  `getPrmClr(idx, …)`, `getClrAnmMaxFrm()`, `getMaxFrame()`, `getVolumeSize()`
-  and `getVolumeType()`. Repairing that harness is the cheapest way to test any
-  of this without a Windows machine and should be the next thing done here.
+- **`tests/effect_lights/run.sh` did not compile** from 2026-08-09, when this
+  module gained its `JPADynamicsBlock.h` include and the stub headers never got
+  one, until **2026-08-17, when it was repaired**. Nothing ran it in CI over that
+  window, which is why the breakage was invisible; it now runs on every push and
+  pull request from `.github/workflows/invariants.yml`, unfiltered by path. All
+  **45 checks pass** under ASan and UBSan, and no check was weakened to get
+  there — the repair was entirely stub-side.
+  **The gap list recorded here was itself partly wrong, which is worth keeping:**
+  `getBsp()->isPrmAnm()` and `getClrAnmMaxFrm()` were named as missing but the
+  stub `JPABaseShape` already declared both, and `getPrmClr(idx, …)` named the
+  two-argument overload when the module in fact calls the one-argument
+  `getPrmClr(&c)`. What was genuinely missing was the whole
+  `JPADynamicsBlock.h` stub (`getMaxFrame`, `getVolumeSize`, `getVolumeType`,
+  `getResUserWork`), `JPAResource::getDyn()`, the one-argument `getPrmClr` and
+  `getEnvClr`, and the two public ramp tables `mpPrmClrAnmTbl` /
+  `mpEnvClrAnmTbl`. A gap list written from reading the diff rather than from
+  compiling is an inference; this one is now a measurement.
 - **`classify()` does not exist.** Two comments pointed at it; the rule is
   written inline twice, in `collectEmitters` and `collectSimple`. The comments
   are corrected in this change; the duplication is not.
@@ -1756,7 +1766,11 @@ argument count. It is `-fsyntax-only` under GCC, so it will not catch every
 MSVC-ism and nothing at link time; **CI remains the authority.**
 
 `tests/effect_lights/run.sh` compiles the module against *stub* headers and
-runs it under ASan and UBSan. It **cannot** catch a stub that has drifted from
+runs it under ASan and UBSan. **Since 2026-08-17 CI runs it on every push and
+pull request** (`.github/workflows/invariants.yml`, no path filter), so a stub
+that stops matching the module is now a red build rather than a silent rot — it
+sat uncompilable for eight days precisely because nothing ran it. It **cannot**
+catch a stub that has drifted from
 the real declaration — only the reading above says those match, which is why
 the MinGW check exists alongside it. 45 assertions cover: a bonfire's five emitters merging to one
 site; opaque smoke at the same point adding nothing; a grey additive effect

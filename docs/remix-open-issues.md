@@ -182,7 +182,22 @@ and merged.** Sphere lights at the origin of the game's own fire and glow
 effects, replacing the local-light mirror (which now defaults off and is kept as
 the comparison path). Design and citations:
 [`effect-lights.md`](effect-lights.md); `tests/effect_lights/run.sh` carries 45
-behavioural checks under ASan and UBSan.
+behavioural checks under ASan and UBSan, **and since 2026-08-17 CI runs it on
+every push and pull request** (`.github/workflows/invariants.yml`, unfiltered by
+path).
+
+**Read that as narrowly as it is meant.** Between 2026-08-09 and 2026-08-17 the
+harness did not compile at all and nothing ran it, so this line asserted a
+safety net that did not exist — the reason it now names the workflow. What the
+45 checks cover is the *merge, rule, adoption, budget and cross-frame identity*
+of `effect_lights.cpp` against **stub** JPA headers: emitters merging to one
+site, smoke rejected and white-hot accepted, a nearby game light adopted for
+colour without moving the light off the effect origin, bursts excluded, the
+budget dropping and reporting, and `reset()`. It therefore verifies **behaviour,
+not integration** — it cannot see a stub that has drifted from the real game
+header, it does not build the Windows DLL, and it has never touched a real
+`.jpa`. "CI tested it" here means the classifier still behaves as specified; it
+is not a substitute for an in-game window.
 
 **CI-green at the matching protocol-7 pair** — dusklight `bf87551c`, dxvk-remix
 `70a6d482`. (dusklight's run reads "failure" because its MSVC **arm64** job was

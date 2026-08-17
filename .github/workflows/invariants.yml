@@ -42,3 +42,26 @@ jobs:
           else
             echo "extern/aurora predates its invariant script; skipping"
           fi
+
+      # The only BEHAVIOURAL test suite in any of the three repos: 45 checks over
+      # effect_lights.cpp, compiled against the stubs beside it and run under ASan
+      # and UBSan. It lives here rather than in build.yml for two reasons - it is a
+      # native Linux g++ build with nothing to do with the Windows artifact, and
+      # build.yml's path filters would skip it on exactly the doc-and-stub commits
+      # that break it.
+      #
+      # It went uncompiled from 2026-08-09 to 2026-08-17 because nothing ran it: the
+      # module gained a JPADynamicsBlock.h include and the stub headers were never
+      # given one, and the failure was invisible until someone ran the script by
+      # hand. That is the gap this step closes.
+      #
+      # g++ is already on the ubuntu-24.04 image (build-essential); libfmt-dev is
+      # not, and the stub logging header uses real fmt on purpose so the report's
+      # format strings are compile-checked the way the game checks them.
+      - name: Install the effect-lights harness dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfmt-dev
+
+      - name: Run the effect-lights behavioural tests
+        run: sh tests/effect_lights/run.sh

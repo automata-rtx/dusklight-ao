@@ -7,6 +7,7 @@
 #include "dusk/effect_lights.hpp"
 
 #include <JSystem/JParticle/JPABaseShape.h>
+#include <JSystem/JParticle/JPADynamicsBlock.h>
 #include <JSystem/JParticle/JPAEmitter.h>
 #include <JSystem/JParticle/JPAEmitterManager.h>
 #include <JSystem/JParticle/JPAKeyBlock.h>
@@ -25,7 +26,14 @@
 
 // --- the fake world ---------------------------------------------------------------------
 
+// LAYOUT-COUPLED to the JPABaseShape stub, for the same reason FakeRes is coupled to JPAResource
+// below: mpPrmClrAnmTbl and mpEnvClrAnmTbl are public fields on the real class and the module
+// reads them THROUGH the JPABaseShape declaration, not through an accessor, so they must sit at
+// the same offset in both and in the same order. Everything after them is reached only through
+// accessors this file defines, so its layout is free.
 struct FakeShape {
+    GXColor* mpPrmClrAnmTbl = nullptr;
+    GXColor* mpEnvClrAnmTbl = nullptr;
     GXBlendMode mode = GX_BM_BLEND;
     GXBlendFactor src = GX_BL_SRCALPHA;
     GXBlendFactor dst = GX_BL_ONE;
@@ -35,8 +43,27 @@ struct FakeShape {
     int envAnm = 0;
     u32 anmType = 0;
     s16 anmMaxFrm = 0;
+    // The AUTHORED flat colours, which are what rampColor() falls back to when the matching anim
+    // flag is clear or the table is NULL - the ordinary case. White over black is the "no
+    // authored tint" reading, and it matches the values authoredFor() seeds its locals with.
+    GXColor prmClr = {255, 255, 255, 255};
+    GXColor envClr = {0, 0, 0, 255};
     f32 baseSizeX = 10.0f;
     f32 baseSizeY = 10.0f;
+};
+
+// Stub of the authored dynamics block. Only the three values effect_lights reads.
+//
+// The defaults are chosen so an emitter nobody has configured contributes NOTHING here: volume
+// type 4 is VOL_Point (JPADynamicsBlock.cpp:143-150), the one type whose volume size means
+// nothing, so the extent keeps coming from the base size alone unless a case says otherwise.
+struct FakeDyn {
+    u32 volumeType = 4;
+    s16 maxFrame = 0;
+    u16 volumeSize = 0;
+    // The authored user-work word, carried into the report verbatim. 0 is "the artist wrote
+    // nothing", which is what an emitter nobody has configured should report.
+    u32 resUserWork = 0;
 };
 
 // LAYOUT-COUPLED to the JPAResource stub, and the coupling is load-bearing. The harness hands
@@ -51,6 +78,9 @@ struct FakeRes {
     u8 keyNum = 0;
     FakeShape shape;
     u16 usrIdx = 0;
+    // Reached only through getDyn(), so unlike ppKey/keyNum above its offset is free. It sits
+    // after shape deliberately: the layout-coupled prefix must stay first.
+    FakeDyn dyn;
 };
 
 static std::vector<JPABaseEmitter*> g_emitters;
@@ -78,6 +108,22 @@ JPABaseShape* JPAResource::getBsp() const {
     return reinterpret_cast<JPABaseShape*>(&const_cast<FakeRes*>(reinterpret_cast<const FakeRes*>(this))->shape);
 }
 u16 JPAResource::getUsrIdx() const { return reinterpret_cast<const FakeRes*>(this)->usrIdx; }
+
+// The AUTHORED flat colours. rampColor() falls back to these whenever the matching anim flag is
+// clear or the table is NULL, which is the ordinary case, so most of the classification tests
+// reach the module's colour reading through here rather than through the animation tables.
+void JPABaseShape::getPrmClr(GXColor* dst) const { *dst = reinterpret_cast<const FakeShape*>(this)->prmClr; }
+void JPABaseShape::getEnvClr(GXColor* dst) const { *dst = reinterpret_cast<const FakeShape*>(this)->envClr; }
+
+// The dynamics block. getDyn() is a real accessor on JPAResource, so unlike ppKey/keyNum the
+// harness is free to put FakeDyn wherever it likes in FakeRes and hand back its address.
+JPADynamicsBlock* JPAResource::getDyn() const {
+    return reinterpret_cast<JPADynamicsBlock*>(&const_cast<FakeRes*>(reinterpret_cast<const FakeRes*>(this))->dyn);
+}
+u32 JPADynamicsBlock::getResUserWork() const { return reinterpret_cast<const FakeDyn*>(this)->resUserWork; }
+u32 JPADynamicsBlock::getVolumeType() const { return reinterpret_cast<const FakeDyn*>(this)->volumeType; }
+s16 JPADynamicsBlock::getMaxFrame() const { return reinterpret_cast<const FakeDyn*>(this)->maxFrame; }
+u16 JPADynamicsBlock::getVolumeSize() const { return reinterpret_cast<const FakeDyn*>(this)->volumeSize; }
 
 // The animation-configuration accessors the classification report prints. Values come from the
 // FakeShape so a case can express "this effect's colour animates" or "it does not"; the defaults

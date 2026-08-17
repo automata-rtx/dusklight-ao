@@ -312,10 +312,18 @@ the pinned submodule, since that repo has no CI.
 in the repos that own them** (audited and resolved 2026-08-11,
 `extern/aurora/docs/dx9/in-flight-allocation.md`):
 
-- **`D3DMATERIAL9` side channels — one left, `Ambient.a`.** Water and HD texture
-  packs both wanted `Ambient.g`/`.b`; water was rebased and packed all three of
-  its facts into `Power` instead. `claude/dusklight-remix-transparency-e7l766`
-  has an unmerged claim on `Ambient.a`, and after that there is nothing.
+- **`D3DMATERIAL9` side channels — closed to new features, and that stopped
+  mattering on 2026-08-14.** Water and HD texture packs both wanted
+  `Ambient.g`/`.b`; water was rebased and packed all three of its facts into
+  `Power` instead. `Ambient.a` is nominally the last one, with an unmerged claim
+  from `claude/dusklight-remix-transparency-e7l766` — **but do not take it.** The
+  transport for a new per-draw fact is a flag word:
+  `dusklightSetDrawMeta`, a versioned export on the fork's own `d3d9.dll`, fed by
+  aurora's `GX_AURORA_SET_DUSKLIGHT_DRAW_META` (`0x0058`). **A new per-draw fact
+  is a new bit, not a new channel.** Keep `Ambient.a` for something that must ride
+  the material struct through the *capture* path.
+  `dxvk-remix/documentation/DusklightSideChannels.md` is the authority and says
+  this at length; this bullet asserted the opposite until 2026-08-16.
 - **GX FIFO subcommands.** Four branches had each taken `0x0053`; it is water's,
   and `0x0054`–`0x0057` are reserved in the registry comment at the top of
   `extern/aurora/include/dolphin/gx/GXAurora.h`.
