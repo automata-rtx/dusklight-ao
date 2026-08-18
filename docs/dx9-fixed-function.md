@@ -85,6 +85,12 @@ rtx.volumetrics.enable = True
 #rtx.maxFogDistance = 10000000
 # Captured fog colour -> pre-tonemap radiance. Calibrate once (start ~1.0
 # with auto exposure disabled; the Remix default 0.25 is very dim).
+#
+# CHANGED 2026-08-17: this only does anything while
+# rtx.dusklight.atmosphere.enable is FALSE. With the atmosphere on, the fork
+# feeds the depth path the same resolved radiance the volumetric path uses and
+# skips this scale entirely - because the two paths aiming at different colours
+# is the defect that was fixed. Use fogRadianceScale below instead.
 #rtx.fogColorScale = 1.0
 
 # Generated sky. All three together, or you get more than one sky at once:
@@ -94,12 +100,61 @@ rtx.dusklight.game.hideVrbox = True
 rtx.skyAutoDetect = None
 
 # Calibrated 2026-07-28. densityScale is the first thing to reach for if the
-# fog reads wrong everywhere at once - it is one number over the whole scene.
+# fog reads THICK or THIN everywhere at once - it is one number over the whole
+# scene. For a fog that is the wrong BRIGHTNESS everywhere, reach for
+# fogRadianceScale below instead.
 # skyIntensity was raised 1.0 -> 6.0 because the palette is sRGB-decoded
 # before it is scaled, which the original anchor arithmetic had missed.
 #rtx.dusklight.atmosphere.densityScale = 1.0
-#rtx.dusklight.atmosphere.zHalfMin = 100
 #rtx.dusklight.atmosphere.skyIntensity = 6.0
+
+# zHalfMin: value unchanged, MEANING CHANGED 2026-08-17. It is a floor on the
+# distance at which the medium is matched to the game's ramp - the ramp's own
+# midpoint, or this, whichever is further out. It is NOT a half-density floor
+# any more: the match is to the game's actual opacity at that distance, which
+# is 0.5 only while this clamp is idle. Where it does bite - every scripted fog
+# bank, e.g. the Lost Woods mist tag's -2000..200 - the medium is now 4.46x
+# denser than it was, which is the correction rather than a regression.
+# In fogRampMode 2 this stops steering the fog's appearance and only steers how
+# much the fog dims a light shining through it.
+#rtx.dusklight.atmosphere.zHalfMin = 100
+
+# Fog level and colour convention. ALL FOUR ADDED OR CHANGED 2026-08-17, and
+# all four are UNTESTED IN GAME. The fork's own headers are the authority;
+# documentation/DusklightAtmosphere.md sections 5.1-5.4 has the derivations.
+#
+# fogRadianceScale: the level knob for BOTH fog paths now. If the fog changed
+#   brightness when this landed, this is the number to move - the depth path
+#   lost a x0.25 it used to carry and gained an exposure correction.
+#rtx.dusklight.atmosphere.fogRadianceScale = 1.0
+#
+# fogRampMode: 0 handover (legacy A/B baseline), 1 top-up (THE DEFAULT), 2 exact
+#   ramp - the medium is given the game's own fog curve as its extinction field
+#   instead of one scalar. 2 is untested in game; 0 and 1 are unchanged by this
+#   pass. Those three switches (mode 1 + fogColorDirectional = True +
+#   fogColorSpace = 0) revert everything that HAS a switch - but two parts of
+#   the 2026-08-17 work are straight corrections with NO revert: the
+#   rtx.fogColorScale bypass, and the sigma anchor now matching the game's
+#   actual opacity instead of assuming 0.5. Both are unconditional in code.
+#rtx.dusklight.atmosphere.fogRampMode = 1
+#
+# fogRampFloor: mode 2's divergence clamp, as a fraction of the ramp's range in
+#   front of the camera. Read only in mode 2. 0 is legal.
+#rtx.dusklight.atmosphere.fogRampFloor = 0.01
+#
+# fogColorSpace: 0 = decoded (CORRECT), 1 = raw (THE DEFAULT). Raw is the
+#   reading the legacy depth fog has always shown and therefore the only one
+#   anyone has judged; decoded is about 2.3x darker at a mid grey and ~3.2x at
+#   the levels this game's fog palette actually uses, so switching
+#   means recalibrating fogRadianceScale in the same sitting.
+#rtx.dusklight.atmosphere.fogColorSpace = 1
+#
+# fogColorDirectional: lets the far fog sample the sky dome in the VIEW
+#   direction - aerial perspective proper, a sunset warming the haze on the
+#   sun's side. Off by default since 2026-08-17 because it gives the fog's near
+#   and far halves two different colours. Turning it on is a look preference and
+#   costs the exactness, not a bug fix.
+#rtx.dusklight.atmosphere.fogColorDirectional = False
 
 # Sun/moon elevation. The game's own arc peaks at 59 degrees, which leaves a
 # path tracer without a usable overhead sun. 80 is the settled value - short

@@ -374,6 +374,12 @@ Added **2026-07-29**:
   confirms the moon-quad cause.
 - **Aerial perspective under the physical sky.** Distant terrain reads
   correctly blue — the C3 dome-sampled far-fog colour doing exactly its job.
+  *(Observed 2026-07-29 with the far ramp sampling the dome in the **view
+  direction**. That is off by default since 2026-08-17 — it gave the fog's two
+  halves different colours and broke the top-up identity — so the far fog now
+  follows the dome's sphere mean instead, and `fogColorDirectional` restores the
+  directional sample. **The terrain side of this observation has changed colour
+  since it was recorded**, so re-look before quoting it as current.)*
 - **Dense fog.** Lake Hylia morning fog is "suitably intense", which is the
   first evidence from the dense end of the σ mapping. See the note in
   `DusklightAtmosphere.md` §13 about what this does and does not close.
@@ -566,10 +572,18 @@ Added **2026-08-08**:
    near-clear default medium would barely show it.
 
    It also explains the seam exactly. Distant terrain fades toward the far
-   ramp's colour, which per C3 samples the dome *in the view direction* — the
-   right colour, hence "convincing". The sky beside it is attenuated dome plus
-   `fog_col`-tinted in-scatter — a different treatment of the same far field.
+   ramp's colour, which at the time of this analysis sampled the dome *in the
+   view direction* (per C3) — the right colour, hence "convincing". The sky
+   beside it is attenuated dome plus `fog_col`-tinted in-scatter — a different
+   treatment of the same far field.
    Two descriptions of one day, which is precisely what §0 exists to prevent.
+
+   **Since 2026-08-17 the far ramp no longer samples the dome directionally by
+   default** (`rtx.dusklight.atmosphere.fogColorDirectional`, off). That does
+   **not** change this diagnosis — it is about the volumetric half fogging a sky
+   pixel the ramp exempts — but the terrain side of the seam is now the dome's
+   sphere mean rather than the sky in front of the camera, so a re-observation
+   will not look identical to the one recorded here.
 
    **The owner's instinct was right and the mechanism was not.** The report
    suspected the sky needed tagging as Sky in Remix and that the lack of a
@@ -1819,7 +1833,12 @@ Added **2026-08-07**:
     2. **The two halves of our own fog converged to different colours, by
        4.4×.** The froxel half's ambient reaches `albedo × multiScatteringScale
        × C` = `0.225 C`; the composite ramp reaches `1.0 C`. No setting could
-       correct both.
+       correct both. *(That is a **level** disagreement and this pass fixed it.
+       A **colour** disagreement survived it undetected until 2026-08-17: the
+       near half used the dome's sphere mean while the far ramp sampled the same
+       dome in the view direction, so the two halves went on blending towards
+       different colours wherever the sky is not uniform. See the revert note at
+       the end of this issue.)*
     3. **The fog is never lit by the sky.** Remix's froxel grid does NEE over
        the RTXDI light list, which holds five types — sphere, rect, disk,
        cylinder, distant. **No dome light.** So fog in shadow received nothing
@@ -1852,13 +1871,59 @@ Added **2026-08-07**:
     reverts by setting `fogRampMode = 0`, which restores the previous
     behaviour exactly.
 
+    > **That revert instruction is no longer complete, as of 2026-08-17.** Three
+    > further fork-only changes landed on top of this one and none of them is
+    > undone by `fogRampMode = 0`:
+    >
+    > - **`fogColorDirectional`** (default **false**) — the far ramp no longer
+    >   samples the dome in the view direction. Set it `True` for the old
+    >   behaviour. This is also the item that makes "fog that changes hue with
+    >   distance" above ambiguous: it used to change hue with distance **by
+    >   design**, and checking `multiScatteringScale` would not have found it.
+    > - **`fogColorSpace`** (default **1, Raw**) — the volumetric path used to
+    >   decode the palette out of gamma unconditionally. Set it `0` for the old
+    >   volumetric behaviour; note that is *also* the correct one, and about
+    >   2.3× darker at a mid grey, and ~3.2× at the levels this game's fog
+    >   palette actually uses (the one measured entry decodes to 0.12, raw
+    >   ~0.381). Note the direction: the DEFAULT (Raw) is the brighter one, so
+    >   the volumetric fog and the dome-steered ambient are now brighter than
+    >   they have ever been rendered.
+    > - **`rtx.fogColorScale` is bypassed** on the legacy depth path while the
+    >   atmosphere is active, and the anchor correction in §5.1 made every
+    >   scripted fog bank 4.46× denser. **Neither has a revert switch**, both
+    >   being straight corrections.
+    >
+    > So the full revert is `fogRampMode = 1`, `fogColorDirectional = True`,
+    > `fogColorSpace = 0` — not `fogRampMode = 0`, which reverts further than
+    > intended in one axis and not at all in the other three.
+    >
+    > **And `fogRampMode` now has a value 2**, "Exact ramp": the medium is given
+    > the game's own fog curve `σ(d) = 1/(end − d)` as its extinction field
+    > instead of one scalar, so it is genuinely clear where the original is clear
+    > and shafts sit where the artists put the haze. **UNTESTED IN GAME.**
+    > Its regression signature is specific and readable from a log: the top-up
+    > residual must be **flat within the froxel grid's reach** — zero where the
+    > ramp starts in front of the camera, and the ramp's head start where it
+    > starts behind it. **Two places it varies and should**, both named by the
+    > log and the panel: past the grid's reach, and over the last
+    > `fogRampFloor` fraction of the ramp where the divergence clamp freezes the
+    > medium. **The first is the common case outdoors, not an edge one** — the
+    > grid's metre ceiling is 120 m = 12,000 units against an open-world
+    > `fogEndZ` measured near 33,500 — so the unqualified version of this
+    > signature would have fired on a correct build the first time anyone
+    > stepped outside. It was qualified on 2026-08-18 for exactly that reason.
+    > `dxvk-remix/documentation/DusklightAtmosphere.md` §5.1–§5.4.
+
     **The exposure-relative fog level landed straight after, also untested.**
     `fog_col` is a *display* colour — the game blended it over an already-exposed
     image — so used raw in a linear frame its level means nothing. It is now
     divided by the exposure the tonemapper is about to apply, which is what a
     display colour means, under `rtx.dusklight.atmosphere.exposureFogMode`:
-    **Off / Indoors only (default) / Always**. Only the palette's share is
-    corrected; anything taken from the dome is already a real radiance. It
+    **Off / Indoors only / Always (default since 2026-08-13)**. Only the
+    palette's share is corrected *directly* — but under the default
+    `skyAmbientMode = 1` the correction also reaches the dome-derived ambient
+    outdoors, because `skyLevelScale` normalises the dome to the palette's
+    level and the palette side already carries it. It
     cannot feed back into eye adaptation — `(C / exposure) * exposure = C`, so
     the fog's *display* contribution is invariant to exposure by construction.
     Closes ledger C10. Expect a dark room's fog to stop lifting the blacks, and

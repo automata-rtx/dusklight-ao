@@ -349,6 +349,16 @@ Key facts (verified against source):
   fog near/far values work as-is. There is also an optional physically-
   based remap into volumetrics (`rtx.volumetrics.enableFogRemap` +
   colour/distance remap options) for participating-media looks.
+  **`rtx.fogColorScale` no longer applies to us, as of 2026-08-17.** While
+  `rtx.dusklight.atmosphere.enable` is on, the fork writes its fully resolved
+  fog radiance straight into the fog state and `rtx_composite.cpp` skips the
+  scale — because this path aiming at `palette × 0.25` while the volumetric
+  path aimed at a decoded, exposure-referenced, dome-steered colour is exactly
+  how one fog ended up with two colours. The level knob for **both** paths is
+  now `rtx.dusklight.atmosphere.fogRadianceScale`. (The one exception: when a
+  translucent material has already replaced the fog, the atmosphere declines to
+  write and the scale still applies to the game's own raw colour.)
+  `dxvk-remix/documentation/DusklightAtmosphere.md` §5.4.
 - **Grading surface is thin**: global tonemapper has
   `rtx.tonemap.colorGradingEnabled` + `colorBalance/contrast/saturation`,
   but they run **post-tonemap** and only in Global mode — while the
@@ -397,8 +407,11 @@ The bridge pushes **raw kankyo values** into a dedicated, documented
 namespace (`rtx.dusklight.env.*` — "written by the game every frame, do not
 hand-edit"). How strongly each value shapes the image is controlled by
 **response options** (`rtx.dusklight.grade.*`, existing `rtx.bloom.*`,
-`rtx.fogColorScale`, …) that the game never touches — so they stay
-hand-tunable live in the Remix UI and in rtx.conf, per user, per preset.
+`rtx.dusklight.atmosphere.fogRadianceScale`, …) that the game never touches — so
+they stay hand-tunable live in the Remix UI and in rtx.conf, per user, per preset.
+*(This list named `rtx.fogColorScale` until 2026-08-17. The game still never
+touches it, but the **fork** now overrides it while the atmosphere is active, so
+it is no longer an example of a knob that "stays" — see the fog bullet in §III.1.)*
 This split also sidesteps the "User layer beats rtx.conf" property: the
 game only occupies keys nobody should be setting by hand.
 
@@ -578,9 +591,25 @@ translation it never implemented. Implement it in `dx9_draw.cpp`:
 
 Remix then captures it per draw (`setFogState`), and composite applies
 exactly the right linear ramp pre-tonemap. Tuning lives in existing
-options: `rtx.enableFog`, `rtx.fogColorScale` (raise from 0.25 toward ~1.0
-because kankyo fog colours are authored as display colours; calibrate),
-`rtx.maxFogDistance`. For heavy-atmosphere areas (twilight, Snowpeak) the
+options: `rtx.enableFog`, `rtx.maxFogDistance`, and — **since 2026-08-17** —
+`rtx.dusklight.atmosphere.fogRadianceScale` for the level.
+
+> **This instruction used to read: `rtx.fogColorScale` (raise from 0.25 toward
+> ~1.0 because kankyo fog colours are authored as display colours; calibrate).
+> It is now a no-op while `rtx.dusklight.atmosphere.enable` is on, and
+> calibrating it will produce no change at all.** The reasoning behind it was
+> right and has been carried over rather than dropped: the palette's fog colour
+> *is* a display colour, so it needs both a level and a decision about gamma.
+> The fork now makes both — `fogRadianceScale` for the level (one knob, both fog
+> paths), `rtx.dusklight.atmosphere.fogColorSpace` for the decode — and it feeds
+> the same resolved radiance to the legacy depth path so the two cannot drift
+> apart. Note `fogColorSpace` defaults to **Raw**, which is *not* the correct
+> reading; Decoded is, and is about 2.3× darker at a mid grey — ~3.2× at the
+> levels this game's fog palette actually uses — so moving to it means
+> recalibrating `fogRadianceScale` in the same sitting.
+> `dxvk-remix/documentation/DusklightAtmosphere.md` §5.4.
+
+For heavy-atmosphere areas (twilight, Snowpeak) the
 same captured state can optionally feed volumetrics via
 `rtx.volumetrics.enableFogRemap` + `enableFogColorRemap` for real light
 shafts — user preference, off by default.

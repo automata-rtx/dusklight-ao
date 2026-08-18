@@ -514,8 +514,20 @@ the dense-fog regime that would actually challenge them — the **kytag01 whiteo
 (§3.3; this said "Lake Hylia" until 2026-08-11 and was wrong), and the Goron Mines — was never visited, so
 they remain unchallenged rather than confirmed. Lake Hylia in the morning *was* visited on 2026-07-29 and read
 "suitably intense", but that is palette fog, and a later run settles it: Lake Hylia's ramp was **measured** at
-`[-3000, 70000]` on 2026-08-06 — a half-density point around 33500, nowhere near the `zHalfMin` clamp, and nothing like
+`[-3000, 70000]` on 2026-08-06 — a **midpoint** around 33500, nowhere near the `zHalfMin` clamp, and nothing like
 the tag's `[-2000, 200]` (midpoint −900). Note it is the tag's near `end`, not its negative `start`, that collapses the
 midpoint: negative starts turned out to be ordinary, present in every area measured in that run. Read `DusklightAtmosphere.md` §13 before concluding a result is wrong, and run the §5 measurement
 pass here — the Dusklight tab in Remix now shows the live fog range and colour, which is the only way to see values that
 live in stage data rather than in source.
+
+> **Both quantities moved on 2026-08-17, so re-read them before taking the measurement.** This paragraph said
+> "half-density point around 33500"; the anchor is the ramp's **midpoint**, and the game is half opaque there only
+> while the `zHalfMin` clamp is idle. For Lake Hylia's `[-3000, 70000]` it is idle, so 33500 genuinely is a
+> half-density point and nothing about that sentence's arithmetic changes. For the mist tag it is not, and the fork
+> was asserting 0.5 opacity at a point where the game's ramp is **0.955** — a medium 4.46× thinner than it should
+> have been, in every scripted fog bank in the game. That is now corrected (`σ = −ln(1 − f(anchor)) / anchor`), which
+> means **a dense-fog reading taken before 2026-08-17 and one taken after are not comparable.**
+> `froxelRangeScale` also changed: `fogRampMode` 2 floors it at 1, because its sub-1 default exists to leave an
+> exponential's final closure to the composite and mode 2's field closes itself. **Measure in the default mode 1, or
+> record which mode was used**, or the walk-out measures nothing.
+> `dxvk-remix/documentation/DusklightAtmosphere.md` §5.1 and §5.2.

@@ -212,6 +212,11 @@ fog weaker, not stronger.
 "remain unchallenged rather than confirmed" because that regime was never visited. This
 is why.
 
+*(Still owed as of 2026-08-18, and now of different quantities: the 2026-08-17 anchor
+correction made the medium at this tag **4.46× denser**, and `fogRampMode` 2 floors
+`froxelRangeScale` at 1. `DusklightAtmosphere.md` §5.1–§5.2, and the P1 row in
+`japanese-naming-worklist.md`.)*
+
 Note this one did not even need the Japanese. The file's own English header says Sacred
 Grove. Nobody read it.
 

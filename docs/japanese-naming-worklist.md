@@ -169,7 +169,7 @@ it is a short list of things blocked on something only the owner can supply.
 | **Merge the two branches** | `kasumi-naming-correction-w3e204` (P2/P6/P11/P13, protocol 12) and `bloom-docs-verify-d2844x` (P3). Highest value left, and it is a merge, not a session. |
 | **P12** | **One `dx9.draws` log, standing in the Palace of Twilight, room 0 or 1.** The counters now exist; the batching is deliberately not written until the number says it is worth writing. |
 | **P5** | One log saying whether the colpat-9 guard ever fires. The document already states what will be done for each answer, so it is a decision, not a discussion. |
-| **P1** | Still owed a **measurement**, not a commit — `zHalfMin` and `froxelRangeScale` are still guessed. Stand at the Lost Woods tag and walk out. |
+| **P1** | Still owed a **measurement**, not a commit — `zHalfMin` and `froxelRangeScale` are still guessed. Stand at the Lost Woods tag and walk out. **Both changed underneath this on 2026-08-17, so it is now a measurement of different quantities:** `zHalfMin` floors the *anchor* and the medium is matched to the game's actual opacity there rather than to 0.5, which makes the clamped case — i.e. exactly this tag — **4.46× denser** than any earlier reading of it; and `froxelRangeScale` is floored at 1 in `fogRampMode` 2, so **measure in the default mode 1 or record the mode**. `dxvk-remix/documentation/DusklightAtmosphere.md` §5.1–§5.2. |
 | **P19 / P18 / P9 / P7 / P20** | All shipped, all **off by default or default-identical**. Each needs one look to say whether it earns its default being flipped. |
 
 **Three of these collapse into one play session** and do not conflict: the Palace of
@@ -446,10 +446,20 @@ source** (placement is `.dzs` data). Findings in `japanese-naming-audit.md` §4.
 > so the finding lands on *where the owner stands*, not on a line of code.
 >
 > **What is still owed is a measurement, and it has not been taken.** `zHalfMin` and
-> `froxelRangeScale` are still carrying guessed values —
-> `DusklightAtmosphere.md:1428` reads *"`froxelRangeScale` (0.6) remains unchallenged
-> rather than validated"* — because the dense-fog regime has never been visited. The
-> correction says where to go. Nobody has gone.
+> `froxelRangeScale` are still carrying guessed values — `DusklightAtmosphere.md` §13
+> reads *"`froxelRangeScale` (0.6) remains unchallenged rather than validated"* — because
+> the dense-fog regime has never been visited. The correction says where to go. Nobody has
+> gone.
+>
+> **And on 2026-08-17 both of them changed meaning, which makes the trip *more* worth
+> taking rather than less.** `zHalfMin` is now a floor on the **anchor distance**, and the
+> medium is matched to the game's own opacity at that anchor instead of being assumed half
+> opaque there — at this tag's `-2000..200` the game is **0.955** opaque at the clamp, not
+> 0.500, so the derived medium went from σ = 0.006931 to 0.030910, **4.46× denser**. That
+> is the whole quantity this walk-out exists to judge, and it has never been seen at its
+> corrected value. `froxelRangeScale` is separately floored at 1 in `fogRampMode` 2, so a
+> walk-out done in that mode does not measure it at all: **use the default mode 1, or write
+> down which mode was used.** `dxvk-remix/documentation/DusklightAtmosphere.md` §5.1–§5.2.
 >
 > **One thing that *is* a code gap, and it is small:** the whole `kytag01` layer is
 > switch-gated (`d_a_kytag01.cpp:71`, `:124-144`), and nothing logs whether the gate is

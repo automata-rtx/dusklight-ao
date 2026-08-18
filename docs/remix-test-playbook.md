@@ -767,6 +767,17 @@ measurement** — this test is the measurement.
 > after that is fixed; until then Phase C's own blend cannot be judged fairly,
 > because part of what you are looking at is the fog eating the sky.
 
+**Before re-running this, note one thing has changed under it (2026-08-17).** The
+far fog no longer samples the dome in the **view direction** by default — that
+gave the fog's near and far halves two different colours and broke the top-up
+identity, so both now use the dome's sphere mean and
+`rtx.dusklight.atmosphere.fogColorDirectional` is the switch back. So the
+"correctly blue distant terrain" above is no longer the same measurement: it is
+still coupled to the sky, but to a different integral of it, and the tint towards
+the sun is gone. **Record which way `fogColorDirectional` was set**, or the re-run
+is not comparable with the 2026-07-29 one.
+`dxvk-remix/documentation/DusklightAtmosphere.md` §5.2–§5.3.
+
 ```ini
 rtx.dusklight.atmosphere.physicalSky = True
 ```
