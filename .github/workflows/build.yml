@@ -70,6 +70,18 @@ jobs:
       - name: Build
         run: cmake --build --preset x-linux-ci-${{matrix.preset}}
 
+      # TEST SCAFFOLDING (drop before PR): Aurora is added EXCLUDE_FROM_ALL, so its gtest targets
+      # are not part of this build. Run the normal attachment coverage until the Aurora PR lands,
+      # where its own workflow runs ctest.
+      - name: Run Aurora gfx tests
+        if: matrix.artifact_arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          BUILD_DIR=$(dirname "$(find build -name CMakeCache.txt -print -quit)")
+          cmake --build "$BUILD_DIR" --target gfx_recording_tests
+          ctest --test-dir "$BUILD_DIR/extern/aurora/tests" --output-on-failure \
+            --no-tests=error -R 'RenderTargetLayout|GfxRecording|GfxNormalAttachment'
+
       - name: Generate AppImage
         run: ci/build-appimage.sh
 
@@ -291,3 +303,81 @@ jobs:
             build/install/mods/
             build/install/debug.7z
             build/install/sdk/
+
+  # TEST SCAFFOLDING (drop before PR): publish a build to validate the normal attachment against.
+  # Attaches the per-platform game builds and the mod SDK link stubs as top-level assets, so
+  # dusklight-mods can point DUSKLIGHT_SDK_STUB_URL at this release and link against it.
+  release:
+    name: Publish normal-buffer test release
+    if: github.ref == 'refs/heads/claude/dusklight-thin-gbuffer-normals-l4l9dc'
+    needs: [build-linux, build-apple, build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download all build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download ${{ github.run_id }} --repo ${{ github.repository }} --dir artifacts
+
+      - name: Collect mod SDK link stubs (top-level release assets)
+        # Asset names must match what add_mod requests: windows-<arch>.lib, stub-macos-<arch>,
+        # stub-android-<arch>.so.
+        run: |
+          set -euo pipefail
+          mkdir sdk-assets
+          cp artifacts/*win32-msvc-x86_64/sdk/windows-*.lib      sdk-assets/
+          cp artifacts/*win32-msvc-arm64/sdk/windows-*.lib       sdk-assets/
+          cp artifacts/*macos-appleclang-arm64/sdk/stub-macos-*  sdk-assets/
+          cp artifacts/*macos-appleclang-x86_64/sdk/stub-macos-* sdk-assets/
+          cp artifacts/*android-arm64/sdk/stub-android-*.so      sdk-assets/
+          ls -la sdk-assets
+
+      - name: Zip artifact directories
+        run: |
+          cd artifacts
+          for d in */; do
+            d="${d%/}"
+            (cd "$d" && zip -qry "../${d}.zip" .)
+          done
+          ls -la
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=platform-normals-test
+          # Idempotent: a test tag republished on every push to this branch.
+          gh release delete "$TAG" --repo ${{ github.repository }} --yes --cleanup-tag || true
+          gh release create "$TAG" artifacts/*.zip sdk-assets/* \
+            --repo ${{ github.repository }} \
+            --target ${{ github.sha }} \
+            --prerelease \
+            --title "Scene normal buffer test build" \
+            --notes "TEST build for validating the scene normal attachment before the upstream PRs.
+
+          Base: upstream Dusklight \`c880d46f\` plus GfxService 1.3 and the ao_mod change on this
+          branch. Aurora: the \`extern/aurora\` submodule pinned by this commit, on the matching
+          branch of \`automata-rtx/aurora-ao\`: upstream aurora \`cf3ffc9\` plus the normal
+          attachment and nothing else.
+
+          The buffer needs no setting: it is always on, and mods read the snapshot with
+          \`get_scene_normals\` from GFX_STAGE_SCENE_AFTER_OPAQUE onwards. It requires a
+          core-features device (D3D12 / Vulkan / Metal); in compatibility mode the renderer skips
+          the attachment and \`get_scene_normals\` reports no view.
+
+          The scene normal carries the sign the game gave it and is not corrected against the view.
+          Consumers must NOT apply the \"flip it towards the camera\" guard that depth
+          reconstruction needs; doing so seams flat ground where the view ray crosses the surface
+          plane.
+
+          Mods that record a draw into the scene pass must build their pipeline's color targets
+          from \`gfx_init_color_target_states\`, which write-masks off every attachment the mod
+          does not own. This is a GfxService 1.2 requirement, not new here, but a mod that still
+          hardcodes one color target will fail validation against the scene pass.
+
+          SDK link stubs are attached as top-level assets: windows-amd64.lib, windows-arm64.lib,
+          stub-macos-arm64, stub-macos-x86_64, stub-android-aarch64.so. Install the
+          win32-msvc-x86_64 game build to run the mods."
