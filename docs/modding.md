@@ -590,6 +590,37 @@ registered with `register_compute_type` follow the same worker-thread rule and r
 All WGPU handles from the service are borrowed. Resolved target views are valid for the current frame only. GPU objects
 created by a mod are owned by that mod and should be released in `mod_shutdown`.
 
+#### Scene normals
+
+The scene pass carries a second color attachment holding the game's authored surface normals, so screen-space effects
+can read them instead of reconstructing them from depth. Devices without core WebGPU features (the D3D11 and OpenGL ES
+fallbacks) cannot use it, and there the normals are simply unavailable.
+
+GfxService snapshots the attachment once per frame, immediately after the opaque lists and before any
+`GFX_STAGE_SCENE_AFTER_OPAQUE` hook runs, and hands the same texture to every mod that asks:
+
+```cpp
+GfxSceneNormals normals = GFX_SCENE_NORMALS_INIT;
+svc_gfx->get_scene_normals(mod_ctx, &normals);
+// normals.view is NULL when the buffer is off, or before the snapshot is taken
+```
+
+`view` is NULL earlier in the frame than the snapshot, so read it from `GFX_STAGE_SCENE_AFTER_OPAQUE` or later. Like
+resolved targets, it is valid for the current frame only; a mod that needs the normals afterwards must copy them.
+
+The texture holds the view-space vertex normal the artist authored, encoded `xyz * 0.5 + 0.5`, with alpha `1` where that
+normal is usable and `0` where it is not: the draw supplied no normals (sky, billboards), nothing wrote depth, or
+interpolation cancelled the normal to zero. Renormalize after decoding, and fall back where alpha is `0`.
+
+Its coverage is exactly the depth buffer's: a draw writes a normal if and only if it writes depth, so the normals and a
+depth snapshot taken at the same stage describe the same surface. Effects that only blend over the scene, such as
+particle billboards and the game's projected shadow quads, write neither and cannot contaminate it.
+
+The stored direction carries the sign the game gave it and is not corrected against the view. Do not apply the "flip it
+towards the camera" guard that depth reconstruction needs: a cross product of screen-space deltas has an arbitrary sign
+and has to be resolved, but an authored normal already has one, and flipping on `dot(normal, view_position) > 0` negates
+every pixel beyond where the view ray crosses the surface plane, which reads as a hard seam across flat ground.
+
 #### External presentation
 
 GfxService supports external presentation ("present targets") backed by either a WindowService window (via
