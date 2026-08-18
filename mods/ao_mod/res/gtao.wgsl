@@ -9,8 +9,7 @@
 // PORT:
 // - Bevy view/globals bindings -> the mod's own uniform block (matrices from Dusklight's
 //   CameraService, WebGPU clip convention, reversed-Z - the same convention Bevy uses).
-// - Prepass normals -> normals reconstructed from depth (atyuwen's accurate 5-tap method,
-//   https://atyuwen.github.io/posts/normal-reconstruction/).
+// - Prepass normals -> GfxService's scene normal snapshot, which is already in view space.
 // - Sampler-based reads -> textureLoad (r32float is unfilterable without optional features);
 //   the mip level for the XeGTAO bandwidth optimization is selected explicitly per load.
 // - effect_radius and slice/sample counts come from uniforms instead of constants/shader defs
@@ -38,6 +37,7 @@ struct Uniforms {
 @group(0) @binding(2) var ambient_occlusion: texture_storage_2d<r32float, write>;
 @group(0) @binding(3) var depth_differences: texture_storage_2d<r32uint, write>;
 @group(0) @binding(4) var<uniform> uniforms: Uniforms;
+@group(0) @binding(5) var scene_normal: texture_2d<f32>;
 
 const PI: f32 = 3.141592653589793;
 const HALF_PI: f32 = 1.5707963267948966;
@@ -63,6 +63,14 @@ fn load_depth(pixel_coordinates: vec2<i32>, mip_level: i32) -> f32 {
     let mip_size = max(vec2<i32>(uniforms.size) >> vec2<u32>(u32(mip_level)), vec2<i32>(1i));
     let coordinates = clamp(pixel_coordinates, vec2<i32>(0i), mip_size - 1i);
     return textureLoad(preprocessed_depth, coordinates, mip_level).r;
+}
+
+// Snapshot resolution, so the same scaling the depth preprocess applies.
+fn load_scene_normal(pixel_coordinates: vec2<i32>) -> vec4<f32> {
+    let size = vec2<i32>(textureDimensions(scene_normal));
+    let coordinates = clamp(vec2<i32>(vec2<f32>(pixel_coordinates) * uniforms.depth_scale),
+        vec2<i32>(0i), size - 1i);
+    return textureLoad(scene_normal, coordinates, 0i);
 }
 
 // Calculate differences in depth between neighbor pixels (later used by the spatial denoiser pass to preserve object edges)
@@ -99,53 +107,6 @@ fn reconstruct_view_space_position(depth: f32, uv: vec2<f32>) -> vec3<f32> {
     return view_xyz;
 }
 
-fn view_position_at(pixel_coordinates: vec2<i32>) -> vec3<f32> {
-    let depth = load_depth(pixel_coordinates, 0i);
-    let uv = (vec2<f32>(pixel_coordinates) + 0.5) * uniforms.inv_size;
-    return reconstruct_view_space_position(depth, uv);
-}
-
-// PORT: replaces Bevy's load_normal_view_space (which reads a prepass normal texture we do
-// not have). Accurate view-space normal reconstruction from depth, atyuwen's 5-tap method:
-// for each axis, extrapolate the center depth from the two taps on each side and derive the
-// tangent from whichever side predicts it better. This keeps normals stable across depth
-// discontinuities where naive derivatives smear.
-fn reconstruct_normal(pixel_coordinates: vec2<i32>, pixel_position: vec3<f32>, depth_center: f32) -> vec3<f32> {
-    let depth_left1 = load_depth(pixel_coordinates + vec2<i32>(-1i, 0i), 0i);
-    let depth_left2 = load_depth(pixel_coordinates + vec2<i32>(-2i, 0i), 0i);
-    let depth_right1 = load_depth(pixel_coordinates + vec2<i32>(1i, 0i), 0i);
-    let depth_right2 = load_depth(pixel_coordinates + vec2<i32>(2i, 0i), 0i);
-    let depth_top1 = load_depth(pixel_coordinates + vec2<i32>(0i, -1i), 0i);
-    let depth_top2 = load_depth(pixel_coordinates + vec2<i32>(0i, -2i), 0i);
-    let depth_bottom1 = load_depth(pixel_coordinates + vec2<i32>(0i, 1i), 0i);
-    let depth_bottom2 = load_depth(pixel_coordinates + vec2<i32>(0i, 2i), 0i);
-
-    let use_left = abs(2.0 * depth_left1 - depth_left2 - depth_center) <
-        abs(2.0 * depth_right1 - depth_right2 - depth_center);
-    let use_top = abs(2.0 * depth_top1 - depth_top2 - depth_center) <
-        abs(2.0 * depth_bottom1 - depth_bottom2 - depth_center);
-
-    var ddx: vec3<f32>;
-    if use_left {
-        ddx = pixel_position - view_position_at(pixel_coordinates + vec2<i32>(-1i, 0i));
-    } else {
-        ddx = view_position_at(pixel_coordinates + vec2<i32>(1i, 0i)) - pixel_position;
-    }
-    var ddy: vec3<f32>;
-    if use_top {
-        ddy = pixel_position - view_position_at(pixel_coordinates + vec2<i32>(0i, -1i));
-    } else {
-        ddy = view_position_at(pixel_coordinates + vec2<i32>(0i, 1i)) - pixel_position;
-    }
-
-    var normal = normalize(cross(ddy, ddx));
-    // Guard the orientation: the normal must face the camera.
-    if dot(normal, pixel_position) > 0.0 {
-        normal = -normal;
-    }
-    return normal;
-}
-
 fn load_and_reconstruct_view_space_position(uv: vec2<f32>, sample_mip_level: f32) -> vec3<f32> {
     // PORT: point-sample the selected mip explicitly instead of textureSampleLevel.
     let mip_level = i32(sample_mip_level + 0.5);
@@ -169,16 +130,18 @@ fn gtao(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let uv = (vec2<f32>(pixel_coordinates) + 0.5) * uniforms.inv_size;
 
     var pixel_depth = calculate_neighboring_depth_differences(pixel_coordinates);
-    let raw_depth = pixel_depth;
     pixel_depth += 0.00001; // Avoid depth precision issues
 
+    let scene_normal = load_scene_normal(pixel_coordinates);
+    if scene_normal.w < 0.5 {
+        // Nothing with an authored normal covers this pixel: the sky, or geometry the game drew
+        // without normals. There is no surface here to occlude.
+        textureStore(ambient_occlusion, pixel_coordinates, vec4<f32>(1.0, 0.0, 0.0, 0.0));
+        return;
+    }
+    let pixel_normal = normalize(scene_normal.xyz * 2.0 - 1.0);
+
     let pixel_position = reconstruct_view_space_position(pixel_depth, uv);
-    // PORT: the reconstruction differences the center position against neighbor positions
-    // built from unbiased depths, so its center must use the raw depth too: at this game's
-    // depth scale (far plane 200000 -> depth ~5e-3) Bevy's +0.00001 bias is comparable to a
-    // one-pixel depth step, and a biased center corrupts both tangents.
-    let pixel_normal = reconstruct_normal(
-        pixel_coordinates, reconstruct_view_space_position(raw_depth, uv), raw_depth);
     let view_vec = normalize(-pixel_position);
 
     let noise = load_noise(pixel_coordinates);
