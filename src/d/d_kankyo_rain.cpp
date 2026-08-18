@@ -6020,7 +6020,7 @@ void dKyr_mud_move() {
 //
 // "evil" and "mud" are English words, not romanized Japanese, so do not gloss them with a
 // kanji reading - nothing in this tree connects either symbol to one, and inventing one is
-// the failure docs/japanese-naming.md exists to stop. What IS established: dKyr_mud_init and
+// the failure docs/japanese-naming-remix.md exists to stop. What IS established: dKyr_mud_init and
 // dKyr_evil_init both take dComIfG_getObjectRes("Always", 0x53), so the two systems draw the
 // same texture. The member that holds it is called mpMoyaRes (靄 moya, mist/haze), but a
 // struct member name is reconstructed rather than authored - a hypothesis, not evidence.

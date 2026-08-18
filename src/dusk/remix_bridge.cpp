@@ -477,7 +477,7 @@ constexpr uint64_t kTexRepHandleBase = 0xD05C000000000000ull;
 // budget makes the pack take longer to arrive whenever frames are slow for any other reason.
 // Which term dominates is unmeasured. If it turns out to be this one, a *time* budget stretches
 // the ramp instead of the frame, and prefetching the files on a worker thread is better still.
-// extern/aurora/docs/dx9/texture-replacements.md §9.
+// extern/aurora/docs/dx9/texture-replacements.md §5.
 constexpr size_t kTexRepCreationsPerFrame = 16;
 
 // Per-reason message cap. One budget per reason rather than one shared between them: the
@@ -744,7 +744,7 @@ void celestialDirectionTo(float time, float outDir[3]) {
     const float cosA = std::cos(radians);
 
     // The same tilt setSunpos places the visible body on, so the light and the thing you can see
-    // in the sky cannot disagree. docs/sun-elevation.md.
+    // in the sky cannot disagree. docs/dx9-fixed-function.md carries the rtx.conf entry.
     const float orbitZRatio = dKy_celestial_orbit_z_ratio();
 
     float dir[3] = {sinA, -cosA, -cosA * orbitZRatio};
@@ -1042,10 +1042,13 @@ void releaseEffectLights() {
 // y = -99999 and colour {0,0,0}, and is never re-derived, so anyone who reads it today sees
 // nothing and concludes, wrongly, that the room lights are not there.
 //
-// The placement criticism in docs/effect-lights.md section 0 applies here too and is not
-// answered - these are authored positions, and a path tracer casts a real shadow from exactly
-// where they sit. That is why this is off by default and why the counters exist. Section 8.1 of
-// that document states the case for and against.
+// The criticism that retired the local-light mirror applies here too and is not answered -
+// these are authored positions, and a path tracer casts a real shadow from exactly where they
+// sit, which is the whole reason effect lights anchor to the effect instead. That is why this
+// is off by default and why the counters exist: the questions it would settle live in the
+// stage files, so they cannot be answered by reading, only by a survey from a play session.
+// The case for and against is this comment; there is no separate document for it, and
+// docs/remix-open-issues.md carries only the one line saying it is shipped and unmeasured.
 
 constexpr uint64_t kRoomLightHashBase = 0xA05C114E00000000ull;
 
@@ -2467,8 +2470,6 @@ void resyncIfDropped() {
 // each one a Japanese label the game's artists wrote beside the exact field and the range they
 // worked in. It is compiled out of every build of this port - one #if DEBUG spans
 // d_kankyo.cpp:4969-8190 and DEBUG is 0 - so the bindings survive only as a specification.
-// docs/kankyo-tuning-surface.md is the extraction and the reasoning about which few are worth
-// exposing.
 //
 // Only three of the 62 bindings on live g_env_light state can be driven from here, and the
 // reason is timing rather than taste: tick() runs after fapGm_Execute() (m_Do_main.cpp:327), so
@@ -2589,7 +2590,7 @@ void pushKankyoState() {
     //
     // Layers 1-3 are deliberately NOT pushed. Along that path they are ambient LIGHT, and the
     // path tracer relights that geometry itself; a scene-global readout could not be applied per
-    // room model file by any full-screen consumer anyway. docs/kankyo-tuning-surface.md 2.1a.
+    // room model file by any full-screen consumer anyway.
     const dScnKy_env_light_c* env = dKy_getEnvlight();
 
     push("rtx.dusklight.env.actorAmbient", formatColorS10(env->actor_amb_col));
@@ -2609,7 +2610,7 @@ void pushKankyoState() {
     //
     // The labels are kana/kanji in the source; they are transcribed here rather than quoted
     // because nothing else in src/dusk/ or in the fork carries CJK and this is not the change to
-    // find out whether MSVC minds. docs/kankyo-tuning-surface.md sections 2.1 and 4 quote them.
+    // find out whether MSVC minds.
     //
     // Their real consumers are per-material TEV constants on the game's own water, murk and haze
     // materials, matched by J3D material name: dKy_murky_set writes [2].a into a TEV colour alpha
@@ -2623,7 +2624,7 @@ void pushKankyoState() {
     // feed: they arrive per draw already folded into the TEV chain, and no material name reaches
     // Remix (extern/aurora/docs/dx9/remix-material-interface.md section 9), so there is no way to
     // tell which draw carried "the fake fog alpha". That last sentence is inference from those
-    // two documented facts, not something measured. docs/kankyo-tuning-surface.md flag 2.
+    // two documented facts, not something measured.
     push("rtx.dusklight.env.bgWaterAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[1].a), 0.004f));
     push("rtx.dusklight.env.bgAuxAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[2].a), 0.004f));
     push("rtx.dusklight.env.bgFakeFogAlpha", formatFloatQ(clampAlpha01(env->bg_amb_col[3].a), 0.004f));

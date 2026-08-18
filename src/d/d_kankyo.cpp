@@ -1703,7 +1703,7 @@ void dScnKy_env_light_c::setDaytime() {
 f32 dKy_celestial_orbit_z_ratio() {
     // ratio = cot(elevation): peak elevation is atan(1/ratio), so inverting gives the tilt that
     // lands the arc at the requested height. The 59.036 default is not a round number because it
-    // reproduces vanilla's 48000/80000 to six decimals (0.600006). docs/sun-elevation.md.
+    // reproduces vanilla's 48000/80000 to six decimals (0.600006).
     const f32 elevation = std::clamp(
         dusk::getSettings().game.celestialNoonElevation.getValue(), 1.0f, 90.0f);
     const f32 radians = elevation * (M_PI / 180.0f);
@@ -2537,7 +2537,7 @@ void dScnKy_env_light_c::setLight() {
                 g_kankyoHIO.bloom.m_saturationPattern = prev_pal_end_p->bloom_tbl_id;
             }
 
-            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) { // DEAD ON ARRIVAL: the block just below runs on this same condition and overwrites all four ids with 3, so the navy panel's four "twilight sense" modes never reach the bloom table. Recorded, not fixed - docs/japanese-naming.md
+            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) { // DEAD ON ARRIVAL: the block just below runs on this same condition and overwrites all four ids with 3, so the navy panel's four "twilight sense" modes never reach the bloom table. Recorded, not fixed - docs/japanese-naming-remix.md
                 prev_bloom_start_id = next_bloom_start_id = prev_bloom_end_id = next_bloom_end_id = g_kankyoHIO.navy.twilight_sense_saturation_mode;
             }
             #endif

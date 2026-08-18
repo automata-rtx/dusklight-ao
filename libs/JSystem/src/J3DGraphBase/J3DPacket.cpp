@@ -224,7 +224,7 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 // reconstructed out of TEV state. The names are not decoration: the game's own environment
 // code dispatches on them every frame (dKy_bg_MAxx_proc, src/d/d_kankyo.cpp:11399, which
 // memcmps mat_name[3..6] against "MA00" and friends at :11508), so they are a classification
-// the original team authored rather than one we inferred. docs/japanese-naming.md.
+// the original team authored rather than one we inferred. docs/japanese-naming-remix.md.
 //
 // It has to be pushed *here* rather than at a draw-scheduling point. TP actor draw methods
 // call mDoExt_modelEntryDL, which enters a model into a J3D draw buffer that dDlst_list_c

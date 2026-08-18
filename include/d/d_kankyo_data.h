@@ -63,7 +63,7 @@ struct dkydata_bloomInfo_info_class {
     // Not unknown: the authors' own slider labels it 元濃さ, "the ORIGINAL's density"
     // (dKankyo_bloomHIO_c::genMessage). It becomes the ALPHA of the bloom blend colour,
     // which the composite passes as the destination factor - i.e. how much of the
-    // un-bloomed frame survives. Upstream's name; do not rename. docs/japanese-naming.md sec 8.
+    // un-bloomed frame survives. Upstream's name; do not rename. docs/japanese-naming-remix.md sec 4.
     /* 0x7 */ u8 mOrigDensity;
     /* 0x8 */ u8 mSaturateSubtractR;
     /* 0x9 */ u8 mSaturateSubtractG;

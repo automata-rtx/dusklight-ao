@@ -499,7 +499,7 @@ Class classifyByName(uint16_t id) {
     // is zero: taimatsu/taimatu, kagarib/kagari/kagaribi, honoo/honou/homura, pika/pikari/
     // pikapika, bakuha/bakuhatsu/bakuhatu, youdo/yodo. The game used English (fire 181, torch
     // 1, glow 59, spark 33, bomb 171) or a different Japanese word (maki 8, kantera 5, kaen 4,
-    // kira 9) - see docs/japanese-naming.md section 3. Removing them is not worth doing
+    // kira 9) - see docs/japanese-naming-remix.md section 3. Removing them is not worth doing
     // either: a keyword that matches nothing classifies nothing, so deleting all ten would
     // change not one effect's class - a diff against a shipping classifier that buys a
     // shorter list. The check is what stops the next dead word going unnoticed.
@@ -524,7 +524,7 @@ Class classifyByName(uint16_t id) {
     // where a name puts a light out, so a word counted in one spelling excludes half its
     // effects and silently leaves the rest lighting the room. Droplet is the live example:
     // shizuku matches 29 names, sizuku 26, and the two sets are disjoint - 55 together.
-    // docs/japanese-naming.md section 3, and docs/effect-lights.md section 4.
+    // docs/japanese-naming-remix.md section 3, and docs/effect-lights.md section 4.
     //
     // SAND AND DUST joined it on 2026-08-13, from a reported defect: the sand worm in Gerudo
     // Desert and the first room of Arbiter's Grounds carried an "insanely bright" light that the

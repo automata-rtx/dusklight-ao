@@ -13,7 +13,7 @@ whose resolution looked obvious, left two places disagreeing:
   * The protocol number lives in remix_bridge.cpp and in several documents.
     Two branches bumped it to 7 independently; git conflicted, and both sides
     said 7, so the obvious resolution shipped two features on one version.
-  * docs/japanese-naming.md glosses the game's romanized-Japanese symbols, and
+  * docs/japanese-naming-remix.md glosses the game's romanized-Japanese symbols, and
     says up front that every symbol it names was checked to exist. A glossary
     is exactly the kind of document nobody re-reads, so that promise is only
     worth anything if something enforces it.
@@ -244,7 +244,7 @@ def check_aurora_pin_is_real() -> None:
 # --- the effect-light classifier's word lists ------------------------------------------
 #
 # src/dusk/effect_lights.cpp classifies each particle effect by looking for words in the
-# effect's own name, and the names are romanized Japanese (docs/japanese-naming.md). A
+# effect's own name, and the names are romanized Japanese (docs/japanese-naming-remix.md). A
 # keyword that matches none of the game's 3205 effect names is inert: it costs nothing and
 # it is invisible, so nobody finds out until they build on it. Class::Lava was exactly that
 # for however long - lava/magma/youdo match nothing, the game spells it yogan/yougan, and
@@ -270,7 +270,7 @@ def check_aurora_pin_is_real() -> None:
 # and removing a word is a change to a shipping classifier for no gain.
 #
 # READ THIS BEFORE "FIXING" ANY OF THEM: they are NOT romanization misses
-# (docs/japanese-naming.md section 3). Every one was re-checked in both kunrei-shiki and
+# (docs/japanese-naming-remix.md section 3). Every one was re-checked in both kunrei-shiki and
 # Hepburn, and in the obvious alternatives, and every spelling matches zero. The game
 # simply used English, or a different Japanese word. Adding spellings would not help.
 EFFECT_LIGHT_DEAD_KEYWORDS: dict[str, str] = {
@@ -414,7 +414,7 @@ def check_effect_light_keywords() -> None:
                     f"classifyByName's Class::{cls} list contains \"{word}\", which matches "
                     f"none of the {len(names)} effect names in d_particle_name.cpp. Before "
                     f"changing the spelling, try the other romanization "
-                    f"(docs/japanese-naming.md section 3) and the English word - the ten "
+                    f"(docs/japanese-naming-remix.md section 3) and the English word - the ten "
                     f"already-dead keywords are dead in every spelling. If it is meant to "
                     f"stay inert, record it in EFFECT_LIGHT_DEAD_KEYWORDS with the reason",
                 )
@@ -450,7 +450,7 @@ def check_effect_light_keywords() -> None:
         )
 
 
-# Backticked tokens in japanese-naming.md that are prose, not game symbols.
+# Backticked tokens in japanese-naming-remix.md that are prose, not game symbols.
 # Kept short and explicit: a token silently exempted is a glossary entry that
 # stops being checked.
 NAMING_NON_SYMBOLS = {"camelCase"}
@@ -468,7 +468,7 @@ NAMING_FILE_SUFFIXES = (".cpp", ".h", ".inc")
 
 
 def check_japanese_naming_symbols() -> None:
-    """Every game symbol docs/japanese-naming.md names must exist in the tree.
+    """Every game symbol docs/japanese-naming-remix.md names must exist in the tree.
 
     The document's value is that a session can trust it instead of guessing at a
     romanized name, so an entry naming a symbol the port has since renamed or
@@ -482,7 +482,7 @@ def check_japanese_naming_symbols() -> None:
     global checks_run
     checks_run += 1
 
-    rel = "docs/japanese-naming.md"
+    rel = "docs/japanese-naming-remix.md"
     text = read(rel)
     if text is None:
         fail("japanese-naming", f"{rel} missing - it is the canonical naming reference")
@@ -552,7 +552,7 @@ def main() -> int:
         print(
             "\nThese are facts stated in more than one place that no longer agree. "
             "A clean git merge does not mean they do - see CLAUDE.md, "
-            "'Merges that succeed and are still wrong'."
+            "'A clean git merge is not a correct merge'."
         )
         return 1
 

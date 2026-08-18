@@ -206,7 +206,8 @@ struct UserSettings {
         // Room lights: the room's own authored lights (dungeonlight), a third registry from
         // either the effect emitters or the pointlight[]/efplight[] list the effect lights read
         // colour and reach from, and the only one carrying a cone.
-        // Off by default. docs/effect-lights.md section 8.1.
+        // Off by default; the case for and against is the comment above
+        // roomLights in src/dusk/remix_bridge.cpp.
         ConfigVar<bool> remixRoomLights;
         ConfigVar<float> remixRoomLightIntensity;
         ConfigVar<float> remixRoomLightRadius;
@@ -261,7 +262,8 @@ struct UserSettings {
         // 2026-08-11. It is a sub-switch, not an independent one: with
         // remixHideSkyBillboards off nothing is hidden either way. Turning this off while
         // that one is on is the A/B that isolates which packet is the shadow occluder,
-        // because only the sun packet draws the moon quad. docs/remix-test-playbook.md §4b.
+        // because only the sun packet draws the moon quad. The A/B and what it would settle are
+        // written out at d_kankyo_wether.cpp:114-130; it is not a queue item in the playbook.
         ConfigVar<bool> remixHideStarBillboards;
         ConfigVar<bool> remixHideVrbox;
         // Draw each blade from its display list with its own position matrix instead of
@@ -307,9 +309,9 @@ struct UserSettings {
         ConfigVar<int> timeCommit;
         // Three of the original team's own environment sliders, driven from Remix's overlay
         // via rtx.dusklight.game.{waterSurfaceShine,grassLightInfluence,clockRate}. Their
-        // labels, fields and ranges are extracted in docs/kankyo-tuning-surface.md; the
-        // panel they came from is compiled out of every build (one #if DEBUG covering all of
-        // d_kankyo.cpp's genMessage functions), so this is the only way to reach them.
+        // labels, fields and ranges come from that panel, which is compiled out of every
+        // build (one #if DEBUG covering all of d_kankyo.cpp's genMessage functions), so
+        // this is the only way to reach them.
         //
         // Each defaults to the value envcolor_init() gives the field, so a config file that
         // has never been touched leaves the game exactly as it was. The bridge applies these

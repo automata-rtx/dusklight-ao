@@ -96,7 +96,9 @@ struct Site {
 };
 
 // Everything the caller configures. Filled from rtx.dusklight.game.* with the game's own
-// config.json as the fallback; see docs/effect-lights.md section 9.
+// config.json as the fallback. Each field's own RTX_OPTION description in the fork's
+// rtx_dusklight_game.h is the authority on what it does; docs/effect-lights.md section 10
+// says what the defaults are worth.
 struct Params {
     bool enable = true;
 

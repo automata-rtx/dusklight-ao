@@ -123,8 +123,8 @@ void dKankyo_star_Packet::draw() {
     // arithmetic above says it should not be. THAT IS INFERENCE, NOT A MEASUREMENT - no test
     // has ever isolated the two packets. remixHideStarBillboards exists to isolate them:
     // leave hideSkyBillboards on, turn that one off, and the stars come back while the moon
-    // quad stays gone. docs/remix-test-playbook.md section 4b is the recipe; write the result
-    // back into this comment either way.
+    // quad stays gone. That is the whole recipe - it is not a queue item in the playbook; write
+    // the result back into this comment either way.
     //
     // Note the stars carry no texture at all (GX_TEXMAP_NULL, d_kankyo_rain.cpp:4332), so the
     // "categorise them as Sky instead" alternative that is offered for the sun and moon cannot

@@ -489,7 +489,7 @@ first in-game frame. Projection matrices match the renderer's WebGPU clip conven
 > - **Some names are English spelled by ear** (`wether`, `Schejule`, `Sord`,
 >   `Blure`, `parcent`). Spell them the game's way or the symbol will not resolve.
 >
-> [`japanese-naming.md`](japanese-naming.md) has the prefix map, a glossary, and
+> [`japanese-naming-remix.md`](japanese-naming-remix.md) has the prefix map, a glossary, and
 > how to decode a name you have not seen.
 
 Mods may hook the vast majority of game functions, including file-local static, private and virtual functions.

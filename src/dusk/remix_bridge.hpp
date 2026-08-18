@@ -88,7 +88,8 @@ const EffectLightsDebug& effectLightsDebug();
 // State of the room's authored lights - dScnKy_env_light_c::dungeonlight, fed every frame from
 // the current room's LightVec stage data. A different registry from either the effect emitters
 // or the pointlight[]/efplight[] list the effect lights read, and the only one in the game that
-// carries a cone. Off by default; see docs/effect-lights.md section 8.1.
+// carries a cone. Off by default; the case for and against is the comment above roomLights in
+// remix_bridge.cpp.
 struct RoomLightsDebug {
     bool enabled;
     int found;           // slots the game itself considers live this room, before our filtering

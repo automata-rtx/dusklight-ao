@@ -108,6 +108,7 @@ def doc_paths(fork):
     )] + [os.path.join(fork, p) for p in (
         "CLAUDE.md", "documentation/DusklightOverlay.md",
         "documentation/DusklightAtmosphere.md",
+        "documentation/DusklightRebase.md",
     )]
 
 

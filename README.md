@@ -38,7 +38,7 @@ If you'd like to build Dusklight from source, please read the [build instruction
 
 Pull requests are welcomed! Note that we do not accept contributions that are primarily AI-generated and will close your PR if we suspect as much. Please also see the [code conventions](docs/code-conventions.md).
 
-Reading the original game code for the first time? Its identifiers are the Japanese team's own names, preserved by the decompilation — romaji like `kankyo` (環境, *environment*), plus English spelled by ear like `wether`. [`docs/japanese-naming.md`](docs/japanese-naming.md) explains how to read them, and why a search can come back empty for a symbol that exists.
+Reading the original game code for the first time? Its identifiers are the Japanese team's own names, preserved by the decompilation — romaji like `kankyo` (環境, *environment*), plus English spelled by ear like `wether`. [`docs/japanese-naming-remix.md`](docs/japanese-naming-remix.md) explains how to read them, and why a search can come back empty for a symbol that exists.
 
 # Credits
 
