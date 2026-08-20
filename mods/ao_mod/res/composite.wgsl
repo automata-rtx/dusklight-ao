@@ -2,7 +2,7 @@
 //
 // Debug views:
 //   1 = raw AO visibility as grayscale
-//   2 = view-space normals reconstructed from depth (keep in sync with gtao.wgsl)
+//   2 = the view-space normals GTAO consumes (keep in sync with gtao.wgsl)
 //   3 = the preprocessed depth input
 //   4 = depth staircase detector
 
@@ -24,6 +24,7 @@ struct Uniforms {
 @group(0) @binding(1) var preprocessed_depth: texture_2d<f32>;
 @group(0) @binding(2) var scene_depth_raw: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
+@group(0) @binding(4) var scene_normal: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -74,39 +75,12 @@ fn view_position_at(pixel_coordinates: vec2<i32>) -> vec3f {
     return reconstruct_view_space_position(depth, uv);
 }
 
-fn reconstruct_normal(pixel_coordinates: vec2<i32>, pixel_position: vec3f, depth_center: f32) -> vec3f {
-    let depth_left1 = load_depth(pixel_coordinates + vec2<i32>(-1i, 0i));
-    let depth_left2 = load_depth(pixel_coordinates + vec2<i32>(-2i, 0i));
-    let depth_right1 = load_depth(pixel_coordinates + vec2<i32>(1i, 0i));
-    let depth_right2 = load_depth(pixel_coordinates + vec2<i32>(2i, 0i));
-    let depth_top1 = load_depth(pixel_coordinates + vec2<i32>(0i, -1i));
-    let depth_top2 = load_depth(pixel_coordinates + vec2<i32>(0i, -2i));
-    let depth_bottom1 = load_depth(pixel_coordinates + vec2<i32>(0i, 1i));
-    let depth_bottom2 = load_depth(pixel_coordinates + vec2<i32>(0i, 2i));
-
-    let use_left = abs(2.0 * depth_left1 - depth_left2 - depth_center) <
-        abs(2.0 * depth_right1 - depth_right2 - depth_center);
-    let use_top = abs(2.0 * depth_top1 - depth_top2 - depth_center) <
-        abs(2.0 * depth_bottom1 - depth_bottom2 - depth_center);
-
-    var ddx: vec3f;
-    if use_left {
-        ddx = pixel_position - view_position_at(pixel_coordinates + vec2<i32>(-1i, 0i));
-    } else {
-        ddx = view_position_at(pixel_coordinates + vec2<i32>(1i, 0i)) - pixel_position;
-    }
-    var ddy: vec3f;
-    if use_top {
-        ddy = pixel_position - view_position_at(pixel_coordinates + vec2<i32>(0i, -1i));
-    } else {
-        ddy = view_position_at(pixel_coordinates + vec2<i32>(0i, 1i)) - pixel_position;
-    }
-
-    var normal = normalize(cross(ddy, ddx));
-    if dot(normal, pixel_position) > 0.0 {
-        normal = -normal;
-    }
-    return normal;
+// Mirrors gtao.wgsl's load_scene_normal.
+fn load_scene_normal(pixel_coordinates: vec2<i32>) -> vec4f {
+    let size = vec2<i32>(textureDimensions(scene_normal));
+    let coordinates = clamp(vec2<i32>(vec2f(pixel_coordinates) * uniforms.depth_scale),
+        vec2<i32>(0i), size - 1i);
+    return textureLoad(scene_normal, coordinates, 0i);
 }
 
 // Raw-snapshot variant of load_depth for the staircase view
@@ -119,12 +93,13 @@ fn load_raw_depth(pixel_coordinates: vec2<i32>) -> f32 {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if uniforms.debug_view == 2u {
-        // Reconstructed view-space normals, [-1,1] -> RGB
+        // View-space normals, [-1,1] -> RGB; black where the scene has none
         let pixel = vec2<i32>(in.uv * uniforms.size);
-        let depth = load_depth(pixel);
-        let uv = (vec2f(pixel) + 0.5) * uniforms.inv_size;
-        let position = reconstruct_view_space_position(depth, uv);
-        let normal = reconstruct_normal(pixel, position, depth);
+        let scene_normal = load_scene_normal(pixel);
+        if scene_normal.w < 0.5 {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
+        }
+        let normal = normalize(scene_normal.xyz * 2.0 - 1.0);
         return vec4f(normal * 0.5 + 0.5, 1.0);
     }
     if uniforms.debug_view == 3u {
