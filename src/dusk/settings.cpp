@@ -71,21 +71,32 @@ UserSettings g_userSettings = {
         .remixSunIntensity {"game.remixSunIntensity", 5.0f},
         .remixMoonIntensity {"game.remixMoonIntensity", 0.3f},
         .remixCelestialAngle {"game.remixCelestialAngle", 2.0f},
-        .remixLocalLights {"game.remixLocalLights", false},
-        .remixLocalLightIntensity {"game.remixLocalLightIntensity", 19.0f},
-        .remixLocalLightRadius {"game.remixLocalLightRadius", 10.0f},
-        // Effect lights. Every default below except the two inherited from the local light
-        // mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
+        // Room lights. Off by default: these are authored placements, which is exactly the
+        // property the effect-light system exists because it distrusts, and whether they
+        // double-count with it has to be settled from a log rather than argued.
+        .remixRoomLights {"game.remixRoomLights", false},
+        .remixRoomLightIntensity {"game.remixRoomLightIntensity", 19.0f},
+        .remixRoomLightRadius {"game.remixRoomLightRadius", 10.0f},
+        .remixRoomLightConeSoftness {"game.remixRoomLightConeSoftness", 1.0f},
+        // Effect lights. Every default below except the two inherited from the retired local
+        // light mirror (19.0 and 10.0) is a starting point chosen to be visible rather than correct;
         // docs/effect-lights.md section 10 says so plainly.
         .effectLights {"game.effectLights", true},
         .effectLightIntensity {"game.effectLightIntensity", 1.0f},
+        .effectLightReachScale {"game.effectLightReachScale", 1.0f},
+        .effectLightRadiusScale {"game.effectLightRadiusScale", 1.0f},
         .effectLightMassExponent {"game.effectLightMassExponent", 0.5f},
         .effectLightDerivedIntensity {"game.effectLightDerivedIntensity", 19.0f},
-        .effectLightDerivedReach {"game.effectLightDerivedReach", 1.0f},
         .effectLightDerivedRadius {"game.effectLightDerivedRadius", 10.0f},
         .effectLightUndeterminedIntensity {"game.effectLightUndeterminedIntensity", 1.0f},
         .effectLightUndeterminedReach {"game.effectLightUndeterminedReach", 400.0f},
         .effectLightUndeterminedRadius {"game.effectLightUndeterminedRadius", 8.0f},
+        .effectLightAuthoredColor {"game.effectLightAuthoredColor", true},
+        .effectLightAuthoredRadius {"game.effectLightAuthoredRadius", false},
+        .effectLightLanternSeparate {"game.effectLightLanternSeparate", false},
+        .effectLightLanternIntensity {"game.effectLightLanternIntensity", 1.0f},
+        .effectLightLanternReach {"game.effectLightLanternReach", 400.0f},
+        .effectLightLanternRadius {"game.effectLightLanternRadius", 8.0f},
         .effectLightFireOffset {"game.effectLightFireOffset", 15.0f},
         .effectLightGlowOffset {"game.effectLightGlowOffset", 0.0f},
         .effectLightMergeRadius {"game.effectLightMergeRadius", 60.0f},
@@ -93,14 +104,22 @@ UserSettings g_userSettings = {
         .effectLightMaxLights {"game.effectLightMaxLights", 32},
         .effectLightMaxDistance {"game.effectLightMaxDistance", 12000.0f},
         .effectLightBursts {"game.effectLightBursts", false},
+        // Both must stay in step with the fork's declared defaults in rtx_dusklight_game.h.
+        .effectLightSparks {"game.effectLightSparks", true},
+        .effectLightSparkHold {"game.effectLightSparkHold", 12},
         .effectLightMinChroma {"game.effectLightMinChroma", 0.50f},
         .effectLightMinLuma {"game.effectLightMinLuma", 0.70f},
         .effectLightVolumetric {"game.effectLightVolumetric", 1.0f},
         .disableFrustumCulling {"game.disableFrustumCulling", false},
         .celestialNoonElevation {"game.celestialNoonElevation", 59.036f},
         .remixHideSkyBillboards {"game.remixHideSkyBillboards", false},
+        // True, so that remixHideSkyBillboards on its own keeps hiding the stars exactly as
+        // it did while the two were one setting. Set it false to keep the star packet while
+        // the sun/moon packet stays hidden.
+        .remixHideStarBillboards {"game.remixHideStarBillboards", true},
         .remixHideVrbox {"game.remixHideVrbox", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
+        .remixPerBladeFlowers {"game.remixPerBladeFlowers", false},
         .remixTextureReplacements {"game.remixTextureReplacements", true},
         // False here, true on the Remix side: the bridge pushes Remix's value down every
         // frame when it is running, so this is suppressed under Remix and left vanilla on
@@ -114,10 +133,21 @@ UserSettings g_userSettings = {
         // the second time.
         .timeOfDay {"game.timeOfDay", 0.0f},
         .timeCommit {"game.timeCommit", 0},
+        // The game's own values, so an untouched config is vanilla: envcolor_init() sets
+        // mWaterSurfaceShineRate = 1.0f (d_kankyo.cpp:1424) and grass_light_inf_rate = 1.0f
+        // (:1318). clockRate is a multiplier rather than an absolute, because the field it
+        // scales (time_change_rate, 0.012f at :1494) is in degrees per frame and nobody
+        // wants to think in those.
+        .waterSurfaceShine {"game.waterSurfaceShine", 1.0f},
+        .grassLightInfluence {"game.grassLightInfluence", 1.0f},
+        .clockRate {"game.clockRate", 1.0f},
         .depthOfFieldMode{"game.depthOfFieldMode", DepthOfFieldMode::Dusk},
         .disableWaterRefraction {"game.disableWaterRefraction", false},
         .skinDebugView {"game.skinDebugView", false},
         .enableTextureReplacements {"game.enableTextureReplacements", true},
+        // Off: the dump directory grows for as long as it is on, and it is a tool rather
+        // than a rendering setting. Read once, at aurora_initialize.
+        .allowTextureDumps {"game.allowTextureDumps", false},
         .enableFrameInterpolation {"game.enableFrameInterpolation", FrameInterpMode::Off},
         .internalResolutionScale {"game.internalResolutionScale", 0},
         .shadowResolutionMultiplier {"game.shadowResolutionMultiplier", 1},
@@ -327,18 +357,26 @@ void registerSettings() {
     Register(g_userSettings.game.remixSunIntensity);
     Register(g_userSettings.game.remixMoonIntensity);
     Register(g_userSettings.game.remixCelestialAngle);
-    Register(g_userSettings.game.remixLocalLights);
-    Register(g_userSettings.game.remixLocalLightIntensity);
-    Register(g_userSettings.game.remixLocalLightRadius);
+    Register(g_userSettings.game.remixRoomLights);
+    Register(g_userSettings.game.remixRoomLightIntensity);
+    Register(g_userSettings.game.remixRoomLightRadius);
+    Register(g_userSettings.game.remixRoomLightConeSoftness);
     Register(g_userSettings.game.effectLights);
     Register(g_userSettings.game.effectLightIntensity);
+    Register(g_userSettings.game.effectLightReachScale);
+    Register(g_userSettings.game.effectLightRadiusScale);
     Register(g_userSettings.game.effectLightMassExponent);
     Register(g_userSettings.game.effectLightDerivedIntensity);
-    Register(g_userSettings.game.effectLightDerivedReach);
     Register(g_userSettings.game.effectLightDerivedRadius);
     Register(g_userSettings.game.effectLightUndeterminedIntensity);
     Register(g_userSettings.game.effectLightUndeterminedReach);
     Register(g_userSettings.game.effectLightUndeterminedRadius);
+    Register(g_userSettings.game.effectLightAuthoredColor);
+    Register(g_userSettings.game.effectLightAuthoredRadius);
+    Register(g_userSettings.game.effectLightLanternSeparate);
+    Register(g_userSettings.game.effectLightLanternIntensity);
+    Register(g_userSettings.game.effectLightLanternReach);
+    Register(g_userSettings.game.effectLightLanternRadius);
     Register(g_userSettings.game.effectLightFireOffset);
     Register(g_userSettings.game.effectLightGlowOffset);
     Register(g_userSettings.game.effectLightMergeRadius);
@@ -346,14 +384,18 @@ void registerSettings() {
     Register(g_userSettings.game.effectLightMaxLights);
     Register(g_userSettings.game.effectLightMaxDistance);
     Register(g_userSettings.game.effectLightBursts);
+    Register(g_userSettings.game.effectLightSparks);
+    Register(g_userSettings.game.effectLightSparkHold);
     Register(g_userSettings.game.effectLightMinChroma);
     Register(g_userSettings.game.effectLightMinLuma);
     Register(g_userSettings.game.effectLightVolumetric);
     Register(g_userSettings.game.disableFrustumCulling);
     Register(g_userSettings.game.celestialNoonElevation);
     Register(g_userSettings.game.remixHideSkyBillboards);
+    Register(g_userSettings.game.remixHideStarBillboards);
     Register(g_userSettings.game.remixHideVrbox);
     Register(g_userSettings.game.remixPerBladeGrass);
+    Register(g_userSettings.game.remixPerBladeFlowers);
     Register(g_userSettings.game.remixTextureReplacements);
     Register(g_userSettings.game.remixHideDashEffect);
     Register(g_userSettings.game.remixBlobShadows);
@@ -361,10 +403,14 @@ void registerSettings() {
     Register(g_userSettings.game.freezeTime);
     Register(g_userSettings.game.timeOfDay);
     Register(g_userSettings.game.timeCommit);
+    Register(g_userSettings.game.waterSurfaceShine);
+    Register(g_userSettings.game.grassLightInfluence);
+    Register(g_userSettings.game.clockRate);
     Register(g_userSettings.game.depthOfFieldMode);
     Register(g_userSettings.game.disableWaterRefraction);
     Register(g_userSettings.game.skinDebugView);
     Register(g_userSettings.game.enableTextureReplacements);
+    Register(g_userSettings.game.allowTextureDumps);
     Register(g_userSettings.game.internalResolutionScale);
     Register(g_userSettings.game.resampler);
     Register(g_userSettings.game.shadowResolutionMultiplier);

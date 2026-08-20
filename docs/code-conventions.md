@@ -17,7 +17,7 @@ breaks everyone's grep. If a name needs explaining, add a comment.
 English `camelCase`. Do not romanize anything new.
 
 Full reference, including how to decode an unfamiliar name and why a search can
-come back empty for a symbol that exists: [`japanese-naming.md`](japanese-naming.md).
+come back empty for a symbol that exists: [`japanese-naming-remix.md`](japanese-naming-remix.md).
 
 ## Upstream when appropriate
 

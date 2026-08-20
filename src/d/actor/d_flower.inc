@@ -5,6 +5,7 @@
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "SSystem/SComponent/c_counter.h"
 
+#include "dusk/settings.h"
 #include "dusk/frame_interpolation.h"
 
 const u16 l_J_Ohana00_64TEX__width = 63;
@@ -803,9 +804,39 @@ void dFlower_packet_c::draw() {
         {GX_VA_TEX0, GX_INDEX8},
         {GX_VA_NULL, GX_NONE},
     };
+
+    // The indexed descriptor the flower display lists were recorded against - the same one
+    // the preamble above sets attribute by attribute. GX_VA_CLR1 is listed as GX_NONE on
+    // purpose and is not redundant: GXSetVtxDescv only writes the attributes it is given
+    // (aurora, GXGeometry.cpp SETVCDATTR), so switching back from the batch descriptor
+    // would otherwise leave CLR1 = GX_DIRECT set and the display list replay would read a
+    // per-vertex colour that is not in the stream. The batch descriptor above is the only
+    // thing in this file that turns CLR1 on, and this is the only thing that turns it off.
+    static GXVtxDescList perFlowerVtxDescList[] = {
+        {GX_VA_POS, GX_INDEX8},
+        {GX_VA_NRM, GX_INDEX8},
+        {GX_VA_CLR0, GX_INDEX8},
+        {GX_VA_CLR1, GX_NONE},
+        {GX_VA_TEX0, GX_INDEX8},
+        {GX_VA_NULL, GX_NONE},
+    };
     static Vec xfPos[256];
     Mtx identity;
     MTXIdentity(identity);
+
+    // Per flower rather than batched, for RTX Remix. The sibling of perBladeGrass in
+    // dGrass_packet_c::draw, and the same argument: the batch below merges every flower in
+    // a room into one immediate mode stream under an identity position matrix, so Remix's
+    // asset hash - positions,indices,geometrydescriptor by default - churns the moment any
+    // flower sways or is cut. One instance with no stable identity cannot be tagged,
+    // replaced, or carry denoiser and ReSTIR history.
+    //
+    // Drawing each flower from its display list with its own position matrix gives static
+    // geometry plus a transform, so the hash holds still and every flower is its own
+    // instance. It costs exactly what the batching saves, which is why it is a switch and
+    // defaults off. Read once here so hana00 and hana01 below cannot disagree within a
+    // frame. Current status: docs/remix-open-issues.md issue 7.
+    const bool perFlower = dusk::getSettings().game.remixPerBladeFlowers.getValue();
 
     // --- hana00 ---
     for (int i = 0; i < 64; i++) {
@@ -843,6 +874,41 @@ void dFlower_packet_c::draw() {
         dKy_setLight_nowroom_grass(tevstr->room_no, 1.0f);
 
         GXLoadTexObj(&mTexObj_l_J_Ohana00_64TEX, GX_TEXMAP0);
+
+        if (perFlower) {
+            // batch_setup_tev is deliberately NOT called. It rewrites the channel control so
+            // the per-flower ambient arrives as vertex colour CLR1, which is the whole reason
+            // the batch can share one draw; the material display list called above already
+            // leaves the register-ambient setup the per-flower path wants, and that is what
+            // GXSetChanAmbColor below feeds.
+            GXSetVtxDescv(perFlowerVtxDescList);
+            for (dFlower_data_c* flower = first; flower != nullptr; flower = flower->mp_next) {
+                // Same skip as the batch loop below, so the two branches draw the same set.
+                if (cLib_checkBit<u8>(flower->m_state, 4) ||
+                    cLib_checkBit<u8>(flower->m_state, 0x40))
+                {
+                    continue;
+                }
+
+                // The same helper the batch path uses, so switching this on cannot change the
+                // ambient the flower is shaded with - only how many draws carry it. It pins
+                // the alpha the pre-batch code left uninitialised to 0xFF, which is what the
+                // batch has fed since it was written.
+                GXSetChanAmbColor(GX_COLOR0A0, hana00_amb_color(flower, tevstr));
+
+                Mtx modelMtx;
+                GXLoadPosMtxImm(get_model_mtx(flower->m_modelMtx, modelMtx), GX_PNMTX0);
+                GXLoadNrmMtxImm(j3dSys.getViewMtx(), 0);
+
+                if (!cLib_checkBit<u8>(flower->m_state, 8)) {
+                    GXCallDisplayList(l_J_hana00DL, 0x140);
+                } else {
+                    GXCallDisplayList(l_J_hana00_cDL, 0xC0);
+                }
+            }
+            continue;
+        }
+
         batch_setup_tev(lightCount <= 2 ? (GX_LIGHT1 | GX_LIGHT2 | GX_LIGHT3 | GX_LIGHT4) :
                                           (GX_LIGHT1 | GX_LIGHT2 | GX_LIGHT3 | GX_LIGHT4 |
                                               GX_LIGHT5 | GX_LIGHT6 | GX_LIGHT7));
@@ -924,6 +990,41 @@ void dFlower_packet_c::draw() {
         dKy_setLight_nowroom_grass(tevstr->room_no, 1.0f);
 
         GXLoadTexObj(&mTexObj_l_J_Ohana01_64128_0419TEX, GX_TEXMAP0);
+
+        if (perFlower) {
+            GXSetVtxDescv(perFlowerVtxDescList);
+            int idx = 0;
+            for (dFlower_data_c* flower = first; flower != NULL; flower = flower->mp_next, idx++) {
+                // idx counts EVERY node, drawn or not - hana01's ambient is a seven-way cycle
+                // on list position, so incrementing only for drawn flowers would recolour the
+                // whole room. The batch loop below restarts idx at 0 for each bucket and
+                // counts the same way, which is what makes the two branches agree flower for
+                // flower. The increment therefore lives in the for statement, above this skip.
+                if (cLib_checkBit<u8>(flower->m_state, 4) ||
+                    !cLib_checkBit<u8>(flower->m_state, 0x40))
+                {
+                    continue;
+                }
+
+                GXSetChanAmbColor(GX_COLOR0A0, hana01_amb_color(idx, tevstr));
+
+                Mtx modelMtx;
+                GXLoadPosMtxImm(get_model_mtx(flower->m_modelMtx, modelMtx), GX_PNMTX0);
+                GXLoadNrmMtxImm(j3dSys.getViewMtx(), 0);
+
+                if (!cLib_checkBit<u8>(flower->m_state, 8)) {
+                    if (!cLib_checkBit<u8>(flower->m_state, 0x10)) {
+                        GXCallDisplayList(mp_Jhana01DL, m_Jhana01DL_size);
+                    } else {
+                        GXCallDisplayList(l_J_hana01_c_00DL, 0xC0);
+                    }
+                } else {
+                    GXCallDisplayList(mp_Jhana01_cDL, m_Jhana01_cDL_size);
+                }
+            }
+            continue;
+        }
+
         batch_setup_tev(lightCount <= 2 ? (GX_LIGHT1 | GX_LIGHT2 | GX_LIGHT3 | GX_LIGHT4) :
                                           (GX_LIGHT1 | GX_LIGHT2 | GX_LIGHT3 | GX_LIGHT4 |
                                               GX_LIGHT5 | GX_LIGHT6 | GX_LIGHT7));
@@ -969,6 +1070,11 @@ void dFlower_packet_c::draw() {
         }
     }
 
+    // Left unconditional. These undo batch_setup_tev's 2 channels and 3 stages, which the
+    // per-flower branch never sets - so with perFlower on this restores GX's defaults rather
+    // than undoing anything. Every packet that follows calls j3dSys.reinitGX() and its own
+    // material display list, so nothing should be inheriting this either way; that is
+    // reasoning about the call sites, not a measurement.
     GXSetNumTevStages(1);
     GXSetNumChans(1);
     J3DShape::resetVcdVatCache();

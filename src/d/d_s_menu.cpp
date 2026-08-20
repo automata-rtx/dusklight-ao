@@ -646,7 +646,7 @@ int dScnMenu_Draw(dScnMenu_c* i_this) {
         "つうじょう(8:00)",  // Normal (8:00)
         "じこくひきつぎ",    // Time Passing
         "あさ固定",          // Fixed Morning
-        "ひる固定",          // Fixed Afternoon
+        "ひる固定",          // Fixed Midday (ひる = 昼 hiru, midday - not afternoon)
         "ゆうがた固定",      // Fixed Dusk
         "よる固定",          // Fixed Night
         "時に固定",          // Time Fixed

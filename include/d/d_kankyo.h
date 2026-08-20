@@ -1016,7 +1016,7 @@ void dKy_setLight();
 // Vanilla's 48000/80000 = 0.6 caps noon at 59 degrees, which is fine against baked lighting but
 // leaves a path tracer without an overhead sun. Derived from game.celestialNoonElevation.
 // Called by both setSunpos (visible body) and the Remix bridge (light direction) so the two
-// cannot disagree; it touches nothing else in the day cycle. docs/sun-elevation.md.
+// cannot disagree; it touches nothing else in the day cycle.
 f32 dKy_celestial_orbit_z_ratio();
 
 cXyz dKy_plight_near_pos();

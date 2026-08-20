@@ -1,6 +1,7 @@
 #pragma once
 #include <types.h>
 class JPABaseShape;
+class JPADynamicsBlock;
 class JPAKeyBlock;
 
 // Stub of libs/JSystem/include/JSystem/JParticle/JPAResource.h. keyNum and ppKey are PUBLIC
@@ -10,6 +11,7 @@ class JPAKeyBlock;
 class JPAResource {
 public:
     JPABaseShape* getBsp() const;
+    JPADynamicsBlock* getDyn() const;
     u16 getUsrIdx() const;
 
     JPAKeyBlock** ppKey;

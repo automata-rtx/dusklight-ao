@@ -1703,7 +1703,7 @@ void dScnKy_env_light_c::setDaytime() {
 f32 dKy_celestial_orbit_z_ratio() {
     // ratio = cot(elevation): peak elevation is atan(1/ratio), so inverting gives the tilt that
     // lands the arc at the requested height. The 59.036 default is not a round number because it
-    // reproduces vanilla's 48000/80000 to six decimals (0.600006). docs/sun-elevation.md.
+    // reproduces vanilla's 48000/80000 to six decimals (0.600006).
     const f32 elevation = std::clamp(
         dusk::getSettings().game.celestialNoonElevation.getValue(), 1.0f, 90.0f);
     const f32 radians = elevation * (M_PI / 180.0f);
@@ -2537,7 +2537,7 @@ void dScnKy_env_light_c::setLight() {
                 g_kankyoHIO.bloom.m_saturationPattern = prev_pal_end_p->bloom_tbl_id;
             }
 
-            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) {
+            if (g_kankyoHIO.navy.twilight_sense_saturation_mode && daPy_py_c::checkNowWolfPowerUp()) { // DEAD ON ARRIVAL: the block just below runs on this same condition and overwrites all four ids with 3, so the navy panel's four "twilight sense" modes never reach the bloom table. Recorded, not fixed - docs/japanese-naming-remix.md
                 prev_bloom_start_id = next_bloom_start_id = prev_bloom_end_id = next_bloom_end_id = g_kankyoHIO.navy.twilight_sense_saturation_mode;
             }
             #endif
@@ -6776,17 +6776,22 @@ void dKankyo_bloomHIO_c::genMessage(JORMContext* mctx) {
     mctx->startComboBox("■時刻切替", &g_kankyoHIO.time_change);
     // "Normal time"
     mctx->genComboBoxItem("通常時間", 0);
-    // "Fixed at midnight"
+    // The six entries below are the game's six canonical time lights, not clock hours: 朝 asa is
+    // morning, 昼 hiru is midday, 夕 yuu is evening, 夜 yoru is night. Each pins `daytime` to the
+    // value in the switch in dScnKy_env_light_c::setDaytime, chosen so the light schedule
+    // l_time_attribute lands on that one palette slot with no blend. daytime runs 0-360 over
+    // 24 hours, so 15 units is an hour.
+    // "Fixed at morning-0 time" (light 0; daytime 90 = 06:00)
     mctx->genComboBoxItem("朝0時間に固定", 1);
-    // "Fixed at 1 AM"
+    // "Fixed at morning-1 time" (light 1; daytime 105 = 07:00)
     mctx->genComboBoxItem("朝1時間に固定", 2);
-    // "Fixed at daytime"
+    // "Fixed at midday time" (light 2; daytime 165 = 11:00)
     mctx->genComboBoxItem("昼時間に固定", 3);
-    // "Fixed at noon"
+    // "Fixed at evening-0 time" (light 3; daytime 255 = 17:00)
     mctx->genComboBoxItem("夕0時間に固定", 4);
-    // "Fixed at 1 PM"
+    // "Fixed at evening-1 time" (light 4; daytime 285 = 19:00)
     mctx->genComboBoxItem("夕1時間に固定", 5);
-    // "Fixed at nighttime"
+    // "Fixed at night time" (light 5; daytime 345 = 23:00)
     mctx->genComboBoxItem("夜時間に固定", 6);
     // "Map settings ignored"
     mctx->genComboBoxItem("マップ設定無視経過", 7);

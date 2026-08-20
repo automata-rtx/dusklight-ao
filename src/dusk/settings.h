@@ -203,20 +203,39 @@ struct UserSettings {
         ConfigVar<float> remixSunIntensity;
         ConfigVar<float> remixMoonIntensity;
         ConfigVar<float> remixCelestialAngle;
-        ConfigVar<bool> remixLocalLights;
-        ConfigVar<float> remixLocalLightIntensity;
-        ConfigVar<float> remixLocalLightRadius;
+        // Room lights: the room's own authored lights (dungeonlight), a third registry from
+        // either the effect emitters or the pointlight[]/efplight[] list the effect lights read
+        // colour and reach from, and the only one carrying a cone.
+        // Off by default; the case for and against is the comment above
+        // roomLights in src/dusk/remix_bridge.cpp.
+        ConfigVar<bool> remixRoomLights;
+        ConfigVar<float> remixRoomLightIntensity;
+        ConfigVar<float> remixRoomLightRadius;
+        ConfigVar<float> remixRoomLightConeSoftness;
         // Effect lights: sphere lights at the origin of the game's own fire and glow effects,
         // rather than at the positions of the game's registered lights. docs/effect-lights.md.
         ConfigVar<bool> effectLights;
+        // The three global multipliers, one per value the system derives from the game. All
+        // default to 1.0 and all apply to both the derived and the undetermined branch.
+        // effectLightReachScale replaced effectLightDerivedReach on 2026-08-13 - same default,
+        // same meaning, applied to both branches instead of one.
         ConfigVar<float> effectLightIntensity;
+        ConfigVar<float> effectLightReachScale;
+        ConfigVar<float> effectLightRadiusScale;
         ConfigVar<float> effectLightMassExponent;
         ConfigVar<float> effectLightDerivedIntensity;
-        ConfigVar<float> effectLightDerivedReach;
         ConfigVar<float> effectLightDerivedRadius;
         ConfigVar<float> effectLightUndeterminedIntensity;
         ConfigVar<float> effectLightUndeterminedReach;
         ConfigVar<float> effectLightUndeterminedRadius;
+        // What the effect's artists authored, as opposed to what its emitter holds this frame.
+        ConfigVar<bool> effectLightAuthoredColor;
+        ConfigVar<bool> effectLightAuthoredRadius;
+        // Link's lantern, given its own settings when the toggle is on.
+        ConfigVar<bool> effectLightLanternSeparate;
+        ConfigVar<float> effectLightLanternIntensity;
+        ConfigVar<float> effectLightLanternReach;
+        ConfigVar<float> effectLightLanternRadius;
         ConfigVar<float> effectLightFireOffset;
         ConfigVar<float> effectLightGlowOffset;
         ConfigVar<float> effectLightMergeRadius;
@@ -224,14 +243,41 @@ struct UserSettings {
         ConfigVar<int> effectLightMaxLights;
         ConfigVar<float> effectLightMaxDistance;
         ConfigVar<bool> effectLightBursts;
+        // Sparks: kirakira glitter and the Shadow Insect's electric crackle. ON is what the game
+        // already did - every spark effect was lit before the switch existed - so this is an undo,
+        // and OFF is the visible change. SparkHold is a RENDERER setting, not a look setting: the
+        // insect's shortest spark window is shorter than the base grace period, so without it a
+        // bouncing bug destroys and re-creates its site every burst, and a new site id is a new
+        // Remix light hash with no temporal history.
+        ConfigVar<bool> effectLightSparks;
+        ConfigVar<int> effectLightSparkHold;
         ConfigVar<float> effectLightMinChroma;
         ConfigVar<float> effectLightMinLuma;
         ConfigVar<float> effectLightVolumetric;
         ConfigVar<bool> disableFrustumCulling;
         ConfigVar<float> celestialNoonElevation;
         ConfigVar<bool> remixHideSkyBillboards;
+        // Whether remixHideSkyBillboards also takes the star packet with it. Defaults to
+        // true, which is what that switch has always done - the two were one setting until
+        // 2026-08-11. It is a sub-switch, not an independent one: with
+        // remixHideSkyBillboards off nothing is hidden either way. Turning this off while
+        // that one is on is the A/B that isolates which packet is the shadow occluder,
+        // because only the sun packet draws the moon quad. The A/B and what it would settle are
+        // written out at d_kankyo_wether.cpp:114-130; it is not a queue item in the playbook.
+        ConfigVar<bool> remixHideStarBillboards;
         ConfigVar<bool> remixHideVrbox;
+        // Draw each blade from its display list with its own position matrix instead of
+        // batching a room into one dynamic stream, so Remix sees a stable asset hash.
+        // Covers dGrass_packet_c ONLY. daGrass_c also spawns flowers - kind 2 and kind 3
+        // go to dFlower_packet_c (d_a_grass.cpp:322), whose draw batches identically and
+        // has no switch. Driven from Remix's overlay via rtx.dusklight.game.perBladeGrass.
         ConfigVar<bool> remixPerBladeGrass;
+        // The same thing for dFlower_packet_c - the hana (flower) half of the same actor,
+        // kinds 2 and 3. A separate switch rather than a widening of the one above: a flower
+        // is a bigger template than a blade so the cost profile differs, and neither half has
+        // been tested in game, so one test session can answer both questions independently.
+        // Driven from Remix's overlay via rtx.dusklight.game.perBladeFlowers.
+        ConfigVar<bool> remixPerBladeFlowers;
         // Hand the texture_replacements pack to Remix on the D3D9 backend. Separate from
         // enableTextureReplacements so the pack can be registered for the WebGPU backends
         // without also being handed over, and so a pack problem can be isolated without
@@ -245,9 +291,15 @@ struct UserSettings {
         // keep the vanilla effect. Suppressing it is a hypothesis about the
         // water-while-dashing report rather than a confirmed cause - see that option.
         ConfigVar<bool> remixHideDashEffect;
-        // Suppress the game's flat circular shadows under small objects; Remix traces
-        // real ones from the geometry, so the painted disc lands on top of a correct
-        // shadow. Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
+        // Suppress the game's SIMPLE ground shadows; Remix traces real ones from the
+        // geometry, so the painted disc lands on top of a correct shadow. This is every
+        // actor that registers one - not just items - because it is dropped inside
+        // dDlst_shadowControl_c::setSimple, which is the single funnel behind all 50
+        // dComIfGd_setSimpleShadow call sites: items, pots, insects, enemies, NPCs
+        // (daNpcT_c::draw covers 51 derived classes) and cutscene actors. The game's
+        // projected shadows (dDlst_shadowReal_c, which the debug labels call "riaru
+        // kage") are a separate system and are untouched.
+        // Driven from Remix's overlay via rtx.dusklight.game.blobShadows.
         ConfigVar<bool> remixBlobShadows;
         // Keep Link's lantern permanently fuelled. Driven from Remix's overlay via
         // rtx.dusklight.game.lanternInfiniteOil; a gameplay change, off by default.
@@ -255,10 +307,30 @@ struct UserSettings {
         ConfigVar<bool> freezeTime;
         ConfigVar<float> timeOfDay;
         ConfigVar<int> timeCommit;
+        // Three of the original team's own environment sliders, driven from Remix's overlay
+        // via rtx.dusklight.game.{waterSurfaceShine,grassLightInfluence,clockRate}. Their
+        // labels, fields and ranges come from that panel, which is compiled out of every
+        // build (one #if DEBUG covering all of d_kankyo.cpp's genMessage functions), so
+        // this is the only way to reach them.
+        //
+        // Each defaults to the value envcolor_init() gives the field, so a config file that
+        // has never been touched leaves the game exactly as it was. The bridge applies these
+        // to g_env_light rather than the consumers reading them, which is the reverse of the
+        // usual convention here - see the note in remix_bridge.cpp's applyKankyoTuning.
+        ConfigVar<float> waterSurfaceShine;
+        ConfigVar<float> grassLightInfluence;
+        ConfigVar<float> clockRate;
         ConfigVar<DepthOfFieldMode> depthOfFieldMode;
         ConfigVar<bool> disableWaterRefraction;
         ConfigVar<bool> skinDebugView;
         ConfigVar<bool> enableTextureReplacements;
+        // Write every texture the replacement registry is asked for and cannot satisfy to
+        // <cachePath>/texture_dumps/, as a .dds named with the exact key a pack file must
+        // carry. Off by default because the directory grows for as long as it is on.
+        // NOTE: aurora only reaches that path from its GX texture resolver, so this
+        // produces files on the WebGPU backends and none at all under D3D9/Remix - see
+        // docs/remix-test-playbook.md "Dumping textures under their pack filenames".
+        ConfigVar<bool> allowTextureDumps;
         ConfigVar<FrameInterpMode> enableFrameInterpolation;
         ConfigVar<int> internalResolutionScale;
         ConfigVar<int> shadowResolutionMultiplier;

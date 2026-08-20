@@ -108,6 +108,7 @@ def doc_paths(fork):
     )] + [os.path.join(fork, p) for p in (
         "CLAUDE.md", "documentation/DusklightOverlay.md",
         "documentation/DusklightAtmosphere.md",
+        "documentation/DusklightRebase.md",
     )]
 
 
@@ -123,6 +124,14 @@ DOC_NAME_ALLOWED = {
     # Named in remix-open-issues.md for the express purpose of recording that it was
     # renamed to emissive.brightness and that RtxOptions.md still carries the old row.
     "rtx.dusklight.emissive.intensity": "recorded as renamed to emissive.brightness",
+    # The local point-light mirror, REMOVED at protocol 17 (2026-08-16) on both sides once
+    # the A/B it was kept for had been decided. Both repos' notes record its retirement by
+    # name, which is worth keeping - a reader who finds the key in an old rtx.conf needs to
+    # be able to search for what happened to it. It is history, not a switch anybody can set.
+    # NOTE the cost of this entry: it also stops the check catching a doc that tells a reader
+    # to SET this key. Nothing does today; if you add a settings table row for it, that is a
+    # mistake this script will no longer find for you.
+    "rtx.dusklight.game.localLights": "removed at protocol 17; named only as history",
 }
 
 

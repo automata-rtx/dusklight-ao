@@ -70,24 +70,10 @@ struct CelestialLightDebug {
 
 const CelestialLightDebug& celestialDebug();
 
-// State of the game's local point lights (torches, braziers, lanterns, Midna,
-// dungeon lights - everything registered through dKy_plight_set) mirrored into
-// Remix as sphere lights. Aurora does not forward GX lights to D3D9, so without
-// this Remix sees no game light at all indoors or at night.
-struct LocalLightsDebug {
-    bool enabled;
-    int found;           // lights the game had registered, before any filtering of ours
-    int tracked;         // lights with a live Remix handle
-    int drawn;           // drawn into the scene this frame
-    uint64_t creates;    // cumulative CreateLight calls
-    uint64_t destroys;   // cumulative DestroyLight calls
-};
-
-const LocalLightsDebug& localLightsDebug();
-
 // State of the effect light system: sphere lights placed at the origin of the game's own fire
-// and glow effects rather than at the positions of the game's registered lights. This is what
-// replaced the mirror above; see docs/effect-lights.md.
+// and glow effects rather than at the positions of the game's registered lights. This replaced
+// the local point-light mirror, which was removed at protocol 17 (2026-08-16) once the A/B it
+// was kept for had been decided; see docs/effect-lights.md.
 struct EffectLightsDebug {
     bool enabled;
     int tracked;         // sites with a live Remix handle
@@ -98,6 +84,24 @@ struct EffectLightsDebug {
 };
 
 const EffectLightsDebug& effectLightsDebug();
+
+// State of the room's authored lights - dScnKy_env_light_c::dungeonlight, fed every frame from
+// the current room's LightVec stage data. A different registry from either the effect emitters
+// or the pointlight[]/efplight[] list the effect lights read, and the only one in the game that
+// carries a cone. Off by default; the case for and against is the comment above roomLights in
+// remix_bridge.cpp.
+struct RoomLightsDebug {
+    bool enabled;
+    int found;           // slots the game itself considers live this room, before our filtering
+    int tracked;         // slots holding a live Remix handle
+    int drawn;           // drawn into the scene this frame
+    int shaped;          // of those, how many carried a cone
+    int unshapeable;     // GX_SP_RING1/RING2, which Remix's shaping cannot express at all
+    uint64_t creates;    // cumulative CreateLight calls
+    uint64_t destroys;   // cumulative DestroyLight calls
+};
+
+const RoomLightsDebug& roomLightsDebug();
 
 // Session-only debug toggle: negates the pushed light direction, for quickly
 // diagnosing a handedness mismatch between game and Remix world space.

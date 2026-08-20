@@ -255,7 +255,24 @@ static void noteDusklightWaterMaterial(const J3DMaterial* material) {
     const u32 role = name != NULL ? dusk::water::waterRoleForMaterialName(name, nameLength)
                                   : GX_AURORA_DUSKLIGHT_WATER_NONE;
     const u32 tag = name != NULL ? dusk::water::waterTagForMaterialName(name, nameLength) : 0;
-    const u32 layer = dusk::water::waterLayerForMaterialName(name);
+    // Only for a name that actually carries an MAxx tag. The layer scan is up to 14 whole-name
+    // strstr passes with no early-out, while the role and tag classifiers above both bail in
+    // three comparisons, so by this point the ~99% of the scene that is not water has already
+    // been settled - and this runs per material per frame from both load() and loadSharedDL().
+    //
+    // The gate asks whether the tag PARSED, not what its number is. waterTagForMaterialName
+    // returns 0 for both "no MAxx tag" and "MA00", and MA00 is a real tag (water_materials.hpp
+    // lists it among the submerged-fog overlays excluded from the roles), so a `tag != 0` gate
+    // would silently drop MA00's layer word from dusk.matname.
+    //
+    // Gated on the tag rather than on role != NONE deliberately: an MA03 name the role
+    // classifier rejects still needs its layer for the dusk.matname line, which exists so a
+    // water surface named some third way shows up as a name to add rather than as absent water.
+    // A water surface named a third way *and* carrying no MAxx tag still reports layer=unknown;
+    // that case is the price of the strstr saving, and its name is on the line either way.
+    const u32 layer = dusk::water::materialNameHasTag(name, nameLength)
+                          ? dusk::water::waterLayerForMaterialName(name)
+                          : GX_AURORA_DUSKLIGHT_WATER_LAYER_UNKNOWN;
 
     dusk::water::reportMaterialName(name, role, tag, layer);
     GXSetDusklightWater(role, tag, layer);

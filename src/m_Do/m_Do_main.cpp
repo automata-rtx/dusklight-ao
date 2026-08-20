@@ -6,6 +6,7 @@
 
 #include "m_Do/m_Do_main.h"
 #include <dolphin/vi.h>
+#include <cstdlib>
 #include <cstring>
 #include "DynamicLink.h"
 #include "JSystem/JAudio2/JASAudioThread.h"
@@ -643,7 +644,7 @@ int game_main(int argc, char* argv[]) {
         config.allowJoystickBackgroundEvents = dusk::getSettings().game.allowBackgroundInput;
         config.pauseOnFocusLost = dusk::getSettings().game.pauseOnFocusLost;
         config.imGuiInitCallback = &aurora_imgui_init_callback;
-        config.allowTextureDumps = false;
+        config.allowTextureDumps = dusk::getSettings().game.allowTextureDumps;
         auroraInfo = aurora_initialize(argc, argv, &config);
     }
 
@@ -899,15 +900,50 @@ int game_main(int argc, char* argv[]) {
 #endif
 #endif
         if (auroraInfo.backend == BACKEND_D3D9) {
-            // The D3D9 fixed-function backend never initializes WebGPU, so mod
-            // graphics stages are inert and a native mod that touches the
-            // renderer takes the process down on load. Drop every search dir
-            // instead, which lands on the same "no mods found" path a clean
-            // install takes. Deliberately not written back to config.json:
-            // switching between a modded build and a D3D9 test build should
-            // need no config edits.
-            DuskLog.info("D3D9 backend: mods are unsupported here, skipping mod discovery");
-            modDirs.clear();
+            // Discovery runs, but nothing starts. Until 2026-08-15 this dropped every search dir
+            // instead, because the D3D9 fixed-function backend never initializes WebGPU: mod
+            // graphics stages are inert and a native mod that touches the renderer takes the
+            // process down as it loads. That made a mod unreachable rather than unsafe, and the
+            // game's own mod window is never drawn in this mode either, so there was no way to
+            // test one at all.
+            //
+            // What makes discovery safe again is that nothing is enabled until it is asked for by
+            // name, one mod at a time, from the Remix overlay's Mods tab - which also shows a
+            // mod's native status before it is ticked. The risky instant is the tick, not the
+            // scan.
+            //
+            // Still deliberately not written back to config.json - set_start_disabled uses a
+            // config override, which is documented as never saved, so switching between a modded
+            // build and a D3D9 test build needs no config edits in either direction.
+            // OPT-IN, and off by default until the crash below is understood.
+            //
+            // Enabling discovery on 2026-08-15 broke loading a save: the game goes black and then
+            // d3d9.dll takes an access violation at 0x10 on a worker thread, at the same call site
+            // under three different Remix builds (f5790fc, 283b6cf, 3a99592 - the last of which had
+            // been running fine that morning), always immediately after the same three emissive
+            // materials. The game diff across the regression contains nothing but this feature.
+            //
+            // Deferring the native load did not fix it, and the mechanisms that would explain it
+            // have each been read and ruled out: overlay files and texture replacement records are
+            // both driven from active_mods(), which is empty, and no native library is mapped. So
+            // the cause is NOT known - this is a default chosen to keep the game working, not a
+            // diagnosis, and it must not be read as one.
+            //
+            // DUSK_MODS=1 turns discovery on for anyone testing it. Deliberately an environment
+            // variable rather than a setting: it needs no rebuild, and it cannot be persisted into
+            // a config where it would outlive the session that wanted it.
+            const char* modsOptIn = std::getenv("DUSK_MODS");
+            if (modsOptIn != nullptr && modsOptIn[0] == '1') {
+                DuskLog.info("D3D9 backend: DUSK_MODS=1, discovering mods with all of them held "
+                             "disabled; enable them from the Remix overlay's Mods tab. This path "
+                             "has an open crash on save load - see m_Do_main.cpp");
+                dusk::mods::ModLoader::instance().set_start_disabled(true);
+            } else {
+                DuskLog.info("D3D9 backend: mod discovery off (set DUSK_MODS=1 to enable). This is "
+                             "the pre-2026-08-15 behaviour and is the default while the save-load "
+                             "crash is open");
+                modDirs.clear();
+            }
         }
         dusk::mods::ModLoader::instance().set_search_dirs(std::move(modDirs));
     }

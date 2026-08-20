@@ -76,6 +76,14 @@ target_compile_definitions(aurora_mtx PRIVATE MTX_USE_PS=1)
 
 add_subdirectory(libs/freeverb)
 
+# DUSK_GFX_DEBUG_GROUPS is a *build* switch and it is OFF in everything CI ships.
+# Every preset the workflow uses inherits `relwithdebinfo`, so `CMAKE_BUILD_TYPE` is
+# never "Debug" there and no preset sets the option explicitly. Anything gated on it
+# is therefore absent from the artifacts the owner tests with, and cannot be turned on
+# without a rebuild. If a piece of labelling has to be reachable from a shipped build,
+# compile it in under TARGET_PC and gate it at runtime instead - see the material label
+# in libs/JSystem/src/J3DGraphBase/J3DPacket.cpp, which uses this option only to pick
+# its default.
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(DUSK_GFX_DEBUG_GROUPS_DEFAULT ON)
 else ()
@@ -319,10 +327,24 @@ endif ()
 
 if (WIN32)
     list(APPEND GAME_LIBS Ws2_32)
-    if (CMAKE_BUILD_TYPE STREQUAL Debug)
-        list(APPEND GAME_LIBS dbghelp)
-        list(APPEND GAME_COMPILE_DEFS DUSK_CRASH_DBGHELP=1)
-    endif ()
+    # Symbolize crash backtraces in EVERY Windows build, not only Debug.
+    #
+    # crash_handler.cpp has always been able to do this - symbolFor() calls SymFromAddr - but the
+    # define was gated on CMAKE_BUILD_TYPE being Debug, and nothing anyone ships or tests is Debug.
+    # Every crash report from every build was therefore bare "rva=0x241513", which names nothing.
+    # RelWithDebInfo carries full PDBs, so this works there exactly as well; the gate was costing
+    # the information and buying nothing.
+    #
+    # It also resolves frames inside d3d9.dll when the fork's PDB sits beside it, which the CI
+    # artifact already ships - so a crash inside Remix names a Remix function.
+    #
+    # This was found on 2026-08-16, after a day of chasing a crash by toggling settings, and after
+    # asking the owner to run a symbolizer by hand. That request was wrong: the rule on this project
+    # is that a question we would have to ask the owner is a defect in the logging, and this was the
+    # defect. dbghelp is a system library and SYMOPT_DEFERRED_LOADS means nothing is read until a
+    # crash actually happens.
+    list(APPEND GAME_LIBS dbghelp)
+    list(APPEND GAME_COMPILE_DEFS DUSK_CRASH_DBGHELP=1)
 endif ()
 
 set(DUSK_HTTP_BACKEND_SOURCE src/dusk/http/no_backend.cpp)
