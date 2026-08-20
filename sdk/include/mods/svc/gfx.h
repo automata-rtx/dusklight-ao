@@ -33,7 +33,7 @@
 
 #define GFX_SERVICE_ID "dev.twilitrealm.dusklight.gfx"
 #define GFX_SERVICE_MAJOR 1u
-#define GFX_SERVICE_MINOR 2u
+#define GFX_SERVICE_MINOR 3u
 
 /* Maximum size for push_draw payload */
 #define GFX_INLINE_DRAW_PAYLOAD_SIZE 128u
@@ -213,6 +213,21 @@ typedef struct GfxResolvedTargets {
     {sizeof(GfxResolvedTargets), NULL, NULL, WGPUTextureFormat_Undefined, 0u, 0u}
 
 /*
+ * The scene's surface normals, snapshotted once per frame after the opaque lists. view is NULL
+ * before that point in the frame, and whenever the scene layout carries no GFX_ATTACHMENT_NORMAL.
+ */
+typedef struct GfxSceneNormals {
+    uint32_t struct_size;
+    WGPUTextureView view;
+    WGPUTextureFormat format;
+    uint32_t width;
+    uint32_t height;
+} GfxSceneNormals;
+
+#define GFX_SCENE_NORMALS_INIT                                                                     \
+    {sizeof(GfxSceneNormals), NULL, WGPUTextureFormat_Undefined, 0u, 0u}
+
+/*
  * Passed to GfxComputeFn on the render worker thread; valid only during the call. The encoder is
  * the frame command encoder between scene render passes. Leave no pass open and never finish or
  * release the encoder.
@@ -337,6 +352,10 @@ typedef struct GfxService {
     /* Minor version 2 */
 
     ModResult (*get_scene_target_layout)(ModContext* ctx, GfxRenderTargetLayout* out_layout);
+
+    /* Minor version 3 */
+
+    ModResult (*get_scene_normals)(ModContext* ctx, GfxSceneNormals* out_normals);
 } GfxService;
 
 MOD_DECLARE_SERVICE(GfxService, svc_gfx, GFX_SERVICE_ID, GFX_SERVICE_MAJOR, GFX_SERVICE_MINOR);
