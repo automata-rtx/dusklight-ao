@@ -119,6 +119,18 @@ echo "MinGW syntax check ($CXX):"
 check src/dusk/effect_lights.cpp
 check src/dusk/remix_bridge.cpp
 check src/d/d_particle.cpp
+# A game file that now carries Dusk code: <aurora/aurora.h> and "dusk/logging.h" at :15-22,
+# the vrkumo draw counter at :24-157 and the kankyo.particles one at ~:6280, all behind
+# #if TARGET_PC - and nothing cross-compiled any of it. Note the reason differs from
+# remix_bridge.cpp's: this file's guard is TARGET_PC, which -DTARGET_PC=1 above turns on for
+# any compiler, so what was missing here was coverage, not the preprocessed-away _WIN32 half.
+check src/d/d_kankyo_rain.cpp
+
+# Same reason, same day: this file now carries the four remixHide* draw gates - the sun
+# packet, the star packet, the game's sky dome and (2026-08-21) the vrkumo cloud layer -
+# each reading dusk::getSettings() behind #if TARGET_PC. Adding a fifth gate is a one-line
+# edit that nothing else would have compiled.
+check src/d/d_kankyo_wether.cpp
 
 if [ "$failed" = 1 ]; then
     echo

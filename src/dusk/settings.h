@@ -266,6 +266,13 @@ struct UserSettings {
         // written out at d_kankyo_wether.cpp:114-130; it is not a queue item in the playbook.
         ConfigVar<bool> remixHideStarBillboards;
         ConfigVar<bool> remixHideVrbox;
+        // The cloud layer painted on the vrbox - the vrkumo packet, not the vrbox itself.
+        // Separate from remixHideVrbox because the dome has a replacement under Remix (the
+        // generated sky) and the clouds have none, so hiding the dome alone leaves the
+        // clouds drawn, in front of that generated sky. The argument and the regression
+        // signature are at the gate, d_kankyo_wether.cpp dKyw_drawVrkumo. Driven from
+        // Remix's overlay via rtx.dusklight.game.hideVrkumo.
+        ConfigVar<bool> remixHideVrkumo;
         // Draw each blade from its display list with its own position matrix instead of
         // batching a room into one dynamic stream, so Remix sees a stable asset hash.
         // Covers dGrass_packet_c ONLY. daGrass_c also spawns flowers - kind 2 and kind 3

@@ -2540,7 +2540,7 @@ void pushKankyoState() {
     // Bumped whenever the game gains something the Remix tab depends on, so the tab
     // can say "your game build is older than this Remix build" instead of leaving
     // controls that quietly do nothing.
-    push("rtx.dusklight.env.protocol", "17");
+    push("rtx.dusklight.env.protocol", "18");
     // HD texture pack state. Reported separately from the fork's own counters so "the game
     // never handed it over" and "the fork ignored it" stay distinguishable - they look
     // identical from the overlay otherwise.
@@ -2925,6 +2925,14 @@ void tick() {
                                               game.remixHideVrbox.getValue());
         if (hideVrbox != game.remixHideVrbox.getValue()) {
             game.remixHideVrbox.setValue(hideVrbox);
+        }
+
+        // The cloud layer on the vrbox, which the switch above does not take with it - the
+        // gate is d_kankyo_wether.cpp dKyw_drawVrkumo. Wired at protocol 18.
+        const bool hideVrkumo = readOptionBool("rtx.dusklight.game.hideVrkumo",
+                                               game.remixHideVrkumo.getValue());
+        if (hideVrkumo != game.remixHideVrkumo.getValue()) {
+            game.remixHideVrkumo.setValue(hideVrkumo);
         }
 
         // The game's SIMPLE ground shadows - the flat discs it paints under an actor. Remix

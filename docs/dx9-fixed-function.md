@@ -19,9 +19,9 @@ opacity and the alpha test). Full statement:
 **Which `d3d9.dll`.** Every `rtx.dusklight.*` and `rtx.bloom.dusklight*` option
 below exists **only in our dxvk-remix fork** (`src/dxvk/rtx_render/rtx_dusklight_*`).
 Stock Remix will run the game and path-trace it, but those keys are simply
-unknown to it. The game and the DLL are also a single protocol — currently
-**17** — so build both from the same commit point and read the Dusklight status
-strip before debugging anything else.
+unknown to it. The game and the DLL are also a single protocol.
+**Protocol is at 18.** Build both from the same commit point and read the
+Dusklight status strip before debugging anything else.
 
 The GX→D3D9 mapping spec and the living list of unsupported effects are in
 `extern/aurora/docs/dx9/` (start with `README.md`).

@@ -98,14 +98,14 @@ The game and the Remix DLL are a single protocol. The game pushes
 `rtx.dusklight.env.protocol`; the fork checks it against `kRequiredProtocol`, a
 `constexpr` at **file scope** in `dxvk-remix/src/dxvk/imgui/dxvk_imgui.cpp:2613`,
 read by the overlay's status strip rather than by any one tab.
-**Protocol is at 17.** Build both sides from the same commit point, and bump
+**Protocol is at 18.** Build both sides from the same commit point, and bump
 both in the same commit — skew in either direction has cost an evening twice.
 The status strip says which side is old; read it before debugging anything else.
 
 **12 is skipped and is not free** — it belongs to the unmerged
-`claude/kasumi-naming-correction-w3e204`, and 13–17 were taken beside it. The
-next number is **18**. Nothing checks this, because no script can see an unmerged
-branch, so check the live branches yourself:
+`claude/kasumi-naming-correction-w3e204`, and 13–18 are taken. The next number is
+**19**. Nothing checks this, because no script can see an unmerged branch, so
+check the live branches yourself:
 `git show origin/claude/<name>:src/dusk/remix_bridge.cpp | grep env.protocol`.
 
 ## Submodule discipline
@@ -138,17 +138,25 @@ exists, and conflict markers. The `Invariants` workflow runs it on every push
 with no path filter, and runs aurora's own script against the pinned submodule
 since that repo has no CI.
 
-`syntax-check-remix.sh` cross-compiles `remix_bridge.cpp`, `effect_lights.cpp`
-and `d_particle.cpp` with MinGW. **A native Linux `g++` is worse than useless
-here:** the bridge is inside `#if defined(_WIN32)`, so Linux preprocesses the
-whole thing away and reports success — four compile errors reached CI that way.
+`syntax-check-remix.sh` cross-compiles `remix_bridge.cpp`, `effect_lights.cpp`,
+`d_particle.cpp`, `d_kankyo_rain.cpp` and `d_kankyo_wether.cpp` with MinGW.
+**A native Linux `g++` is worse than useless here:** the bridge is inside
+`#if defined(_WIN32)`, so Linux preprocesses the whole thing away and reports
+success — four compile errors reached CI that way. The two `d_kankyo_*` files
+are there for a different reason: their guard is `TARGET_PC`, which the script
+defines for any compiler, so what was missing was **coverage** rather than the
+preprocessed-away half. Both now carry Dusk code — the draw counters and the
+`remixHide*` gates.
 It also runs `tools/check-remix-protocol.py`, which cross-checks every
 `rtx.dusklight.*` name the game reads or pushes against the fork's `RTX_OPTION`
 declarations, plus the protocol number across both repos' docs. **No compiler can
 see that class of mistake**: a mistyped name silently falls back to `config.json`
-forever. Its `doc_paths()` reads files **by literal path and silently skips a
-missing one**, so a new fork document must be added there or it passes while
-checking nothing.
+forever. Its `doc_paths()` globs `docs/*.md` here and `documentation/Dusklight*.md`
+in the fork, so a renamed or newly-added document is picked up on its own; a
+required file that is missing, a glob that matches nothing, and a doc that cannot
+be read are each a **named failure rather than a skip** — the "green while
+checking nothing" hole, closed 2026-08-21. A fork document outside the
+`Dusklight*` convention still has to be named in `DOC_REQUIRED`.
 
 **A clean `git merge` is not a correct merge.** No script can see whether a
 "tested in game" claim survived the change under it, whether prose still
@@ -158,10 +166,18 @@ argued at their allocation site rather than here: a new per-draw fact is a new
 **bit**, not a new `D3DMATERIAL9` channel
 (`dxvk-remix/src/dxvk/rtx_render/rtx_dusklight_drawmeta.h:27-50`), and GX FIFO
 subcommand numbers are taken from the registry comment at
-`extern/aurora/include/dolphin/gx/GXAurora.h:210-232`.
+`extern/aurora/include/dolphin/gx/GXAurora.h:210-250`.
 
 ## Other standing facts
 
+- **This repo ships source only — never game assets.** `assets/` is 14,879
+  tracked files and all but three (repo images) are generated `dRes_INDEX_*`
+  index headers under `assets/*/res/`; the models, textures and animations they
+  index (BMD, BDL, BCK, BTK, BTI) come from the owner's own dump at runtime, and
+  `.jpa` effects are not indexed at all. So a material's TEV layout, blend mode
+  or texture **cannot be read off disk here** — which is why a ledger entry can
+  end in "the assets are not in the repo", and why the answer to those is an
+  instrument in the log, not a file hunt.
 - `mods/shadow_mod` and `mods/ao_mod` are third-party demonstration mods —
   **ignore them entirely.**
 - **HD texture packs go to Remix, never through D3D9** (`remix_bridge.cpp`

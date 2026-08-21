@@ -118,6 +118,7 @@ UserSettings g_userSettings = {
         // the sun/moon packet stays hidden.
         .remixHideStarBillboards {"game.remixHideStarBillboards", true},
         .remixHideVrbox {"game.remixHideVrbox", false},
+        .remixHideVrkumo {"game.remixHideVrkumo", false},
         .remixPerBladeGrass {"game.remixPerBladeGrass", false},
         .remixPerBladeFlowers {"game.remixPerBladeFlowers", false},
         .remixTextureReplacements {"game.remixTextureReplacements", true},
@@ -394,6 +395,7 @@ void registerSettings() {
     Register(g_userSettings.game.remixHideSkyBillboards);
     Register(g_userSettings.game.remixHideStarBillboards);
     Register(g_userSettings.game.remixHideVrbox);
+    Register(g_userSettings.game.remixHideVrkumo);
     Register(g_userSettings.game.remixPerBladeGrass);
     Register(g_userSettings.game.remixPerBladeFlowers);
     Register(g_userSettings.game.remixTextureReplacements);

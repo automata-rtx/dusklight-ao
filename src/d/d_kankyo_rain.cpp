@@ -18,6 +18,142 @@
 #include <cstring>
 #if TARGET_PC
 #include "dusk/frame_interpolation.h"
+#include "dusk/logging.h"
+#endif
+
+#if TARGET_PC
+// Dusk: what the vrbox cloud layer costs in D3D9 draw calls.
+//
+// vrkumo is vr + kumo, the cloud billboards painted on the vrbox (up to 100 of them, three
+// texture layers each). drawVrkumo wraps every one in its own GXBegin/GXEnd, and aurora
+// submits each GXBegin block as its own D3D9 draw. Remix charges per draw rather than per
+// pixel - a draw too small for its own acceleration structure still contributes its own
+// geometry entry and its own surface to a bucket that rebuilds whenever anything in it moves
+// - which is why the 2026-08-07/08 sweep hoisted GXBegin out of the per-quad loops in
+// dKyr_drawRain, dKyr_drawSnow, dKyr_drawSibuki and dKyr_odour_draw. This loop was missed by
+// that sweep and is still one draw per billboard.
+//
+// What that costs is a MEASUREMENT nobody has taken, and this counter is it. aurora's
+// dx9.draws is a total for the whole frame, so a high number outdoors cannot tell the clouds
+// apart from the landscape under them; answering the question from that line would mean
+// asking whoever is playing to judge the difference by eye, which is rule 2 exactly - a
+// question we would have to ask is a defect in the logging. So count the clouds directly.
+// They play, they send a log, we know.
+//
+// Same period of 600 as dx9.draws and kankyo.particles on purpose, so the three lines land
+// near each other and read side by side; the kankyo.particles comment below already promises
+// that this line exists.
+//
+// UNITS, STATED RATHER THAN IMPLIED. The roll keys on g_Counter.mCounter0, which cCt_Counter
+// advances once per GAME TICK in fapGm_Execute - not once per presented frame. So the line
+// says ticks=, where dx9.draws says frames=, and mean/peak are per tick. Two separate
+// multiplicities sit under that, and both are reported rather than assumed away:
+//
+//   calls   entries into drawVrkumo over the period. One a tick is the normal case; frame
+//           interpolation or a second view can make it more, and then mean sums them.
+//   passes  iterations of drawVrkumo's OWN pass loop, which is a different thing entirely:
+//           it runs a second, colour-update-disabled occlusion pass over every billboard
+//           whenever the sun is on screen (drawVrkumo sets pass = 0 for that). One call runs
+//           1 or 2, so the PRINTED passes/calls averages between the two; mean includes both.
+//
+// mirrorMean is the part of mean that is the Y-mirrored second copy drawn only in the stages
+// drawVrkumo names by hand. Without it, a doubling between two logs would be unexplained -
+// another question we would have to ask.
+//
+// WHY THE ROLL IS DRIVEN FROM TWO PLACES. The hide-vrkumo gate is deliberately in the DRAW
+// (d_kankyo_wether.cpp dKyw_drawVrkumo) rather than in the move, so with the layer switched
+// off drawVrkumo is never entered - and a counter driven only from it would go silent, which
+// is indistinguishable from a broken instrument. vrkumo_move still runs every tick the packet
+// is alive, so it drives the roll and the line keeps reporting mean=0 calls=0. The converse
+// hole is real too: wether_move_vrkumo returns before its case 1 when the room's vrbox switch
+// is off, while a packet already at mVrkumoStatus 1 keeps being drawn, so the draw drives the
+// roll as well. The roll is keyed on the tick changing and is idempotent, so whichever of the
+// two runs first in a tick performs it and the other is a no-op.
+//
+// Silence therefore means exactly one thing: neither vrkumo_move nor drawVrkumo ran during
+// the period, so there is no cloud layer here to measure.
+//
+// Nothing in the game reads these counters; they exist only to be logged. Nothing can
+// overflow: at most 2 passes * 3 layers * 100 billboards * 2 copies per call, a few calls a
+// tick, over 600 ticks, is orders of magnitude under 2^32.
+namespace {
+
+const u32 kVrkumoStatsPeriod = 600;
+
+struct VrkumoDrawStats {
+    u32 lastTick;
+    // GXBegin blocks opened this tick - one D3D9 draw each. tickMirrorDraws is the subset of
+    // tickDraws that is the mirrored copy, not a separate total.
+    u32 tickDraws;
+    u32 tickMirrorDraws;
+    u32 periodTicks;
+    u32 periodCalls;
+    u32 periodPasses;
+    u32 periodDraws;
+    u32 periodPeak;
+    u32 periodMirrorDraws;
+    bool started;
+};
+
+VrkumoDrawStats s_vrkumoStats;
+
+// Folds the finished tick into the period and emits the line when the period is up. Only
+// called when the tick has actually changed, so the flush always describes a complete tick.
+void vrkumoRollTick(u32 tick) {
+    if (s_vrkumoStats.started) {
+        s_vrkumoStats.periodDraws += s_vrkumoStats.tickDraws;
+        if (s_vrkumoStats.tickDraws > s_vrkumoStats.periodPeak) {
+            s_vrkumoStats.periodPeak = s_vrkumoStats.tickDraws;
+        }
+        s_vrkumoStats.periodMirrorDraws += s_vrkumoStats.tickMirrorDraws;
+        s_vrkumoStats.periodTicks++;
+
+        if (s_vrkumoStats.periodTicks >= kVrkumoStatsPeriod) {
+            DuskLog.info(
+                "vrkumo.draws ticks={} mean={} peak={} mirrorMean={} calls={} passes={} - "
+                "vrbox cloud billboard draws per GAME TICK, one D3D9 draw each. The unit is "
+                "g_Counter.mCounter0, which advances once per tick in fapGm_Execute and NOT "
+                "once per presented frame - that is why this says ticks and dx9.draws says "
+                "frames. calls = entries into drawVrkumo over the same period (one a tick "
+                "normally; frame interpolation or a second view makes more, and mean sums "
+                "them). passes = iterations of drawVrkumo's own pass loop, which adds a "
+                "second occlusion pass over every billboard whenever the sun is on screen, so "
+                "passes/calls is between 1 and 2 and mean already includes both. mirrorMean "
+                "is the part of mean that is the Y-mirrored second copy a few stages draw. "
+                "mean=0 with calls=0 is a live instrument reporting a layer nothing drew this "
+                "period; no line at all instead means the cloud packet was neither moved nor "
+                "drawn, so there was nothing here to measure. Every draw counted is also in "
+                "dx9.draws; compare against it",
+                s_vrkumoStats.periodTicks,
+                s_vrkumoStats.periodDraws / s_vrkumoStats.periodTicks,
+                s_vrkumoStats.periodPeak,
+                s_vrkumoStats.periodMirrorDraws / s_vrkumoStats.periodTicks,
+                s_vrkumoStats.periodCalls, s_vrkumoStats.periodPasses);
+            s_vrkumoStats.periodTicks = 0;
+            s_vrkumoStats.periodCalls = 0;
+            s_vrkumoStats.periodPasses = 0;
+            s_vrkumoStats.periodDraws = 0;
+            s_vrkumoStats.periodPeak = 0;
+            s_vrkumoStats.periodMirrorDraws = 0;
+        }
+    }
+
+    s_vrkumoStats.tickDraws = 0;
+    s_vrkumoStats.tickMirrorDraws = 0;
+    s_vrkumoStats.lastTick = tick;
+    s_vrkumoStats.started = true;
+}
+
+// Rolls the tick if it has actually changed. Called from vrkumo_move and from the top of
+// drawVrkumo - see "WHY THE ROLL IS DRIVEN FROM TWO PLACES" above for why it is both.
+void vrkumoRollTickIfNeeded() {
+    const u32 tick = g_Counter.mCounter0;
+    if (!s_vrkumoStats.started || tick != s_vrkumoStats.lastTick) {
+        vrkumoRollTick(tick);
+    }
+}
+
+} // namespace
 #endif
 
 static void vectle_calc(DOUBLE_POS* i_pos, cXyz* o_out) {
@@ -1845,6 +1981,11 @@ void cloud_shadow_move() {
 }
 
 void vrkumo_move() {
+#if TARGET_PC
+    // The counter's tick clock. This runs whether or not the layer is drawn, which is what
+    // makes vrkumo.draws report a zero rather than disappearing when the draw is gated.
+    vrkumoRollTickIfNeeded();
+#endif
     cXyz wind_vecpow = dKyw_get_wind_vecpow();
     dKankyo_vrkumo_Packet* vrkumo_packet = g_env_light.mpVrkumoPacket;
     camera_class* camera = (camera_class*)dComIfGp_getCamera(0);
@@ -4809,6 +4950,15 @@ void drawCloudShadow(Mtx drawMtx, u8** tex) {
 }
 
 void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
+#if TARGET_PC
+    // Counted ahead of the dComIfGd_getView() == NULL bail below, so calls means "entries
+    // into drawVrkumo" rather than "entries that reached the billboard loop" - a call that
+    // bails still cost the packet walk that got here. The roll is here as well as in
+    // vrkumo_move to cover the case where the move is skipped for the room but the packet is
+    // still drawn; it is keyed on the tick changing, so the second one in a tick does nothing.
+    vrkumoRollTickIfNeeded();
+    s_vrkumoStats.periodCalls++;
+#endif
     dKankyo_sun_Packet* sun_packet = g_env_light.mpSunPacket;
     dScnKy_env_light_c* envlight = dKy_getEnvlight();
     dKankyo_vrkumo_Packet* vrkumo_packet = g_env_light.mpVrkumoPacket;
@@ -4917,6 +5067,11 @@ void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
     }
 
     for (; pass < 2; pass++) {
+#if TARGET_PC
+        // pass 0 is the sun-occlusion pass and only runs when the sun is on screen, so this
+        // is 1 or 2 per call - the factor a reader needs to interpret mean.
+        s_vrkumoStats.periodPasses++;
+#endif
         if (pass == 0) {
             GXSetColorUpdate(GX_DISABLE);
             GXSetClipMode(GX_CLIP_DISABLE);
@@ -5196,6 +5351,13 @@ void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
                         }
 
                         if (sp84 == 0) {
+#if TARGET_PC
+                            // One GXBegin block per billboard, so one D3D9 draw - the cost
+                            // this counter exists to measure. Inside the sp84 test, so the
+                            // billboards the screen-space reject above threw away are not
+                            // counted: this is draws issued, not billboards considered.
+                            s_vrkumoStats.tickDraws++;
+#endif
                             GXBegin(GX_QUADS, GX_VTXFMT0, 4);
                             GXPosition3f32(pos[0].x, pos[0].y, pos[0].z);
                             GXTexCoord2s16(0, 0);
@@ -5246,6 +5408,15 @@ void drawVrkumo(Mtx drawMtx, GXColor& color, u8** tex) {
                             }
 
                             if (sp84 == 0) {
+#if TARGET_PC
+                                // The Y-mirrored second copy, drawn only in the stages named
+                                // by the strcmp chain above. It is a draw like any other, so
+                                // it goes into tickDraws; tickMirrorDraws records how much of
+                                // the total it is, so a stage-to-stage doubling explains
+                                // itself in the log instead of needing a question.
+                                s_vrkumoStats.tickDraws++;
+                                s_vrkumoStats.tickMirrorDraws++;
+#endif
                                 GXBegin(GX_QUADS, GX_VTXFMT0, 4);
 
                                 y_pos = -pos[0].y;

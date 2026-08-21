@@ -205,7 +205,29 @@ counters. The case for and against is the comment above `roomLights` in
 `src/dusk/remix_bridge.cpp:1019`; it is off by default because these are authored
 positions and a path tracer casts a real shadow from exactly where they sit.
 
-### 9. Shipped switches nobody has ever flipped
+### 9. Sky clouds — the toggle and the number, in one outdoor stop
+
+Stand outdoors under cloud cover, Hyrule Field or Lake Hylia, with
+`rtx.dusklight.atmosphere.skyEnable` on and `hideVrbox` on (the dome and the
+clouds are separate — hiding one leaves the other in front of the generated sky).
+
+1. Read `vrkumo.draws mean=… peak=…` from the log. **This is the first time
+   anyone has had this number.** The 2026-08-08 batching sweep fixed the weather
+   particles and missed `drawVrkumo`, where each billboard is still its own
+   `GXBegin`/`GXEnd`, so a peak in the hundreds or thousands is the signature of
+   a real per-draw cost — this runtime charges per draw, not per pixel.
+2. Turn on **Hide Game Sky Clouds** (`rtx.dusklight.game.hideVrkumo`).
+3. Confirm the line **keeps printing** with `mean=0 peak=0`. A line that stops
+   appearing means the instrument died, not that the clouds went away — those
+   two must stay distinguishable.
+
+Then look: the reported defect is that the clouds are large and bright enough to
+push light into the scene and to occlude the generated sky. **If hiding them
+changes scene lighting, that is the bounce confirmed** and is worth recording as
+a measurement rather than an impression. If the whole sky disappears rather than
+just the clouds, the gate is too high in the call chain.
+
+### 10. Shipped switches nobody has ever flipped
 
 One look each, lowest priority, listed so they are not forgotten:
 `perBladeGrass` and `perBladeFlowers` (a frame-rate drop is the expected cost,

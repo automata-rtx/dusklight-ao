@@ -93,6 +93,10 @@ def declared_all(fork):
 
 
 def read_text(path):
+    # Returning None for a file that is not there is safe HERE and nowhere else: its one
+    # remaining caller reads dxvk_imgui.cpp, where a missing file fails loudly anyway because
+    # kRequiredProtocol is then not found. The docs used to be read through this too, and that
+    # is exactly how a renamed doc disabled its own check in silence - see load_docs().
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
@@ -100,16 +104,86 @@ def read_text(path):
         return None
 
 
-def doc_paths(fork):
-    return [os.path.join(ROOT, p) for p in (
-        "CLAUDE.md", "docs/kankyo-remix.md", "docs/kankyo-fog.md",
-        "docs/remix-open-issues.md", "docs/dx9-fixed-function.md",
-        "docs/remix-test-playbook.md", "docs/effect-lights.md",
-    )] + [os.path.join(fork, p) for p in (
-        "CLAUDE.md", "documentation/DusklightOverlay.md",
-        "documentation/DusklightAtmosphere.md",
-        "documentation/DusklightRebase.md",
-    )]
+# Every document that states the protocol number or names an rtx.dusklight.* option, and so
+# has to agree with the wire. Two globs plus two named files, rather than the hand-list of
+# eleven literal paths this was until 2026-08-21, because a hand-list of paths is wrong in
+# two directions and neither of them used to say anything:
+#
+#   - a doc RENAMED or DELETED was skipped in silence. doc_paths() built literal paths and
+#     read_text() swallowed the OSError, so the run stayed green while checking one file
+#     fewer. That is "green while checking nothing"; missing is now a failure naming the file.
+#   - a doc ADDED was never checked at all, and no amount of loudness finds that - only a
+#     glob does. Same argument OPTION_SOURCE_GLOBS makes above, where a fixed tuple of six
+#     went stale twice and then reported four perfectly good options as undeclared.
+#
+# The game's docs/ is globbed whole because every file in it is ours. The fork's is globbed
+# as Dusklight*.md and deliberately NOT *.md: documentation/ is mostly upstream NVIDIA pages
+# that a rebase replaces wholesale, and an upstream page that happened to say "the protocol
+# is 3" would turn our CI red over something that is not ours. A fork document outside that
+# naming convention therefore has to be named in DOC_REQUIRED to be checked at all.
+DOC_GLOBS = (
+    ("game", "docs/*.md"),
+    ("fork", "documentation/Dusklight*.md"),
+)
+DOC_REQUIRED = (
+    ("game", "CLAUDE.md"),
+    ("fork", "CLAUDE.md"),
+)
+
+
+def doc_paths(fork, failures):
+    """Every doc the protocol and option-name checks read.
+
+    A glob that matches nothing, and a required file that is not there, are both FAILURES
+    naming what is missing - not skips. Either one means a check quietly stopped running.
+    """
+    roots = {"game": ROOT, "fork": fork}
+    paths, seen = [], set()
+
+    def take(path):
+        if path not in seen:
+            seen.add(path)
+            paths.append(path)
+
+    for which, pattern in DOC_GLOBS:
+        matches = sorted(glob.glob(os.path.join(roots[which], pattern)))
+        if not matches:
+            failures.append(f"doc glob '{pattern}' matches no file under {roots[which]} - "
+                            f"the directory was renamed or emptied, so every check that "
+                            f"reads those docs is now checking nothing")
+        for path in matches:
+            take(path)
+
+    for which, rel in DOC_REQUIRED:
+        path = os.path.join(roots[which], rel)
+        if os.path.isfile(path):
+            take(path)
+        else:
+            failures.append(f"doc '{rel}' is listed in DOC_REQUIRED but is not at {path} - "
+                            f"if it was renamed or moved, update the list; a missing doc "
+                            f"used to be skipped in silence")
+
+    return paths
+
+
+def load_docs(fork, failures):
+    """(relative path, text) for every doc, reading each one exactly once.
+
+    An unreadable or non-UTF-8 doc is a failure for the same reason a missing one is: the run
+    must not go green because a file could not be opened. It must not CRASH either - this is
+    the last thing tools/syntax-check-remix.sh runs, and a traceback that takes the whole
+    harness down teaches people to stop running it, so every read is caught.
+    """
+    docs = []
+    for path in doc_paths(fork, failures):
+        rel = os.path.relpath(path, ROOT)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                docs.append((rel, handle.read()))
+        except (OSError, UnicodeDecodeError) as exc:
+            failures.append(f"{rel} is listed for checking but could not be read ({exc}), "
+                            f"so nothing in it was checked")
+    return docs
 
 
 # Names the docs mention on purpose that the fork does not declare. Each needs a reason,
@@ -135,15 +209,11 @@ DOC_NAME_ALLOWED = {
 }
 
 
-def check_doc_option_names(fork, known, failures):
+def check_doc_option_names(docs, known, failures):
     """Check 5. Any rtx.dusklight.<ns>.<name> the docs name must be declared."""
     pattern = re.compile(r'rtx\.dusklight\.(?:game|env|emissive|atmosphere|grade|texrep|warp)'
                          r'\.([A-Za-z_][A-Za-z0-9_]*)')
-    for path in doc_paths(fork):
-        text = read_text(path)
-        if text is None:
-            continue
-        rel = os.path.relpath(path, ROOT)
+    for rel, text in docs:
         for match in pattern.finditer(text):
             name = match.group(0)
             # A trailing "*" in prose ("the rtx.dusklight.game.effectLight* options")
@@ -157,7 +227,7 @@ def check_doc_option_names(fork, known, failures):
                                 f"that does not exist)")
 
 
-def check_protocol_number(fork, bridge, failures):
+def check_protocol_number(fork, bridge, docs, failures):
     """Check 4. Returns the wire number, or None if it could not be determined."""
     pushed = re.search(r'push\(\s*"rtx\.dusklight\.env\.protocol"\s*,\s*"(\d+)"', bridge)
     imgui = read_text(os.path.join(fork, "src/dxvk/imgui/dxvk_imgui.cpp")) or ""
@@ -176,14 +246,10 @@ def check_protocol_number(fork, bridge, failures):
                         f"{required.group(1)} - one side is unbuilt")
         return wire
 
-    for path in doc_paths(fork):
-        text = read_text(path)
-        if text is None:
-            continue
+    for rel, text in docs:
         for match in DOC_PROTOCOL.finditer(text):
             if int(match.group(1)) != wire:
                 line = text[:match.start()].count("\n") + 1
-                rel = os.path.relpath(path, ROOT)
                 failures.append(f"{rel}:{line} says the protocol is "
                                 f"{match.group(1)}, but the wire is at {wire}")
     return wire
@@ -217,11 +283,15 @@ def main():
         failures.append(f"fork declares readout '{name}', which the game never pushes "
                         f"(it will read as its default)")
 
-    wire = check_protocol_number(fork, bridge, failures)
-    check_doc_option_names(fork, known, failures)
+    docs = load_docs(fork, failures)
+    wire = check_protocol_number(fork, bridge, docs, failures)
+    check_doc_option_names(docs, known, failures)
 
+    # The doc count is printed so the operator can see the checks 4 and 5 corpus, not just
+    # their verdict: a run that drops from 17 docs to 16 is visible in the log even on a green
+    # build. Without it, "green while checking nothing" looks exactly like "green".
     print(f"protocol check: {len(read)} options read, {len(push)} readouts pushed, "
-          f"{len(known)} declared in the fork"
+          f"{len(known)} declared in the fork, {len(docs)} docs checked"
           + (f", wire at protocol {wire}" if wire is not None else ""))
 
     if failures:
