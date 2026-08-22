@@ -273,6 +273,39 @@ static void dKyw_Cloud_Draw() {
 }
 
 static void dKyw_drawVrkumo(int i_type) {
+#if TARGET_PC
+    // vrkumo is vr + kumo (雲): the cloud layer painted onto the vrbox. Up to 100 of them
+    // (mVrkumoEff[100], d_kankyo_wether.h:261), scattered by vrkumo_move over a disc of
+    // radius 15000 units and recycled when they drift off it, entered into the SKY list -
+    // the same list the vrbox itself is drawn from, not the world one. drawVrkumo colours
+    // them by interpolating g_env_light.vrbox_kumo_top_col and vrbox_kumo_bottom_col, the
+    // same vrbox colours the fork builds its generated sky from.
+    //
+    // Two reasons to be able to switch them off, and they are not equally established. That
+    // they occlude the generated sky follows from where they are drawn. That they are bright
+    // enough to bounce light into the scene under path tracing is the owner's report; nothing
+    // in this tree has measured it, and this switch is how it gets measured.
+    //
+    // Companion to remixHideVrbox (d_a_vrbox.cpp:36), deliberately a separate switch: the
+    // dome has a replacement under Remix and the clouds have none, so hiding the dome alone
+    // leaves the clouds drawn, now in front of the generated sky instead of the game's own.
+    //
+    // Deliberately in the draw and not in wether_move_vrkumo, the same hazard the vrbox gate's
+    // comment describes: the move is the only per-frame writer of mVrkumoStrength and of the
+    // wind drift in field_0x1150/0x1154, and that drift is read back by something else
+    // entirely - d_kankyo.cpp:4577-4579 writes it into the texture matrix of every material
+    // named ..MA00/MA01/..16 on the model being lit, so gating the move would freeze a
+    // scrolling texture that has nothing to do with this packet. Suppressing only the draw
+    // costs nothing else: drawVrkumo writes just the packet's own mColor, which nothing
+    // outside that function reads.
+    //
+    // Regression signature: if the whole sky disappears rather than just the clouds, the gate
+    // has been moved too high in the call chain - dKyw_wether_draw2 or above.
+    if (aurora_get_backend() == BACKEND_D3D9 &&
+        dusk::getSettings().game.remixHideVrkumo.getValue()) {
+        return;
+    }
+#endif
     dKyw_setDrawPacketListSky(g_env_light.mpVrkumoPacket, i_type);
 }
 

@@ -37,7 +37,7 @@ changes, not when a test session happens. Everything volatile lives elsewhere.
 translate-don't-tag principle, what the D3D9 renderer is for, and the owner's
 broken-approval-prompt constraint. This file deliberately does not restate them.
 
-**The game and the Remix DLL are one protocol** — currently **17**. Build both
+**Protocol is at 18** — the game and the Remix DLL are one protocol. Build both
 from the same commit point; skew in either direction has cost an evening twice,
 and the overlay's status strip reports which side is old.
 
@@ -168,14 +168,19 @@ plus `GXSetFogRangeAdj` radial correction); and **the EFB post chain**
 
 1. **Mono pass**, if `mMonoColor.a > 0`:
    `out = lerp(fb, replicate(fb.r) * monoRGB, monoA/255)` — greyscale, red
-   channel as luma proxy, tinted and lerped. This is the twilight/senses
-   desaturation.
+   channel as luma proxy, tinted and lerped. **This is twilight's desaturation
+   and not wolf senses'.** Senses forces all four bloom ids to row 3
+   (`d_kankyo.cpp:2545`) and row 3 leaves `mSaturateSubtractA` at `0x00`
+   (`d_kankyo_data.cpp:17`), so the pass is gated off exactly there.
 2. **Bloom gather** on the mono'd framebuffer — already ported to the fork as
    `rtx.bloom.dusklight*`.
 3. **Composite**: `out = bloom*blendRGB*(screen|add) + fb*(OrigDensity/255)`.
    **`OrigDensity` scales the base image** — twilight dims the whole scene to
-   82 % here. Our Remix bloom port does not yet do the mono pass or the
-   base-image weight.
+   82 % here. **Both this and the mono pass are ported** — the grey lerp in
+   `bloom_dusklight_prepass.comp.slang`, `base * cb.baseWeight + bloom` in
+   `bloom_composite.comp.slang`. Whether either is right in game is
+   [`remix-open-issues.md`](remix-open-issues.md); an earlier revision of this
+   line said they were unbuilt and a session started rebuilding them.
 
 ---
 

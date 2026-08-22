@@ -16,7 +16,7 @@ one of those shipped a fix that did nothing. If a cause is inferred rather than
 read, say so. And "correct in raw D3D9" is *evidence about where a defect
 lives*, never a requirement being met — the raw image is never shown.
 
-**Protocol is at 17.** `kRequiredProtocol` is a file-scope `constexpr` in
+**Protocol is at 18.** `kRequiredProtocol` is a file-scope `constexpr` in
 `dxvk-remix/src/dxvk/imgui/dxvk_imgui.cpp:2613`, read by the overlay's status
 strip; bump both sides in one commit. The tab's readout and the fork's
 `CLAUDE.md` are the authorities, not this line — it has been stale twice.
@@ -67,13 +67,27 @@ original team's own tuning panel — `rtx.dusklight.game.waterSurfaceShine`,
 `grassLightInfluence` and `clockRate`. Each defaults to the game's own value, so
 nothing changes until one moves, and nobody has moved one. CI-shaped only.
 
-**Two finished features sit on unmerged branches, and merging them is worth more
-than any item above:** `claude/kasumi-naming-correction-w3e204` (the kasumi and
-kumo sky alphas, which is why protocol **12** is skipped and the next free
-number is **18**) and `claude/bloom-docs-verify-d2844x` (the bloom statement
-corrections). No script can see an unmerged branch, so every session
-rediscovers them at full cost — one already spent most of a wave doing exactly
-that.
+**Harvested 2026-08-21 from `claude/kasumi-naming-correction-w3e204` and
+`claude/bloom-docs-verify-d2844x`, both of which the owner is deleting.** What
+landed is all that landed:
+
+- **The corrected horizon-haze blend**, as
+  `rtx.dusklight.atmosphere.kasumiBlendMode`. **Gated, and the default is mode 0
+  — today's behaviour.** What is established is that mode 0 rests on a premise
+  the game contradicts, not that mode 1 looks better; **neither mode has been run
+  in game.** The near band's own alpha, which mode 1 wants, is still not pushed,
+  so `kasumiFrontWeightUseGameAlpha` is inert in this build. The kasumi and kumo
+  sky alphas themselves did **not** land.
+- **The bloom statement corrections** — `kankyo-remix.md` §I.5 said the mono pass
+  and the base-image weight were unported when both had shipped, and a session
+  believed it and started rebuilding them. See the mono/base-weight row below.
+- **The vrkumo draw counter**, and `rtx.dusklight.game.hideVrkumo` beside it (the
+  option this protocol bump announces). Both **never run**; the counter exists
+  precisely because nobody has taken that measurement.
+
+**12 stays taken** by `kasumi-naming-correction-w3e204` until the owner actually
+deletes it, and 13–18 are spent, so the next free number is **19**. No script can
+see an unmerged branch; check the live `claude/*` branches yourself.
 
 > A completeness critic's verdict on the twelve naming audits, worth keeping
 > because it is what stopped this becoming a project: *"About six things are
@@ -83,6 +97,31 @@ that.
 
 #### Built and CI-green but NEVER RUN
 
+- **Lights in captures** (2026-08-21, fork-side, harvested from
+  `claude/remix-texture-geometry-issues-occh2f`) — **code-read only; not
+  compiled, not captured.** Two things changed, and they are independent:
+  every light this game submits goes through the Remix API, and
+  `GameCapturer::captureLights` walked only the two tables Remix tracks itself,
+  so **a capture of Dusklight contained no lights at all** — no sun, no moon, no
+  effect lights. `LightManager` now snapshots the frame's active API lights
+  before it clears them and the capturer walks that. Separately,
+  `captureDistantLight` gated on `sphereLights`, which can never hold a distant
+  light's key, so a multi-frame capture exported a sun that **ramped up from
+  black**; that one is byte-identical on `origin/main`, so it is **upstream's**
+  and a carry-back candidate (`dxvk-remix/documentation/ToneMappingExposureNotes.md`).
+  Regression signature: one `capture.lights sphere=… distant=…
+  apiLightsLastFrame=… skyProbe=…` line per capture. `apiLightsLastFrame=0` means
+  `LightManager` had nothing to give; `apiLightsLastFrame>0` with `sphere=0
+  distant=0` means the capture dropped them. **Captures still have no sky** — the
+  atmosphere's dome light is the fork's own creation, is not an `RtLight`, and is
+  deliberately not captured; `skyProbe=0` says so.
+- **The bloom mono pass and the composite base-image weight** — both **ported**
+  (the grey lerp in `bloom_dusklight_prepass.comp.slang`,
+  `base * cb.baseWeight + bloom` in `bloom_composite.comp.slang`) and **neither
+  confirmed in game.** The Dusklight bloom as a whole was tested; these two steps
+  were not isolated. **Twilight is the only route to them** — bloom tables 1/2
+  set `mSaturateSubtractA` to `0x60` and `mOrigDensity` to `0xD2`, while wolf
+  senses forces row 3, which sets neither (see issue 5).
 - **The ambient grade** — off by default, never reached. It double-counts
   against the dome light's fill, so it must be tested *alone*.
 - **The Controls tab** — a placeholder with no functionality. Needs live key
@@ -127,6 +166,25 @@ shipping defaults and reported improvements, and nothing isolated these.
 - The exposure-relative fog level (`exposureFogMode` = Always).
 - Dusklight panel settings persisting (issue 17).
 
+#### Observed in game 2026-08-11 — two results, cause unattributed
+
+Kept because in-game reports from the owner are the scarcest evidence here and
+this one was about to be deleted with its branch
+(`claude/dusklight-remix-transparency-e7l766`; neither change below is on
+`Fixed-Function-dev`, so nothing in the shipping build carries them).
+
+**What the owner reported:** particles looked "considerably better", and water
+splash particles kept their colour where they had not before.
+
+**What was in that build:** *two* changes. A per-draw transparency
+classification (the game marking JPA particle draws, the fork ORing that into
+`isParticle`), **and** a far-fog change letting the fog ramp reach transparent
+layers — and the branch's own text says that second one is unconditional, so it
+ran on every transparency regardless of classification. Nothing isolated them.
+**The cause of either observation is unattributed**, and rebuilding the
+classification on the strength of this record would be building on an
+attribution nobody made.
+
 #### Tested in game and settled
 
 `skyFogMode` = Exempt (2026-08-13, closes issue 4) · the fog anchor correction,
@@ -149,7 +207,7 @@ DLL, and they have never touched a real `.jpa`. Between 2026-08-09 and
 2026-08-17 the harness did not compile at all and nothing ran it.
 And it is the only suite: the water classifier (`src/dusk/water_materials.hpp`,
 reached only from `libs/JSystem/src/J3DGraphBase/J3DMaterial.cpp`) has no test,
-is not in `tools/syntax-check-remix.sh`'s three files, and is not covered by
+is not in `tools/syntax-check-remix.sh`'s five files, and is not covered by
 `scripts/check_invariants.py` — it is pure name matching, so a suite over it
 would be cheap, and today nothing but pixels can tell you it broke.
 
@@ -170,9 +228,12 @@ Kakariko crash below, which reproduces 100% and is the one to work.
 
 **5. Wolf senses renders as an opaque overlay.** A heavy black surround with a
 pure white centre where the see-through region should be. **Not investigated at
-all.** It blocks the wolf-senses route to testing the mono overlay and composite
-base weight — **not the twilight route**, which reaches the same code through
-bloom tables 1/2 and is how that test should be done.
+all.** It does not block the mono-overlay test, as this entry used to claim:
+**there is no wolf-senses route to the mono overlay or the composite base
+weight.** Senses forces all four bloom ids to row 3 (`d_kankyo.cpp:2545`), and
+row 3 sets `mSaturateSubtractA` `0x00` and `mOrigDensity` `0xFF`
+(`d_kankyo_data.cpp:17`) — neither step runs. **Twilight, through bloom tables
+1/2, is the only route**, and is how that test is done.
 
 **6. World-space UI billboards appear only intermittently.** The targeting arrow
 and torch fire billboards appear together, inconsistently, only while the
@@ -422,6 +483,22 @@ One line each; the clause after the dash is the only part still worth having.
   untested) — sun-lit sand is exactly what the additive-and-glow rule cannot tell
   from a flame. **The last step is inference**: the `.jpa` assets are not in the
   repo, so the blend mode has not been read.
+- **Strand fur (linear swept spheres) — built across all three repos, run in
+  game, abandoned 2026-08-03; its branches are deleted** — growth, scatter masks,
+  the disk cache and the RTXCR fiber BCSDF all worked in game. **Skeletal
+  attachment never did, and its cause was never established.** That is what
+  stopped it. Two hypotheses died offline *and* in game: multi-bone vertex
+  weights (there are none — J3D pre-blends the envelope on the CPU into a
+  per-packet matrix palette, so one index and weight 1.0 per vertex, and only
+  `d_a_door_boss` and `d_a_demo00` take the real `J3DSkinDeform` path; the
+  overlay read 204 clusters, 0 blended), and wrong cluster blend math (a
+  barycentric over-triangle regrouping fixed the math and did not fix the coat).
+  The durable fact: **single influence per vertex is not rigid per triangle** — a
+  triangle whose corners sit on different palette slots is interpolated across
+  its face. **Performance was never measured.** No ms or fps figure exists
+  anywhere in that line; one cost was diagnosed (hair draws taking the
+  `kUpdateBVH` path every animation frame) and then fixed, and the owner's final
+  verdict named attachment quality and nothing else. Inherit no number from it.
 
 **"The sun seems tied to Link" — investigated 2026-07-26, no tie found**, and
 **narrowed 2026-08-04**: ruling out vanilla's Link-following light rules out the
