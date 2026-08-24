@@ -483,6 +483,13 @@ One line each; the clause after the dash is the only part still worth having.
   untested) — sun-lit sand is exactly what the additive-and-glow rule cannot tell
   from a flame. **The last step is inference**: the `.jpa` assets are not in the
   repo, so the blend mode has not been read.
+- **19 — DLSS render presets are now selectable** (Ray Reconstruction tested
+  2026-08-24, super resolution untested) — D, E and F render visibly differently
+  and F was the pick. **The result is about the runtime that was loaded, not the
+  DLL beside the game**: the NVIDIA App's global DLSS Override substitutes a
+  newer `nvngx_dlssd.dll` at load, and preset F only exists there. Without the
+  override F reverts to default and reads as D, which is expected rather than a
+  defect. `rtx.dlss.renderPreset` (E/J/K/L/M) has not been looked at.
 - **Strand fur (linear swept spheres) — built across all three repos, run in
   game, abandoned 2026-08-03; its branches are deleted** — growth, scatter masks,
   the disk cache and the RTXCR fiber BCSDF all worked in game. **Skeletal
