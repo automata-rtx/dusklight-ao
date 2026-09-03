@@ -728,6 +728,8 @@ int game_main(int argc, char* argv[]) {
         config.pauseOnFocusLost = dusk::getSettings().game.pauseOnFocusLost;
         config.imGuiInitCallback = &aurora_imgui_init_callback;
         config.allowTextureDumps = false;
+        // Always on: GfxService hands the scene normals to mods, and nothing else reads them.
+        config.normalBuffer = true;
         auroraInfo = aurora_initialize(argc, argv, &config);
     }
 

@@ -1047,6 +1047,47 @@ registered with `register_compute_type` follow the same worker-thread rule and r
 All WGPU handles from the service are borrowed. Resolved target views are valid for the current frame only. GPU objects
 created by a mod are owned by that mod and should be released in `mod_shutdown`.
 
+#### Scene normals
+
+The scene pass carries a second color attachment holding the game's authored surface normals, so screen-space effects
+can read them instead of reconstructing them from depth. Devices without core WebGPU features (the D3D11 and OpenGL ES
+fallbacks) cannot render it.
+
+A mod registers for the normals once, then reads the snapshot from `GFX_STAGE_SCENE_AFTER_OPAQUE` or later:
+
+```cpp
+// In mod_initialize:
+if (svc_gfx->register_scene_normals(mod_ctx) != MOD_OK) {
+    return mods::set_error(error, MOD_UNSUPPORTED, "scene normals are unavailable");
+}
+
+// From a stage callback:
+GfxSceneNormals normals = GFX_SCENE_NORMALS_INIT;
+svc_gfx->get_scene_normals(mod_ctx, &normals);
+```
+
+`register_scene_normals` returns `MOD_UNSUPPORTED` on the compatibility renderers, which is the one place a mod has to
+handle the normals being absent. Snapshotting costs a pass break, so it runs only while a mod is registered: registering
+keeps it running for as long as the mod is active, so a mod that toggles its own effect on and off never waits for the
+capture to start again. The registration is dropped when the mod is deactivated, and `unregister_scene_normals` ends it
+early.
+
+The snapshot is taken once per frame, immediately after the opaque lists and before any `GFX_STAGE_SCENE_AFTER_OPAQUE`
+hook runs, and every registered mod is handed the same texture. Like resolved targets it is valid for the current frame
+only; copy it if you need it afterwards.
+
+The texture holds the view-space vertex normal the artist authored, encoded `xyz * 0.5 + 0.5`, with alpha `1` where that
+normal is usable and `0` where it is not: the draw supplied no normals (sky, billboards), nothing wrote depth, or
+interpolation cancelled the normal to zero. Renormalize after decoding, and fall back where alpha is `0`.
+
+Coverage is exactly the depth buffer's: a draw writes a normal if and only if it writes depth, so the normals and a
+depth snapshot taken at the same stage describe the same surface. Particle billboards and the game's projected shadow
+quads only blend over the scene, so they cannot contaminate it.
+
+The direction carries the sign the game gave it and is not corrected against the view. Do not apply the "flip it towards
+the camera" guard that depth reconstruction needs: it negates every pixel past where the view ray crosses the surface
+plane, which reads as a hard seam across flat ground.
+
 #### External presentation
 
 GfxService supports external presentation ("present targets") backed by either a WindowService window (via

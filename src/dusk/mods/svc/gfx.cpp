@@ -101,11 +101,24 @@ struct WorkerFailure {
     std::string message;
 };
 
+// Game thread only, like s_modOffscreenOpen. frame is the aurora frame the view belongs to; every
+// other frame it reads as absent.
+struct SceneNormals {
+    wgpu::TextureView view;
+    wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t frame = UINT32_MAX;
+};
+
 std::mutex s_mutex;
 using GfxSlotMap = svc::SlotMap<GfxSlot>;
 GfxSlotMap s_slots;
 std::vector<WorkerFailure> s_workerFailures;
 bool s_modOffscreenOpen = false;
+SceneNormals s_sceneNormals;
+// Snapshotting the normals costs a pass break, so it only runs while a mod is registered for them.
+std::vector<LoadedMod*> s_sceneNormalsMods;
 
 GfxSlotMap::Entry* resolve_entry_locked(uint64_t handle, GfxSlotKind kind) {
     auto* entry = s_slots.find(handle);
@@ -169,6 +182,7 @@ void unregister_aurora_types(const std::vector<aurora::gfx::DrawTypeId>& drawIds
 }
 
 void gfx_mod_deactivating(LoadedMod& mod) {
+    std::erase(s_sceneNormalsMods, &mod);
     std::vector<aurora::gfx::DrawTypeId> drawIds;
     std::vector<aurora::gfx::EncoderTaskId> taskIds;
     {
@@ -924,6 +938,47 @@ ModResult gfx_push_present(
     return MOD_OK;
 }
 
+// Undefined when the scene pass carries no normal attachment, which is the case on the
+// compatibility renderers.
+wgpu::TextureFormat scene_normal_format() {
+    const auto layout = aurora::gfx::scene_render_target_layout();
+    for (uint32_t i = 0; i < layout.colorAttachmentCount; ++i) {
+        if (layout.colorAttachments[i].semantic == aurora::gfx::ColorAttachmentSemantic::Normal) {
+            return layout.colorAttachments[i].format;
+        }
+    }
+    return wgpu::TextureFormat::Undefined;
+}
+
+// Snapshots the scene normal attachment. Runs before the stage's mod callbacks so that a mod
+// drawing into the pass cannot alter what the others read, and only once the FIFO has drained:
+// the offscreen state below belongs to the command processor, and sampling it while the worker is
+// still behind reads the game's shadow passes as though they were open.
+void capture_scene_normals() {
+    s_sceneNormals = {};
+    if (aurora::gfx::is_offscreen()) {
+        return;
+    }
+    const auto format = scene_normal_format();
+    if (format == wgpu::TextureFormat::Undefined) {
+        return;
+    }
+
+    aurora::gfx::ResolvedTargets resolved;
+    if (!aurora::gfx::resolve_pass({.color = false, .depth = false, .normal = true}, resolved) ||
+        !resolved.normal)
+    {
+        return;
+    }
+    s_sceneNormals = {
+        .view = std::move(resolved.normal),
+        .format = format,
+        .width = resolved.width,
+        .height = resolved.height,
+        .frame = aurora::gfx::current_frame(),
+    };
+}
+
 void gfx_run_stage(
     GfxStage stage, const view_class* gameView, const view_port_class* gameViewport) {
     struct StageEntry {
@@ -950,7 +1005,9 @@ void gfx_run_stage(
             }
         });
     }
-    if (entries.empty()) {
+    const bool captureNormals =
+        stage == GFX_STAGE_SCENE_AFTER_OPAQUE && !s_sceneNormalsMods.empty();
+    if (entries.empty() && !captureNormals) {
         return;
     }
 
@@ -962,6 +1019,9 @@ void gfx_run_stage(
     };
 
     AuroraGXSync();
+    if (captureNormals) {
+        capture_scene_normals();
+    }
     for (const auto& entry : entries) {
         {
             std::lock_guard lock{s_mutex};
@@ -1091,6 +1151,52 @@ ModResult gfx_get_scene_target_layout(ModContext* context, GfxRenderTargetLayout
     const uint32_t structSize = outLayout->struct_size;
     *outLayout = gfx_render_target_layout(aurora::gfx::scene_render_target_layout());
     outLayout->struct_size = structSize;
+    return MOD_OK;
+}
+
+ModResult gfx_register_scene_normals(ModContext* context) {
+    auto* mod = mod_from_context(context);
+    if (mod == nullptr) {
+        return MOD_INVALID_ARGUMENT;
+    }
+    if (scene_normal_format() == wgpu::TextureFormat::Undefined) {
+        Log.warn("[{}] scene normals are unavailable: the compatibility renderers (D3D11, OpenGL "
+                 "ES) cannot render the normal attachment",
+            mod->metadata.id);
+        return MOD_UNSUPPORTED;
+    }
+    if (std::ranges::find(s_sceneNormalsMods, mod) == s_sceneNormalsMods.end()) {
+        s_sceneNormalsMods.push_back(mod);
+    }
+    return MOD_OK;
+}
+
+ModResult gfx_unregister_scene_normals(ModContext* context) {
+    auto* mod = mod_from_context(context);
+    if (mod == nullptr) {
+        return MOD_INVALID_ARGUMENT;
+    }
+    std::erase(s_sceneNormalsMods, mod);
+    return MOD_OK;
+}
+
+ModResult gfx_get_scene_normals(ModContext* context, GfxSceneNormals* outNormals) {
+    if (outNormals == nullptr || outNormals->struct_size < sizeof(GfxSceneNormals) ||
+        mod_from_context(context) == nullptr)
+    {
+        return MOD_INVALID_ARGUMENT;
+    }
+
+    const uint32_t structSize = outNormals->struct_size;
+    GfxSceneNormals normals = GFX_SCENE_NORMALS_INIT;
+    if (s_sceneNormals.frame == aurora::gfx::current_frame()) {
+        normals.view = s_sceneNormals.view.Get();
+        normals.format = static_cast<WGPUTextureFormat>(s_sceneNormals.format);
+        normals.width = s_sceneNormals.width;
+        normals.height = s_sceneNormals.height;
+    }
+    *outNormals = normals;
+    outNormals->struct_size = structSize;
     return MOD_OK;
 }
 
@@ -1392,6 +1498,9 @@ constexpr GfxService s_gfxService{
     .unregister_present_target = gfx_unregister_present_target_impl,
     .push_present = gfx_push_present_impl,
     .get_scene_target_layout = gfx_get_scene_target_layout,
+    .register_scene_normals = gfx_register_scene_normals,
+    .unregister_scene_normals = gfx_unregister_scene_normals,
+    .get_scene_normals = gfx_get_scene_normals,
 };
 
 }  // namespace
