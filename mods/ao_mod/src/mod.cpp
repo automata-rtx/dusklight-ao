@@ -1,9 +1,9 @@
 // Ambient occlusion (GTAO) example mod.
 //
 // Showcases the gfx service's compute tasks and the camera service: after opaque scene draws,
-// before translucent/fog overlays, the scene depth is resolved and a three-dispatch compute
-// chain (depth MIP prefilter, GTAO, spatial denoise) produces a visibility texture that a
-// fullscreen draw multiplies over the world.
+// before translucent/fog overlays, the scene depth is resolved and combined with the service's
+// scene normals by a three-dispatch compute chain (depth MIP prefilter, GTAO, spatial denoise),
+// producing a visibility texture that a fullscreen draw multiplies over the world.
 //
 // The WGSL in res/ is ported from Bevy Engine's SSAO implementation (MIT OR Apache-2.0),
 // itself based on Intel XeGTAO (MIT); see res/licenses/ and the `PORT:` notes in the shaders.
@@ -119,6 +119,7 @@ struct ComputePayload {
     WGPUTextureView aoNoisy;
     WGPUTextureView depthDifferences;
     WGPUTextureView aoFinal;
+    WGPUTextureView sceneNormal;
     uint32_t uniform_offset;
     uint32_t uniform_size;
     uint32_t width;
@@ -129,8 +130,9 @@ static_assert(std::is_trivially_copyable_v<ComputePayload>);
 
 struct CompositePayload {
     WGPUTextureView aoFinal;
-    WGPUTextureView preprocessedDepth;  // debug views reconstruct normals/depth from it
+    WGPUTextureView preprocessedDepth;  // the depth debug view reads it back
     WGPUTextureView sceneDepth;         // raw snapshot, for the bypass debug views
+    WGPUTextureView sceneNormal;
     uint32_t uniform_offset;
     uint32_t uniform_size;
     uint32_t debug_view;
@@ -448,10 +450,10 @@ void on_compute(
     WGPUBindGroup mip4Group =
         makeBindGroup(g_mip4Layout, {textureEntry(6, data.preprocessedDepthMips[3]),
                                         textureEntry(7, data.preprocessedDepthMips[4])});
-    WGPUBindGroup gtaoGroup = makeBindGroup(
-        g_gtaoLayout, {textureEntry(0, data.preprocessedDepthAll),
-                          textureEntry(1, g_hilbertLutView), textureEntry(2, data.aoNoisy),
-                          textureEntry(3, data.depthDifferences), uniformEntry(4)});
+    WGPUBindGroup gtaoGroup = makeBindGroup(g_gtaoLayout,
+        {textureEntry(0, data.preprocessedDepthAll), textureEntry(1, g_hilbertLutView),
+            textureEntry(2, data.aoNoisy), textureEntry(3, data.depthDifferences), uniformEntry(4),
+            textureEntry(5, data.sceneNormal)});
     WGPUBindGroup denoiseGroup = makeBindGroup(
         g_denoiseLayout, {textureEntry(0, data.aoNoisy), textureEntry(1, data.depthDifferences),
                              textureEntry(2, data.aoFinal), uniformEntry(3)});
@@ -512,13 +514,13 @@ void on_draw(
         data.debug_view != 0 ? g_compositeDebugPipeline : g_compositePipeline;
     WGPUBindGroupLayout layout = data.debug_view != 0 ? g_compositeDebugLayout : g_compositeLayout;
     if (data.aoFinal == nullptr || data.preprocessedDepth == nullptr ||
-        data.sceneDepth == nullptr || pipeline == nullptr)
+        data.sceneDepth == nullptr || data.sceneNormal == nullptr || pipeline == nullptr)
     {
         return;
     }
 
-    WGPUBindGroupEntry entries[4] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT,
-        WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
+    WGPUBindGroupEntry entries[5] = {WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT,
+        WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT, WGPU_BIND_GROUP_ENTRY_INIT};
     entries[0].binding = 0;
     entries[0].textureView = data.aoFinal;
     entries[1].binding = 1;
@@ -529,9 +531,11 @@ void on_draw(
     entries[3].buffer = ctx->uniform_buffer;
     entries[3].offset = data.uniform_offset;
     entries[3].size = data.uniform_size;
+    entries[4].binding = 4;
+    entries[4].textureView = data.sceneNormal;
     WGPUBindGroupDescriptor bindGroupDesc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bindGroupDesc.layout = layout;
-    bindGroupDesc.entryCount = 4;
+    bindGroupDesc.entryCount = 5;
     bindGroupDesc.entries = entries;
     WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(ctx->device, &bindGroupDesc);
     if (bindGroup == nullptr) {
@@ -558,6 +562,11 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
 
     CameraInfo camera = CAMERA_INFO_INIT;
     if (svc_camera->get_camera(mod_ctx, stageCtx->game_view, &camera) != MOD_OK) {
+        return;
+    }
+
+    GfxSceneNormals normals = GFX_SCENE_NORMALS_INIT;
+    if (svc_gfx->get_scene_normals(mod_ctx, &normals) != MOD_OK || normals.view == nullptr) {
         return;
     }
 
@@ -611,6 +620,7 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
 
     ComputePayload computePayload{};
     computePayload.depth = resolved.depth;
+    computePayload.sceneNormal = normals.view;
     for (int mip = 0; mip < 5; ++mip) {
         computePayload.preprocessedDepthMips[mip] = g_targets.preprocessedDepthMips[mip];
     }
@@ -629,7 +639,7 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
     }
 
     const CompositePayload drawPayload{g_targets.aoFinalView, g_targets.preprocessedDepthAll,
-        resolved.depth, uniformRange.offset, uniformRange.size, debugMode};
+        resolved.depth, normals.view, uniformRange.offset, uniformRange.size, debugMode};
     svc_gfx->push_draw(mod_ctx, g_drawType, &drawPayload, sizeof(drawPayload));
 }
 
@@ -695,11 +705,11 @@ ModResult build_controls_tab(
     control = UI_CONTROL_DESC_INIT;
     control.kind = UI_CONTROL_SELECT;
     control.label = "Debug View";
-    control.help_rml = "AO: raw visibility as grayscale.<br/>Normals: the view-space "
-                       "normals the GTAO pass consumes.<br/>Depth: the preprocessed depth "
-                       "as a distance gradient.<br/>Staircase: detects quantized depth - smooth "
-                       "depth is near-black with thin triangle edges, quantized depth lights "
-                       "up across surfaces.";
+    control.help_rml = "AO: raw visibility as grayscale.<br/>Normals: the scene normals the "
+                       "GTAO pass consumes, black where the scene has none.<br/>Depth: the "
+                       "preprocessed depth as a distance gradient.<br/>Staircase: detects "
+                       "quantized depth - smooth depth is near-black with thin triangle edges, "
+                       "quantized depth lights up across surfaces.";
     control.binding = UI_BINDING_CONFIG_VAR;
     control.config_var = g_cvarDebugView;
     control.options = kDebugOptions;
@@ -817,6 +827,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     }
     if (svc_gfx->get_scene_target_layout(mod_ctx, &g_sceneTargetLayout) != MOD_OK) {
         return mods::set_error(error, MOD_ERROR, "failed to query scene target layout");
+    }
+    if (svc_gfx->register_scene_normals(mod_ctx) != MOD_OK) {
+        return mods::set_error(error, MOD_UNSUPPORTED, "scene normals are unavailable");
     }
     if (!build_compute_pipeline("AO preprocess depth", g_preprocessSource, "preprocess_depth",
             g_preprocessPipeline, g_preprocessLayout) ||
